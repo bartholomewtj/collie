@@ -11,6 +11,7 @@ import {
   historyParams,
   isHostAllowed,
   isJsonContentType,
+  isLoopbackPeer,
   isReservedAuthPath,
   keysPane,
   normalizeTabLabel,
@@ -42,6 +43,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     socketPath: "/tmp/herdr.sock",
     port: 8787,
     host: "127.0.0.1",
+    allowNonLoopbackBind: false,
     pollMs: 1500,
     pollIdleMs: 12_000,
     notifyDelayMs: 30_000,
@@ -893,6 +895,39 @@ describe("startupWarnings — security-posture nags", () => {
   test("populated publicHosts: no Host-validation warning", () => {
     const ws = startupWarnings(cfg({ publicHosts: ["collie.example.ts.net"] }));
     expect(has(ws, "COLLIE_PUBLIC_HOSTS")).toBe(false);
+  });
+
+  test("loopback IPv6 host ::1 produces no bind warning", () => {
+    const ws = startupWarnings(cfg({ host: "::1" }));
+    expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(false);
+    expect(has(ws, "bound to")).toBe(false);
+  });
+
+  test("non-loopback host with override produces a bind warning naming COLLIE_ALLOW_NON_LOOPBACK_BIND", () => {
+    const ws = startupWarnings(cfg({ host: "0.0.0.0", allowNonLoopbackBind: true }));
+    expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(true);
+    expect(has(ws, "bound to 0.0.0.0")).toBe(true);
+  });
+});
+
+describe("isLoopbackPeer", () => {
+  test("accepts loopback addresses across IPv4 and IPv6 representations", () => {
+    expect(isLoopbackPeer("127.0.0.1")).toBe(true);
+    expect(isLoopbackPeer("127.5.5.5")).toBe(true);
+    expect(isLoopbackPeer("::1")).toBe(true);
+    expect(isLoopbackPeer("::ffff:127.0.0.1")).toBe(true);
+    expect(isLoopbackPeer("0:0:0:0:0:0:0:1")).toBe(true);
+    // Deliberately abstains on null/undefined/empty rather than failing closed (defence in depth).
+    expect(isLoopbackPeer(null)).toBe(true);
+    expect(isLoopbackPeer(undefined)).toBe(true);
+    expect(isLoopbackPeer("")).toBe(true);
+  });
+
+  test("rejects non-loopback addresses", () => {
+    expect(isLoopbackPeer("192.168.1.10")).toBe(false);
+    expect(isLoopbackPeer("100.64.0.1")).toBe(false); // tailnet address — realistic attacker
+    expect(isLoopbackPeer("::ffff:192.168.1.10")).toBe(false);
+    expect(isLoopbackPeer("10.0.0.1")).toBe(false);
   });
 });
 

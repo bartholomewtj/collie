@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { extname, join, normalize, sep } from "node:path";
 import type { ActivityLedger } from "./activity.ts";
 import type { AuditLog } from "./audit.ts";
-import type { Config } from "./config.ts";
+import { isLoopbackBindHost, type Config } from "./config.ts";
 import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
@@ -90,6 +90,29 @@ const SECURITY_HEADERS: Record<string, string> = {
 // (or a co-located proxy) can reach the bridge's port, so a loopback caller is the on-host operator.
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
+/**
+ * Whether a TCP peer address is loopback. Unlike the `Host` header — which the client writes and
+ * `LOOPBACK_HOST` above merely parses — this comes from the kernel and cannot be forged, so it is
+ * the one honest answer to "is this caller on the box".
+ *
+ * Bun gives IPv4 peers as `127.0.0.1` and IPv6 peers as `::1`; a dual-stack listener can also report
+ * an IPv4 peer in v4-mapped form (`::ffff:127.0.0.1`), so all three shapes are matched.
+ *
+ * A null/absent address is treated as loopback, i.e. this check abstains rather than rejecting.
+ * `Server.requestIP` returns null for a request whose socket has already gone, and the bind gate in
+ * config.ts is the primary control — this one is defence in depth. Failing closed on an
+ * unknowable address would trade a real hole for a flaky one.
+ *
+ * Pure + exported so the address table is unit-tested without standing up Bun.serve.
+ */
+export function isLoopbackPeer(address: string | null | undefined): boolean {
+  if (!address) return true;
+  const a = address.trim().toLowerCase();
+  if (a === "::1" || a === "0:0:0:0:0:0:0:1") return true;
+  const v4 = a.startsWith("::ffff:") ? a.slice(7) : a;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v4);
+}
+
 const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|keys|upload|close|rename|history))?$/;
 // Turns per history page. "Show entire history" means the WHOLE conversation, so the client asks for
 // everything and this ceiling is a safety net against a pathological log, not the normal path — a
@@ -162,7 +185,15 @@ export function startServer(opts: {
     // Content-Length is absent or false. The upload handler still does its own precise check.
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
-    async fetch(req) {
+    async fetch(req, srv) {
+      // Peer-address gate, ahead of routing so it covers the static PWA too. Under the loopback bind
+      // that config.ts enforces this can never fire; it exists so a wide bind reached some other way
+      // (a container port-forward, a future bind path, a hand-edited unit) still can't reach a route.
+      // Skipped when the operator explicitly opted into a wide bind — there, remote peers are the point.
+      if (!cfg.allowNonLoopbackBind && !isLoopbackPeer(srv.requestIP(req)?.address)) {
+        return text("non-loopback peer rejected", 403);
+      }
+
       const url = new URL(req.url);
       const { pathname } = url;
 
@@ -418,9 +449,9 @@ export function startServer(opts: {
  */
 export function startupWarnings(cfg: Config): string[] {
   const warnings: string[] = [];
-  if (cfg.host !== "127.0.0.1" && cfg.host !== "localhost") {
+  if (!isLoopbackBindHost(cfg.host)) {
     warnings.push(
-      `[bridge] WARNING: bound to ${cfg.host}, not loopback — identity checks may be bypassable`,
+      `[bridge] WARNING: bound to ${cfg.host} via COLLIE_ALLOW_NON_LOOPBACK_BIND — the identity, device and same-origin gates are all client-settable on a wide bind, and the peer-address check is off. Whatever fronts this port is now the only control.`,
     );
   }
   if (cfg.deviceHeader && cfg.deviceAllowlist.length === 0) {
