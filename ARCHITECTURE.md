@@ -203,7 +203,10 @@ default). These four are genuine RCE vectors and are **load-bearing — do not r
   owner-match filter such as nftables `meta skuid`); a plain port firewall rule won't stop a
   same-host peer (raised in [#33](https://github.com/AltanS/collie/issues/33)).
   Under `tailscale serve`, the `Tailscale-User-Login` header is the person gate — trusted because the
-  bridge binds loopback and only the front door can reach it. `COLLIE_TRUSTED_USER` rejects a
+  bridge binds loopback and only the front door can reach it. This loopback bind is enforced:
+  `loadConfig()` refuses to start on a non-loopback `COLLIE_HOST` (unless `COLLIE_ALLOW_NON_LOOPBACK_BIND=1`
+  is set), and the request path checks the TCP peer address as defence in depth before routing.
+  `COLLIE_TRUSTED_USER` rejects a
   *mismatching* login and **an absent one** (failing closed): `tailscale serve` injects no identity for
   tagged nodes, so tolerating a missing header handed every tagged tailnet node full write access.
   Set `COLLIE_TRUSTED_USER_OPTIONAL=1` to restore the old tolerance for host-local callers, at the cost of

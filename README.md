@@ -118,7 +118,11 @@ Four sharp edges:
 
 It's built single-user and tailnet-only. The defenses:
 
-- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`.
+- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`. The bridge enforces this at startup and refuses
+  to start on a non-loopback `COLLIE_HOST`. Off-loopback requests are also rejected by a TCP peer-address
+  check ahead of routing. An operator who deliberately wants a wide bind sets
+  `COLLIE_ALLOW_NON_LOOPBACK_BIND=1`, which turns off both checks; whatever fronts the port is then
+  your only control.
 - **Exactly one hardened front door** — either `tailscale serve` (default, Variant A: terminates
   TLS, injects the identity header) or a conforming reverse proxy
   ([Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)). Never
@@ -573,7 +577,7 @@ Your fronting proxy **must**:
 Collie side (`.env`):
 
 ```bash
-COLLIE_HOST=127.0.0.1                       # keep loopback (default)
+COLLIE_HOST=127.0.0.1                       # loopback is enforced; the bridge refuses to start otherwise
 COLLIE_DEVICE_HEADER=X-Device-Id            # the header your proxy injects
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop  # ids allowed to drive agents; others → read-only
 # COLLIE_ALLOWED_ORIGINS=https://collie.example.com   # only if the proxy does NOT forward the public Host
@@ -774,7 +778,7 @@ browser's Origin is your *public* name, so the two settings take different value
 
 ```bash
 COLLIE_SERVE_MODE=http                                # proxy terminates TLS; this hop is tailnet-internal
-COLLIE_HOST=127.0.0.1                                 # keep loopback (default)
+COLLIE_HOST=127.0.0.1                                 # loopback is enforced; the bridge refuses to start otherwise
 COLLIE_DEVICE_HEADER=X-Tailnet-Device                 # header your forward-auth injects — REQUIRED here
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop            # ids allowed to drive; others + header-less → read-only
 COLLIE_PUBLIC_HOSTS=host:8787,host.your-tailnet.ts.net:8787   # the Host the proxy forwards
