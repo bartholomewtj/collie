@@ -445,9 +445,17 @@ export function startupWarnings(cfg: Config): string[] {
       `[bridge] WARNING: COLLIE_TRUSTED_USER_OPTIONAL=1 — a request with no Tailscale-User-Login is accepted, so any TAGGED tailnet node (which serve injects no identity for) gets full write access. Unset it outside host-local development.`,
     );
   }
-  if (cfg.publicHosts.length === 0) {
+  if (cfg.allowAnyHost) {
     warnings.push(
-      `[bridge] WARNING: COLLIE_PUBLIC_HOSTS is empty — Host-header validation is OFF (DNS rebinding not blocked). Set it to your MagicDNS name, especially under plain-HTTP serve mode or behind a reverse proxy.`,
+      `[bridge] WARNING: COLLIE_ALLOW_ANY_HOST=1 — Host-header validation is OFF, so a DNS-rebound page can reach this bridge as if it were same-origin. Unset it and set COLLIE_PUBLIC_HOSTS to the host(s) you serve on.`,
+    );
+  } else if (
+    cfg.publicHosts.length === 0 &&
+    cfg.tailscaleHosts.length === 0 &&
+    cfg.allowedOrigins.length === 0
+  ) {
+    warnings.push(
+      `[bridge] WARNING: no non-loopback Host is allowed — every request except one addressed to localhost/127.0.0.1 will be rejected with "host not allowed". Set COLLIE_PUBLIC_HOSTS to the exact host(s) you serve on (required behind your own reverse proxy, see README → Variant C/E).`,
     );
   }
   return warnings;
@@ -1124,12 +1132,11 @@ async function uploadPane(
 
 /**
  * Access gate for the API:
- *  - Host allowlist (opt-in): when COLLIE_PUBLIC_HOSTS is set, the request's Host header must be a
- *    loopback form, one of those hosts, or the host of an allowed origin — otherwise rejected,
- *    BEFORE any Origin logic (fail-closed). This defeats DNS rebinding, where a browser is tricked
- *    into sending Host==Origin==evil.example so a bare same-origin check trivially passes — acute
- *    under COLLIE_SERVE_MODE=http (no TLS). Empty COLLIE_PUBLIC_HOSTS keeps the legacy behaviour so
- *    existing deployments don't break (see the startup warning).
+ *  - Host allowlist (fail-closed): the request's Host header must be a loopback form, an explicit
+ *    COLLIE_PUBLIC_HOSTS entry, a ctl-discovered Tailscale host (COLLIE_TAILSCALE_HOSTS), or the
+ *    host of an allowed origin — otherwise rejected, BEFORE any Origin logic (fail-closed). This
+ *    defeats DNS rebinding (issue #3), where a browser is tricked into sending Host==Origin==evil.example
+ *    so a bare same-origin check trivially passes. COLLIE_ALLOW_ANY_HOST=1 is the explicit opt-out.
  *  - Same-origin only: the Origin host must equal the Host header, or the exact Origin must be
  *    listed in COLLIE_ALLOWED_ORIGINS. A loopback Origin gets no special pass — a page on
  *    http://localhost:<any port> is a different origin from a remote Collie, and treating it as
@@ -1151,9 +1158,10 @@ export function checkAccess(
 ): { ok: true } | { ok: false; reason: string } {
   const host = req.headers.get("host") ?? "";
 
-  // Host-header allowlist — only when the operator opted in (COLLIE_PUBLIC_HOSTS non-empty). Fail
-  // closed, before the Origin logic, so a rebinding request (Host==Origin==evil) never reaches it.
-  if (cfg.publicHosts.length > 0 && !isHostAllowed(host, cfg)) {
+  // Host-header allowlist — ALWAYS ON, before the Origin logic, so a rebinding request
+  // (Host==Origin==evil) never reaches it. COLLIE_ALLOW_ANY_HOST=1 is the operator's explicit
+  // opt-out and re-opens issue #3.
+  if (!cfg.allowAnyHost && !isHostAllowed(host, cfg)) {
     return { ok: false, reason: "host not allowed" };
   }
 
@@ -1190,14 +1198,18 @@ export function checkAccess(
 }
 
 /**
- * Whether a Host header is one the bridge will answer to under the opt-in host allowlist: a loopback
- * form, an explicit COLLIE_PUBLIC_HOSTS entry, or the host of a configured allowed origin. Pure +
- * exported for tests.
+ * Whether a Host header is one the bridge will answer to under the fail-closed host allowlist: a
+ * loopback form, an explicit COLLIE_PUBLIC_HOSTS entry, a discovered Tailscale host (bare or with
+ * port), or the host of a configured allowed origin. Pure + exported for tests.
  */
 export function isHostAllowed(host: string, cfg: Config): boolean {
   if (!host) return false;
   if (LOOPBACK_HOST.test(host)) return true;
   if (cfg.publicHosts.includes(host)) return true;
+  // Discovered Tailscale identities match bare or with any port: https serve answers on 443 (no
+  // port in Host), http serve answers on COLLIE_PORT. One entry covers both modes.
+  const bare = host.replace(/:\d+$/, "");
+  if (cfg.tailscaleHosts.some((h) => h === host || h === bare)) return true;
   return cfg.allowedOrigins.some((o) => {
     try {
       return new URL(o).host === host;

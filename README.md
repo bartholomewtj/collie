@@ -134,11 +134,11 @@ It's built single-user and tailnet-only. The defenses:
   default; revoke a device by dropping it from the list.
   See [Deployment variants](#deployment-variants) for the proxy this requires.
 - **Same-origin gate + strict CSP**; pane output renders as React text nodes, never `innerHTML`.
-- **Optional Host allowlist** — set `COLLIE_PUBLIC_HOSTS` to the exact host(s) you serve on (e.g.
-  your MagicDNS name) and the bridge rejects any request addressed to another Host before the
-  origin logic runs. **Strongly recommended, and effectively mandatory with
-  `COLLIE_SERVE_MODE=http`** — without TLS, DNS rebinding can otherwise make a hostile page
-  same-origin with the bridge.
+- **Host allowlist (fail-closed)** — the bridge answers only to loopback (`localhost`, `127.0.0.1`,
+  `[::1]`), the Tailscale name/IPs `collie-ctl.sh` discovers (`COLLIE_TAILSCALE_HOSTS`), explicit
+  entries in `COLLIE_PUBLIC_HOSTS`, and hostnames from `COLLIE_ALLOWED_ORIGINS`; anything else is
+  rejected with `403 host not allowed` before the Origin check runs. This closes DNS rebinding by
+  default. `COLLIE_ALLOW_ANY_HOST=1` is the discouraged escape hatch that turns validation off.
 
 > 🚫 **Never `tailscale funnel` this** — funnel exposes it to the public internet; `serve` keeps it
 > tailnet-only. There is no scenario where funneling Collie is correct.
@@ -282,11 +282,10 @@ $ scripts/collie-ctl.sh logs        # journal timestamps trimmed here
 [push] disabled (no VAPID keys configured)
 [bridge] listening on http://127.0.0.1:8787  (poll 1500ms)
 [bridge] WARNING: COLLIE_TRUSTED_USER is empty — any tailnet device/user that reaches the bridge gets full write access. Set it to your tailnet login (see README → Variant A).
-[bridge] WARNING: COLLIE_PUBLIC_HOSTS is empty — Host-header validation is OFF (DNS rebinding not blocked). Set it to your MagicDNS name, especially under COLLIE_SERVE_MODE=http.
 ```
 
-**Both WARNINGs are expected on a fresh install** — that's the bridge telling you it's running
-open-by-default on your tailnet. [Configure](#configure) closes both. (The loopback URL in the log
+**This WARNING is expected on a fresh install** — that's the bridge telling you it's running
+open-by-default on your tailnet. [Configure](#configure) closes it. (The loopback URL in the log
 is also correct: the bridge itself only ever binds `127.0.0.1` — `tailscale serve` is what makes it
 reachable.)
 
@@ -314,14 +313,16 @@ in and launchd restarts it if it exits abnormally. Inspect it with
 
 ## Configure
 
+> ⚠️ **Upgrading to 1.0.0:** If you run `COLLIE_SKIP_SERVE=1` behind your own reverse proxy and never set `COLLIE_PUBLIC_HOSTS`, set it before upgrading or every non-loopback request will be rejected with `403 host not allowed`.
+
 Out of the box Collie runs **open single-user**: anyone on your tailnet who can reach the URL has
-full control — that's exactly what the two startup WARNINGs are about. Close both in one sitting:
+full write control — that's what the startup WARNING is about. Close it:
 
 ```bash
 # in your .env
 COLLIE_TRUSTED_USER=you@example.com           # your tailnet login — the bridge rejects anyone else
 # COLLIE_TRUSTED_USER_OPTIONAL=1              # accept requests with no Tailscale-User-Login (host-local dev only — re-opens tagged-node access)
-COLLIE_PUBLIC_HOSTS=myhost.tail1234.ts.net    # exact host(s) you serve on — blocks DNS rebinding
+# COLLIE_PUBLIC_HOSTS=collie.example.com      # only if you serve on a host Collie can't discover — behind your own proxy
 ```
 
 Config is a `.env` in the plugin's config dir — find it with
@@ -632,7 +633,7 @@ Required env (`.env`):
 
 ```bash
 COLLIE_SKIP_SERVE=1                                 # proxy is ingress; never run tailscale serve
-COLLIE_PUBLIC_HOSTS=collie.example.com              # Host allowlist — blocks DNS rebinding
+COLLIE_PUBLIC_HOSTS=collie.example.com              # REQUIRED: Host allowlist (proxy host is not auto-discovered)
 COLLIE_ALLOWED_ORIGINS=https://collie.example.com   # exact public origin for the same-origin gate
 COLLIE_DEVICE_HEADER=X-Device-Id                    # the header your proxy injects…
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop          # …and the ids allowed to drive; others → read-only
@@ -777,7 +778,7 @@ COLLIE_SERVE_MODE=http                                # proxy terminates TLS; th
 COLLIE_HOST=127.0.0.1                                 # keep loopback (default)
 COLLIE_DEVICE_HEADER=X-Tailnet-Device                 # header your forward-auth injects — REQUIRED here
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop            # ids allowed to drive; others + header-less → read-only
-COLLIE_PUBLIC_HOSTS=host:8787,host.your-tailnet.ts.net:8787   # the Host the proxy forwards
+COLLIE_PUBLIC_HOSTS=host:8787,host.your-tailnet.ts.net:8787   # REQUIRED: the Host the proxy forwards
 COLLIE_ALLOWED_ORIGINS=https://collie.example.com     # the public origin the browser actually uses
 ```
 
@@ -835,7 +836,7 @@ other tunnel you own the ingress and Collie stays out of the way:
 
 ```bash
 COLLIE_SKIP_SERVE=1                                 # never run tailscale serve
-COLLIE_PUBLIC_HOSTS=collie.example.com              # exact public host — blocks DNS rebinding
+COLLIE_PUBLIC_HOSTS=collie.example.com              # REQUIRED: exact public host (not auto-discovered)
 COLLIE_ALLOWED_ORIGINS=https://collie.example.com   # exact public origin for the same-origin gate
 ```
 

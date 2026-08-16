@@ -60,6 +60,10 @@ function cfg(overrides: Partial<Config> = {}): Config {
     deviceAllowlist: [],
     allowedOrigins: [],
     publicHosts: [],
+    tailscaleHosts: [],
+    // Test helper default only — keeps non-Host tests testing their own rules without needing ~30
+    // call sites updated. The product default is allowAnyHost: false (fail-closed, issue #3).
+    allowAnyHost: true,
     vapidPublic: "",
     vapidPrivate: "",
     vapidSubject: "mailto:admin@example.com",
@@ -195,8 +199,32 @@ describe("checkAccess — Tailscale identity gate", () => {
   });
 });
 
-describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
-  const c = cfg({ publicHosts: ["collie.example.ts.net"] });
+describe("checkAccess — Host-header validation", () => {
+  const c = cfg({ allowAnyHost: false, publicHosts: ["collie.example.ts.net"] });
+
+  test("the default config rejects a rebound Host==Origin==evil (issue #3)", () => {
+    const defaultCfg = cfg({ allowAnyHost: false });
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        defaultCfg,
+        "read",
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        defaultCfg,
+        "write",
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+  });
+
+  test("default fail-closed config + loopback Host passes for read and write", () => {
+    const defaultCfg = cfg({ allowAnyHost: false });
+    expect(checkAccess(req({ host: "127.0.0.1:8787" }), defaultCfg, "read")).toEqual({ ok: true });
+    expect(checkAccess(req({ host: "localhost:8787" }), defaultCfg, "write")).toEqual({ ok: true });
+  });
 
   test("DNS-rebinding: Origin==Host==evil host is rejected once publicHosts is set", () => {
     expect(
@@ -224,6 +252,7 @@ describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
 
   test("a Host derived from an allowed origin passes", () => {
     const c2 = cfg({
+      allowAnyHost: false,
       publicHosts: ["collie.example.ts.net"],
       allowedOrigins: ["https://collie.example.com"],
     });
@@ -232,11 +261,54 @@ describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
     ).toEqual({ ok: true });
   });
 
-  test("empty publicHosts keeps legacy behaviour (Host==Origin==evil still passes reads)", () => {
-    // Without opting in, an evil host that also sets a matching Origin passes the bare same-origin
-    // check — the documented legacy hole COLLIE_PUBLIC_HOSTS closes. Proves the default is unchanged.
+  test("tailscaleHosts allows bare host, port, and IP, but rejects unlisted hosts", () => {
+    const cTs = cfg({
+      allowAnyHost: false,
+      tailscaleHosts: ["collie.example.ts.net", "100.64.0.1"],
+    });
+    // Host collie.example.ts.net (no port) passes — https serve
     expect(
-      checkAccess(req({ origin: "https://evil.example.com", host: "evil.example.com" }), cfg()),
+      checkAccess(
+        req({ origin: "https://collie.example.ts.net", host: "collie.example.ts.net" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host collie.example.ts.net:8787 passes — http serve mode, same entry
+    expect(
+      checkAccess(
+        req({ origin: "http://collie.example.ts.net:8787", host: "collie.example.ts.net:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host 100.64.0.1:8787 passes — raw tailnet IP
+    expect(
+      checkAccess(
+        req({ origin: "http://100.64.0.1:8787", host: "100.64.0.1:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host evil.example.com rejected
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        cTs,
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+    // Host evil.com:8787 whose bare form is not an entry rejected
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.com:8787", host: "evil.com:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+  });
+
+  test("allowAnyHost opt-out restores permissive Host validation", () => {
+    expect(
+      checkAccess(
+        req({ origin: "https://evil.example.com", host: "evil.example.com" }),
+        cfg({ allowAnyHost: true }),
+      ),
     ).toEqual({ ok: true });
   });
 });
@@ -270,18 +342,35 @@ describe("checkAccess — Origin required for writes", () => {
 
 describe("isHostAllowed", () => {
   test("loopback forms are always allowed", () => {
-    const c = cfg({ publicHosts: ["a.ts.net"] });
+    const c = cfg({ allowAnyHost: false, publicHosts: ["a.ts.net"] });
     expect(isHostAllowed("127.0.0.1:8787", c)).toBe(true);
     expect(isHostAllowed("localhost", c)).toBe(true);
     expect(isHostAllowed("[::1]:8787", c)).toBe(true);
   });
 
   test("configured public host and allowed-origin host pass; anything else fails", () => {
-    const c = cfg({ publicHosts: ["a.ts.net"], allowedOrigins: ["https://b.example.com"] });
+    const c = cfg({
+      allowAnyHost: false,
+      publicHosts: ["a.ts.net"],
+      allowedOrigins: ["https://b.example.com"],
+    });
     expect(isHostAllowed("a.ts.net", c)).toBe(true);
     expect(isHostAllowed("b.example.com", c)).toBe(true);
     expect(isHostAllowed("evil.com", c)).toBe(false);
     expect(isHostAllowed("", c)).toBe(false);
+  });
+
+  test("tailscale hosts match bare or with any port, including IPv6 literals", () => {
+    const c = cfg({
+      allowAnyHost: false,
+      tailscaleHosts: ["collie.example.ts.net", "[fd7a::1]"],
+    });
+    expect(isHostAllowed("collie.example.ts.net", c)).toBe(true);
+    expect(isHostAllowed("collie.example.ts.net:8787", c)).toBe(true);
+    expect(isHostAllowed("[fd7a::1]", c)).toBe(true);
+    expect(isHostAllowed("[fd7a::1]:8787", c)).toBe(true);
+    expect(isHostAllowed("other.ts.net", c)).toBe(false);
+    expect(isHostAllowed("evil.com:8787", c)).toBe(false);
   });
 });
 
@@ -883,16 +972,30 @@ describe("startupWarnings — security-posture nags", () => {
     expect(has(ws, "COLLIE_TRUSTED_USER_OPTIONAL")).toBe(true);
   });
 
-  test("empty publicHosts: the Host-validation warning fires and no longer names COLLIE_SERVE_MODE", () => {
-    const ws = startupWarnings(cfg({ publicHosts: [] }));
-    expect(has(ws, "COLLIE_PUBLIC_HOSTS is empty")).toBe(true);
-    // The reworded clause must not reference the script-only COLLIE_SERVE_MODE var.
-    expect(has(ws, "COLLIE_SERVE_MODE")).toBe(false);
+  test("allowAnyHost: warns that Host validation is OFF", () => {
+    const ws = startupWarnings(cfg({ allowAnyHost: true }));
+    expect(has(ws, "COLLIE_ALLOW_ANY_HOST=1")).toBe(true);
+  });
+
+  test("empty allowlists: warns that no non-loopback Host is allowed", () => {
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, publicHosts: [], tailscaleHosts: [], allowedOrigins: [] }),
+    );
+    expect(has(ws, "no non-loopback Host is allowed")).toBe(true);
+  });
+
+  test("populated tailscaleHosts: no Host-validation warning", () => {
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, tailscaleHosts: ["collie.example.ts.net"], publicHosts: [] }),
+    );
+    expect(has(ws, "Host")).toBe(false);
   });
 
   test("populated publicHosts: no Host-validation warning", () => {
-    const ws = startupWarnings(cfg({ publicHosts: ["collie.example.ts.net"] }));
-    expect(has(ws, "COLLIE_PUBLIC_HOSTS")).toBe(false);
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, publicHosts: ["collie.example.ts.net"] }),
+    );
+    expect(has(ws, "Host")).toBe(false);
   });
 });
 

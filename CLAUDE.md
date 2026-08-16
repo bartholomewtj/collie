@@ -208,3 +208,7 @@ the mapping in `tailscale-managed-handler`, and only ever tears down a mapping m
 Every other tunnel (NetBird, ZeroTier, Cloudflare Tunnel) is `COLLIE_SKIP_SERVE=1` + README Variant
 E: the operator owns the ingress, Collie publishes nothing. **Don't add a second managed front
 door** — [ADR 0001](./.adr/0001-one-managed-front-door.md).
+
+**Host validation is fail-closed** — a non-loopback Host must be loopback, a `COLLIE_PUBLIC_HOSTS`
+entry, a ctl-discovered Tailscale host, or an allowed origin's host
+([ADR 0011](./.adr/0011-host-validation-is-fail-closed.md)).
