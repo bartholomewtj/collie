@@ -440,6 +440,10 @@ export function startupWarnings(cfg: Config): string[] {
     warnings.push(
       `[bridge] WARNING: COLLIE_TRUSTED_USER is empty — any tailnet device/user that reaches the bridge gets full write access. Set it to your tailnet login (see README → Variant A).`,
     );
+  } else if (cfg.trustedUserOptional) {
+    warnings.push(
+      `[bridge] WARNING: COLLIE_TRUSTED_USER_OPTIONAL=1 — a request with no Tailscale-User-Login is accepted, so any TAGGED tailnet node (which serve injects no identity for) gets full write access. Unset it outside host-local development.`,
+    );
   }
   if (cfg.publicHosts.length === 0) {
     warnings.push(
@@ -1134,8 +1138,11 @@ async function uploadPane(
  *  - Origin required for writes: a state-changing (`level === "write"`) request with no Origin is
  *    trusted only from loopback (curl on the host). Browsers always send Origin on fetch/SW POSTs,
  *    so a missing Origin on a remote write is a non-browser or Origin-stripped request — reject it.
- *  - Optional Tailscale identity: if a trusted user is configured and `tailscale serve` injects a
- *    `Tailscale-User-Login`, it must match.
+ *  - Optional Tailscale identity: when a trusted user is configured under `tailscale serve`, the
+ *    request must carry a matching `Tailscale-User-Login`. A missing header is rejected too —
+ *    serve injects none for tagged nodes, so tolerating it let any tagged node write. Under
+ *    COLLIE_SKIP_SERVE=1 (no injector) or COLLIE_TRUSTED_USER_OPTIONAL=1, only a mismatch is
+ *    rejected.
  */
 export function checkAccess(
   req: Request,
@@ -1169,8 +1176,14 @@ export function checkAccess(
 
   if (cfg.trustedUser) {
     const login = req.headers.get("tailscale-user-login");
-    if (login && login !== cfg.trustedUser) {
-      return { ok: false, reason: "identity not trusted" };
+    if (login) {
+      if (login !== cfg.trustedUser) return { ok: false, reason: "identity not trusted" };
+    } else if (!cfg.skipServe && !cfg.trustedUserOptional) {
+      // Fail closed: `tailscale serve` injects no Tailscale-User-* for TAGGED nodes, so an absent
+      // header is not "a loopback caller" — it is any tagged node on the tailnet (issue #2). There
+      // is no safe loopback exemption here: serve proxies from 127.0.0.1 so the peer IP is always
+      // loopback, and the Host header is the client's to set.
+      return { ok: false, reason: "identity required" };
     }
   }
   return { ok: true };

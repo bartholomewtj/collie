@@ -202,12 +202,12 @@ default). These four are genuine RCE vectors and are **load-bearing — do not r
   it needs the port not to be shared in the first place (its own network namespace, or a uid
   owner-match filter such as nftables `meta skuid`); a plain port firewall rule won't stop a
   same-host peer (raised in [#33](https://github.com/AltanS/collie/issues/33)).
-  Under `tailscale serve`, the `Tailscale-User-Login` header is the person gate — trusted **only**
-  when the request source is loopback (i.e. it came from tailscaled). `COLLIE_TRUSTED_USER` rejects a
-  *mismatching* login and **passes an absent one**: it narrows which tailnet user is trusted, it does
-  not mandate the header. That is safe under `tailscale serve`, which injects it on every request, and
-  not safe behind anything that might stop injecting it — the header exists **only** under
-  `tailscale serve` ingress. Under a reverse-proxy front door
+  Under `tailscale serve`, the `Tailscale-User-Login` header is the person gate — trusted because the
+  bridge binds loopback and only the front door can reach it. `COLLIE_TRUSTED_USER` rejects a
+  *mismatching* login and **an absent one** (failing closed): `tailscale serve` injects no identity for
+  tagged nodes, so tolerating a missing header handed every tagged tailnet node full write access.
+  Set `COLLIE_TRUSTED_USER_OPTIONAL=1` to restore the old tolerance for host-local callers, at the cost of
+  re-opening that tagged-node hole. Under a reverse-proxy front door
   ([README → Variant C](./README.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale))
   there is none, and the equivalent write gate is **per-device auth** (`COLLIE_DEVICE_HEADER`) with
   the proxy contract (README Variant B/C requirements) as the load-bearing piece. That gate **fails

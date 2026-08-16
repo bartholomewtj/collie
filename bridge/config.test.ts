@@ -26,6 +26,7 @@ const KEYS = [
   "XDG_DATA_HOME",
   "COLLIE_SUBMIT_KEYS",
   "COLLIE_TRUSTED_USER",
+  "COLLIE_TRUSTED_USER_OPTIONAL",
   "COLLIE_DEVICE_HEADER",
   "COLLIE_DEVICE_ALLOWLIST",
   "COLLIE_ALLOWED_ORIGINS",
@@ -76,6 +77,7 @@ describe("loadConfig", () => {
     expect(cfg.journalRoots.opencode).toEqual([join(homedir(), ".local", "share", "opencode")]);
     expect(cfg.submitKeys).toEqual(["Enter"]);
     expect(cfg.trustedUser).toBe("");
+    expect(cfg.trustedUserOptional).toBe(false);
     expect(cfg.allowedOrigins).toEqual([]);
     expect(cfg.notifyDelayMs).toBe(30_000);
     // Host-header validation is opt-in (empty = off, legacy behaviour).
@@ -123,6 +125,24 @@ describe("loadConfig", () => {
     expect(loadConfig().skipServe).toBe(false);
     process.env.COLLIE_SKIP_SERVE = "";
     expect(loadConfig().skipServe).toBe(false);
+  });
+
+  test("parses COLLIE_TRUSTED_USER_OPTIONAL as a boolean toggle (default off)", () => {
+    // Truthy spellings turn it on (restore tolerant identity checking).
+    for (const on of ["on", "1", "true", "yes", "ON", " True "]) {
+      process.env.COLLIE_TRUSTED_USER_OPTIONAL = on;
+      expect(loadConfig().trustedUserOptional).toBe(true);
+    }
+    // Falsey spellings keep it off (the default fail-closed path).
+    for (const off of ["off", "0", "false", "no", "OFF", " False "]) {
+      process.env.COLLIE_TRUSTED_USER_OPTIONAL = off;
+      expect(loadConfig().trustedUserOptional).toBe(false);
+    }
+    // Garbage and empty fall back to the default (off).
+    process.env.COLLIE_TRUSTED_USER_OPTIONAL = "banana";
+    expect(loadConfig().trustedUserOptional).toBe(false);
+    process.env.COLLIE_TRUSTED_USER_OPTIONAL = "";
+    expect(loadConfig().trustedUserOptional).toBe(false);
   });
 
   test("parses COLLIE_TRANSCRIPT as a boolean toggle (default ON)", () => {

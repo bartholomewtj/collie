@@ -137,13 +137,21 @@ export interface Config {
   /** Key sequence sent to submit a reply after the text (agent-dependent; see HERDR_API.md). */
   submitKeys: string[];
   /**
-   * Tailscale identity gate. If set, any request carrying a `Tailscale-User-Login` header
-   * (injected by `tailscale serve`) must match this login — a mismatching tailnet user is
-   * rejected. A request with no such header still passes (direct-loopback callers don't get one),
-   * so this narrows *which* user is trusted rather than mandating the header. Empty = trust any
-   * loopback caller (fine when only tailscaled can reach the port).
+   * Tailscale identity gate. If set, requests must carry a `Tailscale-User-Login` header (injected by
+   * `tailscale serve`) matching this login. A mismatching login is rejected, and so is an ABSENT one
+   * — `tailscale serve` injects no identity for TAGGED nodes, so tolerating an absent header handed
+   * every tagged node on the tailnet full write access (issue #2). Under COLLIE_SKIP_SERVE=1 nothing
+   * injects the header at all, so only the mismatch check applies there. Set
+   * {@link trustedUserOptional} to restore the old tolerance for host-local callers.
    */
   trustedUser: string;
+  /**
+   * Opt out of the fail-closed half of {@link trustedUser} (COLLIE_TRUSTED_USER_OPTIONAL=1): a
+   * request with no `Tailscale-User-Login` passes again. For host-local callers that bypass
+   * `tailscale serve` — `curl` on the host, `scripts/capture-fixture.sh`, the vite dev proxy. It
+   * re-opens the tagged-node hole, so it is off by default and warned about at startup.
+   */
+  trustedUserOptional: boolean;
   /**
    * Per-device authorisation. Name of a request header carrying an opaque device identifier,
    * injected by a trusted upstream reverse proxy. Empty = the feature is off (no behaviour change).
@@ -256,6 +264,7 @@ export function loadConfig(): Config {
     },
     submitKeys: submitKeys.length ? submitKeys : ["Enter"],
     trustedUser: process.env.COLLIE_TRUSTED_USER ?? "",
+    trustedUserOptional: envBool("COLLIE_TRUSTED_USER_OPTIONAL", false),
     deviceHeader: (process.env.COLLIE_DEVICE_HEADER ?? "").trim(),
     deviceAllowlist: envList("COLLIE_DEVICE_ALLOWLIST"),
     allowedOrigins: envList("COLLIE_ALLOWED_ORIGINS"),

@@ -124,8 +124,10 @@ It's built single-user and tailnet-only. The defenses:
   ([Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)). Never
   `tailscale funnel`, never a bare port.
 - **Optional identity gate** — set `COLLIE_TRUSTED_USER` to reject any tailnet login but yours. It
-  rejects a *mismatching* `Tailscale-User-Login` and passes an absent one, so it narrows who is
-  trusted under `tailscale serve` (which always injects it) rather than mandating the header.
+  rejects a *mismatching* `Tailscale-User-Login` and a missing one, because `tailscale serve` injects
+  no `Tailscale-User-*` for **tagged** nodes — without this, any tagged node (shared server, CI runner)
+  had full write access. A host-local `curl` bypasses serve and has no header either; allow it back
+  with `COLLIE_TRUSTED_USER_OPTIONAL=1`, at the cost of re-opening the tagged-node gap.
 - **Optional per-device gate** — behind a proxy that injects a device-identity header, set
   `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents;
   any other device is read-only, and so is a request that arrives without the header at all. Off by
@@ -318,6 +320,7 @@ full control — that's exactly what the two startup WARNINGs are about. Close b
 ```bash
 # in your .env
 COLLIE_TRUSTED_USER=you@example.com           # your tailnet login — the bridge rejects anyone else
+# COLLIE_TRUSTED_USER_OPTIONAL=1              # accept requests with no Tailscale-User-Login (host-local dev only — re-opens tagged-node access)
 COLLIE_PUBLIC_HOSTS=myhost.tail1234.ts.net    # exact host(s) you serve on — blocks DNS rebinding
 ```
 
@@ -515,6 +518,8 @@ COLLIE_TRUSTED_USER=you@example.com
 - **Granularity:** the tailnet *person*, not the device.
 - **Why it's safe on bare `tailscale serve`:** serve is the *trusted injector* of
   `Tailscale-User-Login` — it sets that header itself and a client can't forge it through the proxy.
+- The header is absent for tagged nodes and for anything reaching `127.0.0.1:$COLLIE_PORT` directly,
+  and both are refused with `403 identity required`.
 - Nothing else to configure; origins match automatically on the MagicDNS name.
 
 This is the right choice unless you specifically need per-device control.
