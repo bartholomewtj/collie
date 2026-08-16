@@ -46,3 +46,9 @@ docs/bugs/
 
 # Local tooling scratch (browser-automation captures)
 .playwright-mcp/
+
+# sssf runtime
+adws/adw_data/sessions/
+adws/adw_data/sssf.db*
+__pycache__/
+*.pyc
