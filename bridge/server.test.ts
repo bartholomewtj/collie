@@ -55,6 +55,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     },
     submitKeys: ["Enter"],
     trustedUser: "",
+    trustedUserOptional: false,
     deviceHeader: "",
     deviceAllowlist: [],
     allowedOrigins: [],
@@ -155,9 +156,42 @@ describe("checkAccess — Tailscale identity gate", () => {
     ).toEqual({ ok: false, reason: "identity not trusted" });
   });
 
-  test("with a trusted user set, a missing header still passes (documented loopback tolerance)", () => {
+  test("with a trusted user set, a MISSING header is rejected (issue #2 — tagged nodes)", () => {
     const c = cfg({ trustedUser: "me@example.com" });
+    expect(checkAccess(req({ host: "h" }), c)).toEqual({
+      ok: false,
+      reason: "identity required",
+    });
+    // Writes too — and reads, above: a tagged node must not read pane output either.
+    expect(checkAccess(req({ host: "h", origin: "http://h" }), c, "write")).toEqual({
+      ok: false,
+      reason: "identity required",
+    });
+  });
+
+  test("a loopback Host does not exempt a missing header (Host is the client's to set)", () => {
+    const c = cfg({ trustedUser: "me@example.com" });
+    expect(checkAccess(req({ host: "127.0.0.1:8787" }), c)).toEqual({
+      ok: false,
+      reason: "identity required",
+    });
+  });
+
+  test("under skipServe a missing header still passes (nothing injects one there)", () => {
+    const c = cfg({ trustedUser: "me@example.com", skipServe: true });
     expect(checkAccess(req({ host: "h" }), c)).toEqual({ ok: true });
+    // …but an ingress that DOES inject a mismatching login is still rejected.
+    expect(
+      checkAccess(req({ host: "h", "tailscale-user-login": "intruder@example.com" }), c),
+    ).toEqual({ ok: false, reason: "identity not trusted" });
+  });
+
+  test("COLLIE_TRUSTED_USER_OPTIONAL restores the old tolerance", () => {
+    const c = cfg({ trustedUser: "me@example.com", trustedUserOptional: true });
+    expect(checkAccess(req({ host: "h" }), c)).toEqual({ ok: true });
+    expect(
+      checkAccess(req({ host: "h", "tailscale-user-login": "intruder@example.com" }), c),
+    ).toEqual({ ok: false, reason: "identity not trusted" });
   });
 });
 
@@ -842,6 +876,11 @@ describe("startupWarnings — security-posture nags", () => {
   test("no skipServe + trustedUser set: no identity warning (correctly configured)", () => {
     const ws = startupWarnings(cfg({ skipServe: false, trustedUser: "me@example.com" }));
     expect(has(ws, "COLLIE_TRUSTED_USER")).toBe(false);
+  });
+
+  test("trustedUserOptional: warns the identity gate accepts an absent header", () => {
+    const ws = startupWarnings(cfg({ trustedUser: "me@example.com", trustedUserOptional: true }));
+    expect(has(ws, "COLLIE_TRUSTED_USER_OPTIONAL")).toBe(true);
   });
 
   test("empty publicHosts: the Host-validation warning fires and no longer names COLLIE_SERVE_MODE", () => {
