@@ -734,13 +734,15 @@ EOF
   assert_eq "$(grep -c '^bootstrap ' "$LAUNCHCTL_CALLS")" 3
 }
 
-# A bun that reports only how it was found: its own path, and the PATH it inherited.
+# A bun that reports only how it was found: its own path, the PATH it inherited, and the VAPID secret.
 install_fake_bun() {
   local target="$1" calls="$2"
   mkdir -p "$(dirname "$target")"
+  : > "$calls"
   cat > "$target" <<EOF
 #!/bin/sh
-printf '%s|%s\n' "\$0" "\$PATH" > "$calls"
+printf '%s|%s|%s\n' "\$0" "\$PATH" "\${COLLIE_VAPID_PRIVATE:-unset}" >> "$calls"
+mkdir -p dist-staging
 exit 0
 EOF
   chmod +x "$target"
@@ -777,9 +779,9 @@ test_bun_resolution() {
   assert_eq "$(cut -d'|' -f1 "$calls")" "${CASE_DIR}/alt/bin/bun"
 }
 
-# `command -v` reports a function or alias as a BARE word, and the plugin .env is sourced before we
-# resolve — so a `bun()` defined there yields dirname `.`, and prepending that would hand every later
-# `git` / `systemctl` / `tailscale` a cwd-relative lookup. Only absolute paths reach PATH.
+# `command -v` reports a function or alias as a BARE word (e.g. if inherited from a caller's shell
+# when this script is sourced) — so a `bun()` function yields dirname `.`, and prepending that would
+# hand every later `git` / `systemctl` / `tailscale` a cwd-relative lookup. Only absolute paths reach PATH.
 test_non_absolute_bun_never_reaches_path() {
   setup_case bun-not-absolute
   local harness="${CASE_DIR}/harness.sh"
@@ -789,7 +791,7 @@ set -euo pipefail
 export HOME="$HOME_DIR"
 export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
 export PATH="$BIN_DIR:$BASE_PATH"
-bun() { :; }   # what a doctored .env would leave behind
+bun() { :; }   # a function inherited from the caller's shell
 source "$CTL"
 echo "PATH=\$PATH"
 EOF
@@ -998,6 +1000,216 @@ test_suite_ignores_an_inherited_git_dir() {
     fail "the suite corrupted the repository it was run from"
 }
 
+# ── .env parsing and permissions (issue #5) ──────────────────────────────────────
+
+test_env_is_parsed_not_executed() {
+  setup_case env-no-eval
+  cat > "${CONFIG_DIR}/.env" <<EOF
+COLLIE_PORT=9999
+PWNED=\$(touch "$CASE_DIR/pwned")
+ALSO_PWNED=\`touch "$CASE_DIR/pwned2"\`
+bun() { :; }
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\$COLLIE_PORT"
+echo "PWNED=\$PWNED"
+echo "ALSO_PWNED=\$ALSO_PWNED"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/harness.out" 2>&1 || fail "sourcing ctl script failed"
+  [ ! -e "${CASE_DIR}/pwned" ] || fail "command substitution in .env was executed"
+  [ ! -e "${CASE_DIR}/pwned2" ] || fail "backticks in .env were executed"
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" "PORT=9999"
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" 'PWNED=$(touch'
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" 'ALSO_PWNED=`touch'
+}
+
+test_env_parsing_grammar() {
+  setup_case env-grammar
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+# Leading comment
+COLLIE_PORT=8787
+
+   # Indented comment
+DOUBLE_QUOTES="hello world"
+SINGLE_QUOTES='single value'
+WITH_EQUALS=foo=bar=baz
+WITH_HASH=https://example.com/#section
+export EXPORTED_VAR=123
+export   EXPORTED_SPACES="spaced out"
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\${COLLIE_PORT:-}"
+echo "DOUBLE=\${DOUBLE_QUOTES:-}"
+echo "SINGLE=\${SINGLE_QUOTES:-}"
+echo "EQUALS=\${WITH_EQUALS:-}"
+echo "HASH=\${WITH_HASH:-}"
+echo "EXP=\${EXPORTED_VAR:-}"
+echo "EXPSP=\${EXPORTED_SPACES:-}"
+echo "CRLF=\${CRLF_VAR:-}"
+echo "NONL=\${NO_NEWLINE:-}"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/grammar.out" 2>&1 || fail "parsing grammar failed"
+  local out; out="$(cat "${CASE_DIR}/grammar.out")"
+  assert_contains "$out" "PORT=8787"
+  assert_contains "$out" "DOUBLE=hello world"
+  assert_contains "$out" "SINGLE=single value"
+  assert_contains "$out" "EQUALS=foo=bar=baz"
+  assert_contains "$out" "HASH=https://example.com/#section"
+  assert_contains "$out" "EXP=123"
+  assert_contains "$out" "EXPSP=spaced out"
+
+  # Test CRLF line endings
+  printf 'COLLIE_PORT=9001\r\nCRLF_VAR="crlf value"\r\n' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/crlf.out" 2>&1 || fail "CRLF parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/crlf.out")" "PORT=9001"
+  assert_contains "$(cat "${CASE_DIR}/crlf.out")" "CRLF=crlf value"
+
+  # Test final line with no trailing newline
+  printf 'COLLIE_PORT=9002\nNO_NEWLINE=works' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/nonl.out" 2>&1 || fail "no-newline parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/nonl.out")" "PORT=9002"
+  assert_contains "$(cat "${CASE_DIR}/nonl.out")" "NONL=works"
+
+  # Test export prefix overriding port
+  printf 'export COLLIE_PORT=9003\n' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/export.out" 2>&1 || fail "export prefix parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/export.out")" "PORT=9003"
+}
+
+test_env_malformed_line_warns_without_leaking() {
+  setup_case env-malformed
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+not a valid line COLLIE_VAPID_PRIVATE=s3cret-value
+ANOTHER_VAR=valid
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\$COLLIE_PORT"
+echo "ANOTHER=\$ANOTHER_VAR"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/out.txt" 2> "${CASE_DIR}/err.txt" || fail "sourcing failed on malformed line"
+  local stdout; stdout="$(cat "${CASE_DIR}/out.txt")"
+  local stderr; stderr="$(cat "${CASE_DIR}/err.txt")"
+  assert_contains "$stdout" "PORT=8787"
+  assert_contains "$stdout" "ANOTHER=valid"
+  assert_contains "$stderr" "${CONFIG_DIR}/.env"
+  assert_contains "$stderr" ":2"
+  case "$stderr" in
+    *"s3cret-value"*) fail "stderr leaked secret value from malformed line" ;;
+  esac
+}
+
+test_env_secrets_do_not_reach_build_children() {
+  setup_case env-secrets
+  local calls="${CASE_DIR}/bun.calls"
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+COLLIE_VAPID_PRIVATE=s3cret-key-12345
+EOF
+
+  # 1) push-test should see the secret
+  HOME="$HOME_DIR" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" PATH="$BIN_DIR:$BASE_PATH" \
+    bash "$CTL" push-test > /dev/null 2>&1 || fail "push-test failed"
+  [ -s "$calls" ] || fail "push-test did not invoke bun"
+  local secret_seen; secret_seen="$(cut -d'|' -f3 "$calls" | head -n 1)"
+  assert_eq "$secret_seen" "s3cret-key-12345"
+
+  # 2) build path (cmd_build) should NOT see the secret
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+  HOME="$HOME_DIR" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" PATH="$BIN_DIR:$BASE_PATH" \
+    SKIP_TYPECHECK=1 bash "$CTL" build > /dev/null 2>&1 || fail "build failed"
+  [ -s "$calls" ] || fail "build did not invoke bun"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    local s; s="$(printf '%s' "$line" | cut -d'|' -f3)"
+    assert_eq "$s" "unset"
+  done < "$calls"
+}
+
+test_env_permissions_are_hardened_on_start() {
+  setup_case env-perms
+  # Guard on working stat
+  local probe_mode; probe_mode="$(stat -c '%a' "$CONFIG_DIR" 2>/dev/null || stat -f '%Lp' "$CONFIG_DIR" 2>/dev/null || true)"
+  if [ -z "$probe_mode" ]; then
+    return 0
+  fi
+
+  # Check if chmod 600 actually takes effect on this OS/filesystem
+  local probe_file="${CASE_DIR}/probe.env"
+  touch "$probe_file"
+  chmod 600 "$probe_file" 2>/dev/null || true
+  local probe_chmod_mode; probe_chmod_mode="$(stat -c '%a' "$probe_file" 2>/dev/null || stat -f '%Lp' "$probe_file" 2>/dev/null || true)"
+  rm -f "$probe_file"
+  if [ "$probe_chmod_mode" != "600" ]; then
+    return 0
+  fi
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+COLLIE_VAPID_PRIVATE=secret
+EOF
+  chmod 755 "$CONFIG_DIR" 2>/dev/null || true
+  chmod 644 "${CONFIG_DIR}/.env" 2>/dev/null || true
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+ensure_build() { return 0; }
+have_systemd() { return 0; }
+have_launchd() { return 0; }
+systemctl() { return 0; }
+cmd_serve() { return 0; }
+print_status_banner() { return 0; }
+cmd_start
+EOF
+
+  bash "$harness" > "${CASE_DIR}/start.out" 2> "${CASE_DIR}/start.err" || fail "cmd_start failed"
+  local stderr; stderr="$(cat "${CASE_DIR}/start.err")"
+  assert_contains "$stderr" "was mode 644"
+  assert_contains "$stderr" "tightened to 600"
+  assert_contains "$stderr" "rotate COLLIE_VAPID_PRIVATE"
+
+  local final_env_mode; final_env_mode="$(stat -c '%a' "${CONFIG_DIR}/.env" 2>/dev/null || stat -f '%Lp' "${CONFIG_DIR}/.env" 2>/dev/null || true)"
+  local final_dir_mode; final_dir_mode="$(stat -c '%a' "$CONFIG_DIR" 2>/dev/null || stat -f '%Lp' "$CONFIG_DIR" 2>/dev/null || true)"
+  assert_eq "$final_env_mode" "600"
+  assert_eq "$final_dir_mode" "700"
+}
+
 test_suite_ignores_an_inherited_git_dir
 test_tailscale_cutovers_and_collisions
 test_missing_tailscale_cli
@@ -1016,5 +1228,10 @@ test_update_advances_a_herdr_managed_checkout
 test_update_fast_forwards_a_linked_clone
 test_update_reports_a_non_git_checkout
 test_registry_refresh_skips_a_managed_checkout
+test_env_is_parsed_not_executed
+test_env_parsing_grammar
+test_env_malformed_line_warns_without_leaking
+test_env_secrets_do_not_reach_build_children
+test_env_permissions_are_hardened_on_start
 
 echo "collie-ctl lifecycle tests: passed"
