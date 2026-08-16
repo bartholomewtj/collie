@@ -158,7 +158,10 @@ export interface Config {
    * drop its value from this list and restart. Ignored when {@link deviceHeader} is empty.
    */
   deviceAllowlist: string[];
-  /** Extra allowed request origins beyond localhost (e.g. your MagicDNS https origin). */
+  /**
+   * Exact request origins allowed in addition to the request's own Host (e.g. your MagicDNS https
+   * origin, or `http://localhost:5173` for the vite dev proxy). There is no implicit loopback exemption.
+   */
   allowedOrigins: string[];
   /**
    * Host-header allowlist (`host` or `host:port` values). When non-empty, the operator has opted
