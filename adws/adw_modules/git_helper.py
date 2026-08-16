@@ -1,0 +1,183 @@
+"""Low-level git operations for code phases. All low-level logic lives in adw_modules."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from . import control
+
+
+def _git(*args: str) -> str:
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def current_branch() -> str:
+    return _git("rev-parse", "--abbrev-ref", "HEAD")
+
+
+def create_branch(name: str) -> str:
+    _git("checkout", "-b", name)
+    return name
+
+
+def is_repo() -> bool:
+    result = subprocess.run(["git", "rev-parse", "--git-dir"],
+                            capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def repo_root() -> Path:
+    """Absolute root of the codebase — where agents are spawned to work.
+
+    The git toplevel when there is one, else the process cwd (ADWs run fine in a
+    non-git dir; only a commit phase requires a repo). Always absolute, so it is
+    safe to hand to a subprocess regardless of where the ADW was launched from.
+    """
+    if is_repo():
+        return Path(_git("rev-parse", "--show-toplevel")).resolve()
+    return Path.cwd().resolve()
+
+
+_NOT_A_REPO = (
+    "not a git repository — a commit phase needs one. Run `git init` in the "
+    "repo root (and make a first commit) before running an ADW that commits.")
+
+
+def commit_paths(message: str, paths: list[str]) -> str:
+    """Stage only `paths` and commit them. Returns the new short sha.
+
+    `paths` is what the phase OWNS — the files its own agents changed, taken
+    from git by permissions.enforce() rather than from what an agent claimed.
+    Anything else pending in the tree is left alone: a later phase's work, or
+    an engineer's uncommitted edits, must not land under this phase's message.
+
+    Paths that are no longer pending are dropped, so a re-run that finds its
+    work already committed is a no-op rather than a "pathspec did not match"
+    failure. The resume no-op of commit_all applies here too, scoped: nothing
+    of ours left to stage AND HEAD already carries this message means the
+    commit landed on an earlier invocation.
+    """
+    if not is_repo():
+        raise RuntimeError(_NOT_A_REPO)
+    pending = set(changed_files())
+    owned = [p for p in dict.fromkeys(paths) if p in pending]
+    scoped = _git("status", "--porcelain", "--", *owned) if owned else ""
+    head_message = _git("log", "-1", "--pretty=%B") if ref_exists("HEAD") else ""
+    if control.commit_already_made(scoped, head_message, message):
+        return _git("rev-parse", "--short", "HEAD")
+    if not owned:
+        raise RuntimeError(
+            "nothing to commit — the agents this phase commits for changed no "
+            f"files. {len(paths)} path(s) were recorded as theirs, none of them "
+            "still pending.")
+    _git("add", "-A", "--", *owned)
+    _git("commit", "-m", message, "--", *owned)
+    return _git("rev-parse", "--short", "HEAD")
+
+
+def commit_all(message: str) -> str:
+    """Stage the working tree and commit it. Returns the new short sha.
+
+    Commits EVERYTHING pending, so it attributes any stray change in the tree
+    to this phase. Prefer commit_paths() in a chain that commits more than
+    once; this stays for single-commit callers that really do own the tree.
+
+    A resumed run can reach a commit phase whose commit already landed last
+    time (the phase replayed everything up to here, then the checkpoint ran
+    out and this phase re-executes for real). That is not an error -- it is
+    exactly what "nothing to commit" would otherwise report as one. Detect
+    the no-op case first and hand back the sha already at HEAD.
+    """
+    if not is_repo():
+        raise RuntimeError(_NOT_A_REPO)
+    _git("add", "-A")
+    porcelain = _git("status", "--porcelain")
+    head_message = _git("log", "-1", "--pretty=%B") if ref_exists("HEAD") else ""
+    if control.commit_already_made(porcelain, head_message, message):
+        return _git("rev-parse", "--short", "HEAD")
+    if not porcelain:
+        raise RuntimeError("nothing to commit — the preceding phases changed no files")
+    _git("commit", "-m", message)
+    return _git("rev-parse", "--short", "HEAD")
+
+
+def changed_files() -> list[str]:
+    """Every path the working tree differs from HEAD on, one file per entry.
+
+    `git status --porcelain` is shorter but does not answer this question: it
+    collapses untracked files into their directory (`?? src/`) and reports a
+    rename as `old -> new`, so a caller matching path strings never finds the
+    file it is looking for. These are the same two commands
+    permissions.snapshot() fingerprints with, which is what the commit phases
+    match their agents' paths against.
+    """
+    tracked = _git("diff", "HEAD", "--name-only") if ref_exists("HEAD") else ""
+    paths = [line for line in tracked.splitlines() if line]
+    paths += untracked_files()
+    return sorted(dict.fromkeys(paths))
+
+
+# ── diff plumbing (composed into a ChangeSet by documentation.py) ────────────
+
+def ref_exists(ref: str) -> bool:
+    """True when `ref` resolves to a commit. Never raises — this is a question."""
+    result = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                            capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def rev(ref: str = "HEAD") -> str:
+    return _git("rev-parse", ref)
+
+
+def short_sha(ref: str = "HEAD") -> str:
+    return _git("rev-parse", "--short", ref)
+
+
+def merge_base(ref: str, other: str = "HEAD") -> str:
+    """The commit where `ref` and `other` diverged — the honest base of a branch.
+
+    On the base branch itself this returns HEAD, which makes the diff exactly
+    "what is not committed yet". Off it, the diff is the whole branch plus the
+    working tree. One command covers both cases, so no ADW has to branch on it.
+    """
+    return _git("merge-base", ref, other)
+
+
+def is_dirty() -> bool:
+    return bool(_git("status", "--porcelain"))
+
+
+def untracked_files() -> list[str]:
+    out = _git("ls-files", "--others", "--exclude-standard")
+    return [line for line in out.splitlines() if line]
+
+
+def diff_files(base: str) -> list[str]:
+    """Tracked files that differ between `base` and the working tree."""
+    out = _git("diff", "--name-only", base)
+    return [line for line in out.splitlines() if line]
+
+
+def diff_stat(base: str) -> str:
+    return _git("diff", "--stat", base)
+
+
+def diff_counts(base: str) -> tuple[int, int]:
+    """(insertions, deletions) across the diff. Binary files count as neither."""
+    insertions = deletions = 0
+    for line in _git("diff", "--numstat", base).splitlines():
+        added, removed, *_ = line.split("\t")
+        if added.isdigit():
+            insertions += int(added)
+        if removed.isdigit():
+            deletions += int(removed)
+    return insertions, deletions
+
+
+def diff_text(base: str) -> str:
+    return _git("diff", base)
