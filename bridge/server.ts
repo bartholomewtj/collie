@@ -305,6 +305,8 @@ export function startServer(opts: {
         // subscribe to notifications.
         const denied = guard(req, cfg, "read");
         if (denied) return denied;
+        const bad = requireJsonBody(req);
+        if (bad) return bad;
         let body: unknown;
         try {
           body = await req.json();
@@ -322,6 +324,8 @@ export function startServer(opts: {
         // Managing your own notification quiet-hours isn't terminal-driving — read-level, like subscribe.
         const denied = guard(req, cfg, "read");
         if (denied) return denied;
+        const bad = requireJsonBody(req);
+        if (bad) return bad;
         let body: unknown;
         try {
           body = await req.json();
@@ -351,6 +355,8 @@ export function startServer(opts: {
         if (req.method === "POST") {
           const denied = guard(req, cfg, "read");
           if (denied) return denied;
+          const bad = requireJsonBody(req);
+          if (bad) return bad;
           let body: unknown;
           try {
             body = await req.json();
@@ -621,6 +627,8 @@ export async function replyPane(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   let body: { text?: string; submit?: boolean; expected_prompt?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -682,6 +690,8 @@ export async function keysPane(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   let body: { keys?: unknown; expected_prompt?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -865,6 +875,8 @@ async function renamePane(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   const ae = req.headers.get("accept-encoding");
   let body: { label?: unknown };
   try {
@@ -911,6 +923,8 @@ async function renameTab(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   const ae = req.headers.get("accept-encoding");
   let body: { label?: unknown };
   try {
@@ -962,6 +976,8 @@ async function createTab(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   let body: { workspaceId?: string; label?: string; cwd?: string };
   try {
     body = (await req.json()) as typeof body;
@@ -1002,6 +1018,8 @@ async function createWorkspace(
   device: string | null,
   session: string,
 ): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
   let body: { cwd?: string; label?: string };
   try {
     body = (await req.json()) as typeof body;
@@ -1108,9 +1126,11 @@ async function uploadPane(
  *    into sending Host==Origin==evil.example so a bare same-origin check trivially passes — acute
  *    under COLLIE_SERVE_MODE=http (no TLS). Empty COLLIE_PUBLIC_HOSTS keeps the legacy behaviour so
  *    existing deployments don't break (see the startup warning).
- *  - Same-origin only (Origin host must equal Host) — defeats cross-site requests/CSRF. Browsers
- *    omit Origin on same-origin GETs (so the snapshot poll passes); they send it on POSTs.
- *    localhost and explicitly-configured origins are also allowed.
+ *  - Same-origin only: the Origin host must equal the Host header, or the exact Origin must be
+ *    listed in COLLIE_ALLOWED_ORIGINS. A loopback Origin gets no special pass — a page on
+ *    http://localhost:<any port> is a different origin from a remote Collie, and treating it as
+ *    trusted handed any local page a CSRF write against the bridge. Browsers omit Origin on
+ *    same-origin GETs (so the snapshot poll passes); they send it on POSTs.
  *  - Origin required for writes: a state-changing (`level === "write"`) request with no Origin is
  *    trusted only from loopback (curl on the host). Browsers always send Origin on fetch/SW POSTs,
  *    so a missing Origin on a remote write is a non-browser or Origin-stripped request — reject it.
@@ -1138,10 +1158,9 @@ export function checkAccess(
     } catch {
       return { ok: false, reason: "bad origin" };
     }
-    const allowed =
-      originHost === host ||
-      LOOPBACK_HOST.test(originHost) ||
-      cfg.allowedOrigins.includes(origin);
+    // No loopback-Origin exemption: a page on http://localhost:NNNN is cross-origin to this bridge.
+    // Local dev through the vite proxy re-permits itself via COLLIE_ALLOWED_ORIGINS.
+    const allowed = originHost === host || cfg.allowedOrigins.includes(origin);
     if (!allowed) return { ok: false, reason: "cross-origin rejected" };
   } else if (level === "write" && !LOOPBACK_HOST.test(host)) {
     // A write with no Origin header from a non-loopback Host isn't a real browser request — refuse.
@@ -1259,6 +1278,22 @@ function jsonError(message: string, status: number, _acceptEncoding: string | nu
 
 function text(body: string, status: number): Response {
   return secure(new Response(body, { status }));
+}
+
+/**
+ * Whether a request body declares JSON. The gate on every JSON route: a cross-site POST can only
+ * set text/plain, form-urlencoded or multipart without a CORS preflight, so demanding
+ * application/json forces a preflight the bridge never answers. Pure + exported for tests.
+ */
+export function isJsonContentType(value: string | null): boolean {
+  if (!value) return false;
+  return value.split(";")[0]?.trim().toLowerCase() === "application/json";
+}
+
+/** 415 short-circuit for a JSON route, or null to proceed. */
+export function requireJsonBody(req: Request): Response | null {
+  if (isJsonContentType(req.headers.get("content-type"))) return null;
+  return text("expected application/json", 415);
 }
 
 /**

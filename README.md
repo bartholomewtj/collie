@@ -345,6 +345,8 @@ your MagicDNS name works as-is, but a different hostname or TLS terminator makes
 COLLIE_ALLOWED_ORIGINS=https://collie.example.com
 ```
 
+A loopback origin is not special-cased: if the browser's origin differs from the Host the bridge sees (including `http://localhost:5173` in local frontend dev), list it in `COLLIE_ALLOWED_ORIGINS`.
+
 ## Dark mode / light mode
 
 **Collie follows your phone by default.** Flip your device to dark at sunset and Collie goes with
@@ -542,7 +544,7 @@ Two consequences worth knowing before you turn this on:
   herd through the proxied URL instead.
 - **To drive a pane from the host by hand**, send an allowlisted id yourself, against the loopback
   bridge rather than the public URL (the proxy's mandatory override in point 2 below would replace
-  your header): `curl -H 'X-Device-Id: my-laptop' http://127.0.0.1:$COLLIE_PORT/api/...`
+  your header): `curl -H 'X-Device-Id: my-laptop' -H 'content-type: application/json' http://127.0.0.1:$COLLIE_PORT/api/...`
 
 > ⚠️ **Do not enable `COLLIE_DEVICE_HEADER` on plain `tailscale serve`.** `tailscale serve` injects
 > only its own `Tailscale-*` headers and *forwards* an arbitrary `X-Device-Id` untouched, so a

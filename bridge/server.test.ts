@@ -10,6 +10,7 @@ import {
   guard,
   historyParams,
   isHostAllowed,
+  isJsonContentType,
   isReservedAuthPath,
   keysPane,
   normalizeTabLabel,
@@ -89,13 +90,30 @@ describe("checkAccess — same-origin / CSRF gate", () => {
     expect(r).toEqual({ ok: false, reason: "cross-origin rejected" });
   });
 
-  test("always allows a localhost / 127.0.0.1 origin (loopback by design)", () => {
+  test("rejects a loopback Origin that does not match the Host (issue #1)", () => {
     expect(
       checkAccess(req({ origin: "http://localhost:8787", host: "collie.example.ts.net" }), cfg()),
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: false, reason: "cross-origin rejected" });
     expect(checkAccess(req({ origin: "http://127.0.0.1:8787", host: "anything" }), cfg())).toEqual({
-      ok: true,
+      ok: false,
+      reason: "cross-origin rejected",
     });
+    expect(
+      checkAccess(req({ origin: "http://[::1]:8787", host: "collie.example.ts.net" }), cfg(), "write"),
+    ).toEqual({ ok: false, reason: "cross-origin rejected" });
+  });
+
+  test("a loopback Origin still passes when it matches the Host (curl / host-local browser)", () => {
+    expect(
+      checkAccess(req({ origin: "http://127.0.0.1:8787", host: "127.0.0.1:8787" }), cfg(), "write"),
+    ).toEqual({ ok: true });
+  });
+
+  test("a loopback dev origin passes only when COLLIE_ALLOWED_ORIGINS lists it", () => {
+    const c = cfg({ allowedOrigins: ["http://localhost:5173"] });
+    expect(
+      checkAccess(req({ origin: "http://localhost:5173", host: "localhost:8787" }), c, "write"),
+    ).toEqual({ ok: true });
   });
 
   test("allows an explicitly-configured extra origin (COLLIE_ALLOWED_ORIGINS)", () => {
@@ -233,6 +251,22 @@ describe("isHostAllowed", () => {
   });
 });
 
+describe("isJsonContentType — JSON routes force a CORS preflight", () => {
+  test("accepts application/json with or without parameters", () => {
+    expect(isJsonContentType("application/json")).toBe(true);
+    expect(isJsonContentType("application/json; charset=utf-8")).toBe(true);
+    expect(isJsonContentType("Application/JSON")).toBe(true);
+  });
+
+  test("rejects the content types a cross-site POST can send without a preflight", () => {
+    expect(isJsonContentType("text/plain")).toBe(false);
+    expect(isJsonContentType("application/x-www-form-urlencoded")).toBe(false);
+    expect(isJsonContentType("multipart/form-data; boundary=x")).toBe(false);
+    expect(isJsonContentType(null)).toBe(false);
+    expect(isJsonContentType("")).toBe(false);
+  });
+});
+
 describe("resolveStaticPath — static path traversal guard", () => {
   const WEB = "/srv/collie/web/dist";
 
@@ -361,6 +395,14 @@ describe("pane write prompt binding", () => {
     });
   }
 
+  function textRequest(body: unknown): Request {
+    return new Request("http://localhost/api/pane/w1%3Ap1/action", {
+      method: "POST",
+      headers: { "content-type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify(body),
+    });
+  }
+
   function auditEntries(): { audit: AuditLog; entries: Array<Record<string, unknown>> } {
     const entries: Array<Record<string, unknown>> = [];
     return {
@@ -403,6 +445,39 @@ describe("pane write prompt binding", () => {
     expect(res.status).toBe(200);
     expect(client.reads).toEqual([]);
     expect(client.texts).toEqual([["w1:p1", "hello"]]);
+  });
+
+  test("a text/plain POST to a JSON route is refused before any socket call", async () => {
+    const client = new FakePaneClient();
+    const { audit } = auditEntries();
+    const res = await replyPane(
+      client as unknown as HerdrClient,
+      cfg(),
+      "w1:p1",
+      textRequest({ text: "hello", submit: true }),
+      audit,
+      null,
+      "default",
+    );
+    expect(res.status).toBe(415);
+    expect(client.texts).toEqual([]);
+    expect(client.keys).toEqual([]);
+  });
+
+  test("keys with a text/plain body is refused too", async () => {
+    const client = new FakePaneClient();
+    const { audit } = auditEntries();
+    const res = await keysPane(
+      client as unknown as HerdrClient,
+      cfg(),
+      "w1:p1",
+      textRequest({ keys: ["Enter"] }),
+      audit,
+      null,
+      "default",
+    );
+    expect(res.status).toBe(415);
+    expect(client.keys).toEqual([]);
   });
 
   test("matching expected_prompt reads the GET window then sends keys", async () => {
