@@ -335,12 +335,13 @@ directly or via a Herdr action:
 
 ```bash
 cp .env.example "$(herdr plugin config-dir herdr.collie)/.env"
+chmod 600 "$(herdr plugin config-dir herdr.collie)/.env"
 ```
 
-The bridge reads `.env` only at startup — after any edit, `scripts/collie-ctl.sh restart`. See
-[`.env.example`](./.env.example) for the full option list — commonly `COLLIE_PORT`, or
-`COLLIE_SERVE_MODE=http` (Headscale / `.internal` domains; read by the control script when it runs
-`tailscale serve`).
+The `.env` is parsed as plain `KEY=value` (not executed as shell). The bridge reads `.env` only at
+startup — after any edit, `scripts/collie-ctl.sh restart`. See [`.env.example`](./.env.example) for
+the full option list — commonly `COLLIE_PORT`, or `COLLIE_SERVE_MODE=http` (Headscale / `.internal`
+domains; read by the control script when it runs `tailscale serve`).
 
 **Custom domain or reverse proxy?** See
 [Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) for the full reverse-proxy
