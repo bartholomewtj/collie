@@ -235,13 +235,14 @@ cmd_build() {
   if [ "${SKIP_VERSION_CHECK:-}" != "1" ]; then
     bash "${PLUGIN_ROOT}/scripts/check-version.sh"
   fi
-  # Install BOTH dependency trees before typechecking. The root typecheck (tsconfig `types: ["bun"]`)
-  # resolves @types/bun from the ROOT node_modules; a fresh Herdr checkout ships neither tree, so
-  # without a root install the very first build dies with TS2688 "Cannot find type definition file
-  # for 'bun'" and Herdr rolls the install back (issue #9). It works on the dev host only because a
-  # manual `bun install` left root node_modules behind.
-  ( cd "${PLUGIN_ROOT}" && "$BUN" install )
-  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install )
+  # Install BOTH dependency trees before typechecking. The lockfile ships in the same commit as
+  # package.json, so on the update path they always agree; a resolution that doesn't match the lockfile
+  # means the tree is not what the release intended, and stops the build. The root typecheck (tsconfig
+  # `types: ["bun"]`) resolves @types/bun from the ROOT node_modules; a fresh Herdr checkout ships
+  # neither tree, so without a root install the very first build dies with TS2688 "Cannot find type
+  # definition file for 'bun'" and Herdr rolls the install back (issue #9).
+  ( cd "${PLUGIN_ROOT}" && "$BUN" install --frozen-lockfile )
+  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install --frozen-lockfile )
   # Typecheck BOTH sides before building — the Vite build itself does not typecheck, so a type
   # error would otherwise ship silently. Skip with SKIP_TYPECHECK=1 (same hatch as the pre-push hook).
   if [ "${SKIP_TYPECHECK:-}" != "1" ]; then
@@ -647,7 +648,25 @@ is_managed_checkout() {
   ! git -C "$PLUGIN_ROOT" symbolic-ref -q HEAD >/dev/null 2>&1
 }
 
-# Advance the checkout to the newest upstream commit, in whichever shape it was installed.
+# The newest vX.Y.Z tag on the remote, or empty. Printed WITHOUT the leading refs/tags/.
+# Matches the bridge's semver tag grammar (^v\d+\.\d+\.\d+$) exactly.
+newest_release_tag() {
+  local out tag
+  if out="$(git -C "$PLUGIN_ROOT" ls-remote --tags --refs --sort=-v:refname origin 'v*' 2>/dev/null)"; then
+    tag="$(echo "$out" | sed 's#^.*/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+    [ -n "$tag" ] && echo "$tag"
+    return 0
+  fi
+  # Fallback for git < 2.18 where --sort is unsupported
+  if out="$(git -C "$PLUGIN_ROOT" ls-remote --tags --refs origin 'v*')"; then
+    tag="$(echo "$out" | sed 's#^.*/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+    [ -n "$tag" ] && echo "v${tag}"
+    return 0
+  fi
+  return 1
+}
+
+# Advance the checkout to the newest release, in whichever shape it was installed.
 # `git pull --ff-only` alone was the bug in #63: with no branch there is nothing to pull into, so
 # every turnkey install failed with "You are not currently on a branch" and could never self-update.
 update_checkout() {
@@ -661,22 +680,38 @@ update_checkout() {
     git -C "$PLUGIN_ROOT" pull --ff-only
     return
   fi
-  # Detached: re-detach onto the default branch tip the same way Herdr got us here. `--depth 1` only
-  # when we are ALREADY shallow, so an update never truncates the history of a full clone someone
-  # happens to have detached. `--force` because cmd_build runs `bun install`, which can rewrite the
-  # TRACKED lockfiles: a plain checkout would then refuse on the dirty tree and re-break the very
-  # update path this fixes. Discarding local edits here matches Herdr's own refresh semantics — its
-  # reinstall replaces the managed checkout wholesale.
-  echo "updating Collie (Herdr-managed checkout: fetch + detach onto origin HEAD)…"
+  # Detached: pin to the newest vX.Y.Z release tag (or COLLIE_UPDATE_REF override).
+  # `--depth 1` only when we are ALREADY shallow, so an update never truncates the history of a full
+  # clone someone happens to have detached. `--force` so a dirty tree cannot wedge the update path.
+  local target="${COLLIE_UPDATE_REF:-}"
+  if [ -z "$target" ]; then
+    if ! target="$(newest_release_tag)"; then
+      echo "error: failed to query release tags from origin" >&2
+      return 1
+    fi
+  fi
+  if [ -z "$target" ]; then
+    echo "error: no vX.Y.Z release tag found on origin; refuse to update to unverified origin HEAD" >&2
+    echo "       (override with COLLIE_UPDATE_REF=<tag-or-ref> if you intended a specific ref)" >&2
+    return 1
+  fi
+
+  echo "updating Collie (Herdr-managed checkout: fetch + detach onto tag ${target})…"
   if [ "$(git -C "$PLUGIN_ROOT" rev-parse --is-shallow-repository)" = true ]; then
-    git -C "$PLUGIN_ROOT" fetch --depth 1 origin HEAD
+    git -C "$PLUGIN_ROOT" fetch --depth 1 origin tag "$target"
   else
-    git -C "$PLUGIN_ROOT" fetch origin HEAD
+    git -C "$PLUGIN_ROOT" fetch origin tag "$target"
   fi
   # -q: without it checkout warns "you are leaving 1 commit behind" on every single update — true,
   # alarming, and useless here, since the commit we leave is the release we just replaced.
-  git -C "$PLUGIN_ROOT" checkout -q --detach --force FETCH_HEAD
-  echo "→ now at $(git -C "$PLUGIN_ROOT" log -1 --format='%h %s')"
+  git -C "$PLUGIN_ROOT" checkout -q --detach --force "refs/tags/${target}"
+  local landed
+  landed="$(git -C "$PLUGIN_ROOT" describe --tags --exact-match 2>/dev/null || true)"
+  if [ "$landed" != "$target" ]; then
+    echo "error: checkout landed at '${landed:-unknown}', expected tag '${target}'" >&2
+    return 1
+  fi
+  echo "→ now at ${target} ($(git -C "$PLUGIN_ROOT" log -1 --format='%h %s'))"
 }
 
 # Update to the latest release. Collie is a link-mode Herdr plugin, so the checkout on disk IS the

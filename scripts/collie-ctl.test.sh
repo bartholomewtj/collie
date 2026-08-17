@@ -741,7 +741,7 @@ install_fake_bun() {
   : > "$calls"
   cat > "$target" <<EOF
 #!/bin/sh
-printf '%s|%s|%s\n' "\$0" "\$PATH" "\${COLLIE_VAPID_PRIVATE:-unset}" >> "$calls"
+printf '%s|%s|%s|%s\n' "\$0" "\$PATH" "\${COLLIE_VAPID_PRIVATE:-unset}" "\$*" >> "$calls"
 mkdir -p dist-staging
 exit 0
 EOF
@@ -851,23 +851,31 @@ stage_origin() {
   git_q -C "$ORIGIN_DIR" commit -qm "first"
 }
 
+# An annotated release tag on the origin repo.
+tag_origin() {
+  git_q -C "$ORIGIN_DIR" tag -a "$1" -m "$1"
+}
+
 # One more upstream commit, so an update has something to move to.
 advance_origin() {
-  echo "v2" > "${ORIGIN_DIR}/VERSION"
+  local ver="${1:-v2}"
+  echo "$ver" > "${ORIGIN_DIR}/VERSION"
   git_q -C "$ORIGIN_DIR" add -A
-  git_q -C "$ORIGIN_DIR" commit -qm "second"
+  git_q -C "$ORIGIN_DIR" commit -qm "${ver}"
 }
 
 # Run update_checkout() against an arbitrary checkout, with the control script's own PLUGIN_ROOT
 # repointed at it (sourcing computes PLUGIN_ROOT from BASH_SOURCE, so it must be overridden after).
+# Optional second argument injects extra environment lines (e.g. export COLLIE_UPDATE_REF=v0.29.0).
 run_update_checkout() {
-  local root="$1" harness="${CASE_DIR}/update-harness.sh"
+  local root="$1" extra_env="${2:-}" harness="${CASE_DIR}/update-harness.sh"
   cat > "$harness" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export HOME="$HOME_DIR"
 export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
 export PATH="$BIN_DIR:$BASE_PATH"
+${extra_env}
 source "$CTL"
 PLUGIN_ROOT="$root"
 update_checkout
@@ -875,20 +883,22 @@ EOF
   bash "$harness" 2>&1
 }
 
-# The #63 regression: a Herdr-managed checkout must advance — even with a tracked file dirtied by the
-# build (`bun install` can rewrite the committed lockfiles), which a plain checkout would refuse on,
-# re-breaking update permanently. It must stay detached and stay shallow.
+# The #63 regression: a Herdr-managed checkout must advance to the newest release tag — even with a
+# tracked file dirtied by the build (`bun install` can rewrite the committed lockfiles), which a plain
+# checkout would refuse on, re-breaking update permanently. It must stay detached and stay shallow.
 test_update_advances_a_herdr_managed_checkout() {
   setup_case update-managed
   stage_origin
+  tag_origin v0.29.0
   local root="${CASE_DIR}/managed"
   mkdir -p "$root"
   # Verbatim what herdr's plugin_install does (src/cli/plugin.rs, git_checkout).
   git_q -C "$root" init -q
   git_q -C "$root" remote add origin "$ORIGIN_DIR"
-  git_q -C "$root" fetch -q --depth 1 origin HEAD
-  git_q -C "$root" checkout -q --detach FETCH_HEAD
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
   advance_origin
+  tag_origin v0.30.0
   echo "rewritten-by-bun-install" > "${root}/bun.lock"
 
   local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
@@ -897,18 +907,156 @@ test_update_advances_a_herdr_managed_checkout() {
   assert_eq "$(cat "${root}/VERSION")" "v2"
   assert_eq "$(cat "${root}/bun.lock")" "lock-v1"   # --force discarded the build's rewrite
   assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "true"
-  git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1 &&
+  if git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
     fail "managed checkout should still be detached"
+  fi
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
   # Idempotent: a second update with nothing new upstream is a no-op, not an error.
   run_update_checkout "$root" >/dev/null || fail "second update_checkout failed"
 }
 
+# Issue #6: update must pin to the newest vX.Y.Z release tag on origin rather than whatever commit
+# sits on the default branch tip. An unreleased commit on main must be ignored.
+test_update_pins_a_managed_checkout_to_the_newest_release_tag() {
+  setup_case update-pin-tag
+  stage_origin
+  tag_origin v0.29.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
+
+  advance_origin
+  tag_origin v0.30.0
+  # Untagged commit past v0.30.0 — update must NOT checkout this commit
+  echo "v3-unreleased" > "${ORIGIN_DIR}/VERSION"
+  git_q -C "$ORIGIN_DIR" add -A
+  git_q -C "$ORIGIN_DIR" commit -qm "unreleased tip"
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_contains "$out" "v0.30.0"
+  assert_eq "$(cat "${root}/VERSION")" "v2"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+  assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "true"
+  if git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    fail "managed checkout should still be detached"
+  fi
+}
+
+# The tag selector must match bridge/update.ts:24 (^v\d+\.\d+\.\d+$) exactly: non-semver tags and
+# prereleases are ignored even when they sort higher.
+test_update_ignores_prereleases_and_non_semver_tags() {
+  setup_case update-filter-semver
+  stage_origin
+  tag_origin v0.30.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.30.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.30.0
+
+  advance_origin v2-rc
+  tag_origin v0.31.0-rc.1
+  advance_origin v2-nightly
+  tag_origin nightly
+  advance_origin v2-latest
+  tag_origin latest
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+}
+
+# Sort order must be version-numeric, not lexical — e.g. v0.100.1 outranks v0.9.0.
+test_update_picks_the_highest_version_not_the_highest_string() {
+  setup_case update-numeric-sort
+  stage_origin
+  tag_origin v0.9.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.9.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.9.0
+
+  advance_origin
+  tag_origin v0.100.1
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.100.1"
+}
+
+# When origin has no vX.Y.Z release tags, update must refuse and leave HEAD completely untouched.
+test_update_refuses_when_no_release_tag_exists() {
+  setup_case update-no-tags
+  stage_origin
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin HEAD
+  git_q -C "$root" checkout -q --detach FETCH_HEAD
+
+  advance_origin
+  local head_before; head_before="$(git -C "$root" rev-parse HEAD)"
+
+  set +e
+  local out; out="$(run_update_checkout "$root")"; local rc=$?
+  set -e
+
+  [ "$rc" -ne 0 ] || fail "update succeeded on origin without release tags"
+  assert_contains "$out" "COLLIE_UPDATE_REF"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$head_before"
+}
+
+# COLLIE_UPDATE_REF overrides tag selection (for rollbacks, incident pinning, and untagged forks).
+test_update_honours_an_explicit_ref_override() {
+  setup_case update-ref-override
+  stage_origin
+  tag_origin v0.29.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
+
+  advance_origin
+  tag_origin v0.30.0
+
+  local out; out="$(run_update_checkout "$root" "export COLLIE_UPDATE_REF=v0.29.0")" ||
+    fail "update_checkout with override failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.29.0"
+}
+
+# Updating when already on the newest release tag is a clean, idempotent no-op.
+test_update_is_idempotent_on_the_newest_tag() {
+  setup_case update-idempotent
+  stage_origin
+  tag_origin v0.30.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.30.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.30.0
+
+  run_update_checkout "$root" >/dev/null || fail "first update failed"
+  local out; out="$(run_update_checkout "$root")" || fail "second update failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+}
+
 # The other shape — a dev clone linked with `herdr plugin link`. It is on a branch, so it must still
-# fast-forward, keep its branch, and keep its full history (no --depth truncation).
+# fast-forward, keep its branch, and keep its full history (no --depth truncation), even when release
+# tags exist on the remote (tag-pinning is scoped to managed checkouts so it never detaches dev branches).
 test_update_fast_forwards_a_linked_clone() {
   setup_case update-linked
   stage_origin
+  tag_origin v0.29.0
   advance_origin
+  tag_origin v0.30.0
   local root="${CASE_DIR}/clone"
   git_q clone -q "$ORIGIN_DIR" "$root"
   git_q -C "$ORIGIN_DIR" commit -q --allow-empty -m "third"
@@ -919,6 +1067,34 @@ test_update_fast_forwards_a_linked_clone() {
   assert_eq "$(git -C "$root" symbolic-ref --short HEAD)" "main"
   assert_eq "$(git -C "$root" rev-list --count HEAD)" "3"
   assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "false"
+}
+
+# cmd_build must pass --frozen-lockfile to bun install in both root and web/ so that dependencies
+# cannot silently drift or execute untracked resolutions during update.
+test_build_installs_with_a_frozen_lockfile() {
+  setup_case build-frozen-lockfile
+  local calls="${CASE_DIR}/bun.calls"
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+
+  local harness="${CASE_DIR}/build-harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+export SKIP_VERSION_CHECK=1
+export SKIP_TYPECHECK=1
+source "$CTL"
+PLUGIN_ROOT="${CASE_DIR}/repo"
+mkdir -p "\${PLUGIN_ROOT}/web"
+cmd_build
+EOF
+  bash "$harness" > "${CASE_DIR}/build.out" 2>&1 || fail "cmd_build failed"
+  local install_calls
+  install_calls="$(grep '|install ' "$calls" || true)"
+  [ -n "$install_calls" ] || fail "no bun install calls were recorded"
+  assert_eq "$(grep -c -- '--frozen-lockfile' "$calls")" "2"
 }
 
 # A checkout that isn't a git repo at all (a copied tree) must fail with the reinstall command, not a
@@ -1224,7 +1400,14 @@ test_launchd_bootstrap_retries
 test_bun_resolution
 test_non_absolute_bun_never_reaches_path
 test_missing_bun_still_reports
+test_build_installs_with_a_frozen_lockfile
 test_update_advances_a_herdr_managed_checkout
+test_update_pins_a_managed_checkout_to_the_newest_release_tag
+test_update_ignores_prereleases_and_non_semver_tags
+test_update_picks_the_highest_version_not_the_highest_string
+test_update_refuses_when_no_release_tag_exists
+test_update_honours_an_explicit_ref_override
+test_update_is_idempotent_on_the_newest_tag
 test_update_fast_forwards_a_linked_clone
 test_update_reports_a_non_git_checkout
 test_registry_refresh_skips_a_managed_checkout
