@@ -278,9 +278,15 @@ self_dnsname() {
 # TailscaleIPs — comma-joined for COLLIE_TAILSCALE_HOSTS. The bridge's Host allowlist is fail-closed
 # (issue #3), and without this every tailnet deployment would need COLLIE_PUBLIC_HOSTS set by hand.
 # Prints nothing if tailscale is absent or not up; callers must tolerate empty.
+# Always exits 0: this script runs under `set -o pipefail`, and `tailscale status` is a failing
+# left-hand side on CI and on any host that is logged out. A failing substitution here used to
+# abort `cmd_start` before the bridge came up (test_serve_failure_does_not_abort_start).
+# Uses PATH `bun`, not `$BUN`: lifecycle tests stub BUN=/bin/true so the bridge is not launched,
+# but still need a real interpreter to parse the fake tailscale JSON.
 self_hosts() {
+  command -v bun >/dev/null || return 0
   tailscale status --json 2>/dev/null | bun -e \
-    "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d).Self;const o=[];if(s.DNSName)o.push(s.DNSName.replace(/\.\$/,''));for(const ip of s.TailscaleIPs||[])o.push(ip.includes(':')?'['+ip+']':ip);process.stdout.write(o.join(','))}catch{}})"
+    "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d).Self;const o=[];if(s.DNSName)o.push(s.DNSName.replace(/\.\$/,''));for(const ip of s.TailscaleIPs||[])o.push(ip.includes(':')?'['+ip+']':ip);process.stdout.write(o.join(','))}catch{}})" || true
 }
 
 bridge_url() {
@@ -537,7 +543,7 @@ cmd_exec_bridge() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   export_bridge_env
   if [ "${COLLIE_SKIP_SERVE:-}" != "1" ] && [ -z "${COLLIE_TAILSCALE_HOSTS:-}" ]; then
-    COLLIE_TAILSCALE_HOSTS="$(self_hosts)"
+    COLLIE_TAILSCALE_HOSTS="$(self_hosts || true)"
   fi
   export COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}"
   export COLLIE_PORT="$PORT"
@@ -569,7 +575,7 @@ cmd_start() {
   harden_config_perms
   ensure_build || true
   COLLIE_TAILSCALE_HOSTS=""
-  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ]; then COLLIE_TAILSCALE_HOSTS="$(self_hosts)"; fi
+  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ]; then COLLIE_TAILSCALE_HOSTS="$(self_hosts || true)"; fi
   export COLLIE_TAILSCALE_HOSTS
   if have_systemd; then
     write_unit

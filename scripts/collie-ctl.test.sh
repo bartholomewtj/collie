@@ -356,7 +356,7 @@ print_status_banner() { echo "BANNER"; }
 cmd_start
 EOF
   bash "$harness" > "${CASE_DIR}/start.out" 2>&1 ||
-    fail "a failing cmd_serve aborted cmd_start"
+    fail "a failing cmd_serve aborted cmd_start: $(cat "${CASE_DIR}/start.out")"
   assert_contains "$(cat "${CASE_DIR}/start.out")" 'BANNER'
 }
 
