@@ -9,6 +9,7 @@
 //   * ONLY KEYS THE SCREEN NAMED. A menu is claimed on the strength of the screen naming its own
 //     keys in a `·`-separated "<key> to <verb>" footer. Every emitted action key comes from that
 //     footer; the only keys added are the ARROWS the screen advertised. Nothing is inferred.
+//     A control key is excluded even when the screen names it (.adr/0013).
 //   * NO DIGITS, EVER (.adr/0009). Live-probed in Claude's `/model` picker: a digit confirms AND
 //     writes the choice to the user's default for new sessions. A digit is a valid Herdr key, so
 //     nothing downstream would reject one — the ban has to live in `menuKeyFor`.
@@ -48,10 +49,15 @@ export const MENU_RIGHT_KEYS = ["Right"];
  * The whitelist is deliberately small (CLAUDE.md / HERDR_API.md — the grammar is `+`-joined, and
  * PageUp/Home/End/Delete are rejected upstream, so they are never emitted):
  *
- *   enter · esc/escape · tab · shift+tab · a bare lowercase letter · ↑ ↓ ← → · ctrl+<letter>
+ *   enter · esc/escape · tab · shift+tab · a bare lowercase letter · ↑ ↓ ← →
  *
- * NOT digits: see the header and .adr/0009. A digit token would be a valid Herdr key, which is
- * exactly why the ban has to live here rather than being left to the key validator.
+ * NOT digits: see the header and .adr/0009. NOT ctrl+<letter> either, and for a different reason
+ * (.adr/0013): every other key here is IN-BAND — the modal consumes it, so the worst case is the
+ * wrong answer to the question on screen. A control key is not. ctrl+c/d/z reach the harness's
+ * signal handling whatever the screen shows: interrupt, EOF, suspend. Since the label and the key
+ * are parsed from the SAME agent-written text, an agent printing "ctrl+c to Continue" got a button
+ * reading "Continue" that killed its own run (issue #11). The operator's own Ctrl-C is unaffected —
+ * it is a hardcoded preset in components/nav-tray.tsx and never comes through here.
  */
 export function menuKeyFor(token: string): string | null {
   const raw = token.trim();
@@ -67,8 +73,6 @@ export function menuKeyFor(token: string): string | null {
   // A bare lowercase letter, matched case-SENSITIVELY: "S" and "s" are different keystrokes, and
   // Claude prints the one it means. An uppercase token is prose ("A" in "A to Z"), not a key hint.
   if (/^[a-z]$/.test(raw)) return raw;
-  const ctrl = /^ctrl\+([a-z])$/.exec(lower);
-  if (ctrl) return `ctrl+${ctrl[1]}`;
   return null;
 }
 
