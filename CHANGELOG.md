@@ -6,13 +6,24 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
-## [0.29.1] - 2026-08-17
+## [0.30.1] - 2026-08-17
 
 ### Fixed
 
 - **Malformed percent-escapes in a pane or tab URL return 400** instead of Bun's HTML dev error page (#10)
 - **`Bun.serve` runs with `development: false` and an `error()` catch-all**, so no stack trace or source path can reach a client (#10)
 - **Error responses name what failed and nothing else**; the full error, with paths, now goes only to the log — read it with `journalctl --user -u collie -f` (#10)
+
+## [0.30.0] - 2026-08-17
+
+### Added
+
+- **`COLLIE_PUSH_ALLOWED_HOSTS` allows custom push services** while validating endpoints against known push providers (Google, Apple, Mozilla, Microsoft) (#7, dff5b67)
+
+### Fixed
+
+- **`/api/subscribe` validates push endpoints, key lengths, and caps stored subscriptions** — stops arbitrary outbound HTTPS requests on agent state changes and caps stored subscriptions at 20 (#7, dff5b67)
+- **Push delivery options include a 10s send timeout**, preventing black-hole endpoints from stalling broadcast rounds (#7, dff5b67)
 
 ## [0.29.0] - 2026-08-16
 

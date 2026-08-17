@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Push, topicIsSendable } from "./push.ts";
-import type { PushSender, PushSubscription } from "./push.ts";
+import type { PushSender, PushSubscription, SendOptions } from "./push.ts";
 import { loadConfig } from "./config.ts";
 
 // The broadcast prune-vs-log logic and the on-disk persistence are the untested-by-Bun.serve parts.
@@ -22,8 +22,11 @@ afterAll(async () => {
   await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
+const FIXTURE_P256DH = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+const FIXTURE_AUTH = "AgICAgICAgICAgICAgICAg";
+
 function sub(endpoint: string): PushSubscription {
-  return { endpoint, keys: { p256dh: "p", auth: "a" } };
+  return { endpoint, keys: { p256dh: FIXTURE_P256DH, auth: FIXTURE_AUTH } };
 }
 
 /** Enable push and seed subscriptions without the real VAPID/web-push init handshake. */
@@ -269,7 +272,7 @@ describe("Push — per-message collapse topic (update must not share the herd sl
   // herd summary and an update push silently overwrite each other. Capture the options + payload the
   // sender receives to pin the seam the update feature must never regress.
   function capturing() {
-    const sends: { payload: string; options: { topic: string; TTL: number; urgency?: string } }[] = [];
+    const sends: { payload: string; options: SendOptions }[] = [];
     const sender: PushSender = (_s, payload, options) => {
       sends.push({ payload, options });
       return Promise.resolve();
@@ -287,7 +290,7 @@ describe("Push — per-message collapse topic (update must not share the herd sl
 
     // No `urgency` — an update notice is NOT worth punching through Android's power-saving the way a
     // waiting agent is. The absence is the decision; `toEqual` pins it.
-    expect(sends[0]!.options).toEqual({ topic: "collie-updates", TTL: 259_200 });
+    expect(sends[0]!.options).toEqual({ topic: "collie-updates", TTL: 259_200, timeout: 10_000 });
     expect(JSON.parse(sends[0]!.payload).data.target).toBe("settings");
   });
 
@@ -301,7 +304,7 @@ describe("Push — per-message collapse topic (update must not share the herd sl
 
     // `urgency: "high"` is not cosmetic: at web-push's default (`normal`) FCM lets Android defer the
     // message by Doze / App Standby bucket, which silently ate alerts entirely. See push.ts.
-    expect(sends[0]!.options).toEqual({ topic: "collie-herd", TTL: 21_600, urgency: "high" });
+    expect(sends[0]!.options).toEqual({ topic: "collie-herd", TTL: 21_600, urgency: "high", timeout: 10_000 });
     expect("target" in JSON.parse(sends[0]!.payload).data).toBe(false);
   });
 
@@ -427,30 +430,30 @@ describe("Push — superseding, metadata and forget", () => {
 
     await push.notify("hi", "there");
     // Not `toMatchObject`: the point is that the metadata does NOT ride along into the signer.
-    expect(seen).toEqual([{ endpoint: "a", keys: { p256dh: "p", auth: "a" } }]);
+    expect(seen).toEqual([{ endpoint: "a", keys: { p256dh: FIXTURE_P256DH, auth: FIXTURE_AUTH } }]);
   });
 
   test("rows written before the metadata existed load unchanged", async () => {
     const cfg = await tempCfg();
     await writeFile(
       join(cfg.stateDir, "push-subscriptions.json"),
-      JSON.stringify([sub("legacy"), { endpoint: "junk" }, sub("also")]),
+      JSON.stringify([sub("https://fcm.googleapis.com/legacy"), { endpoint: "junk" }, sub("https://fcm.googleapis.com/also")]),
     );
     const push = new Push(cfg);
     await push.loadStore();
 
     // The malformed row is dropped; the two usable ones arrive with no metadata invented for them.
-    expect(push.listSubscriptions()).toEqual([{ endpoint: "legacy" }, { endpoint: "also" }]);
+    expect(push.listSubscriptions()).toEqual([{ endpoint: "https://fcm.googleapis.com/legacy" }, { endpoint: "https://fcm.googleapis.com/also" }]);
   });
 
   test("loadStore needs no VAPID — the store is a file, and that is when you clean it up", async () => {
     const cfg = await tempCfg();
-    await writeFile(join(cfg.stateDir, "push-subscriptions.json"), JSON.stringify([sub("a")]));
+    await writeFile(join(cfg.stateDir, "push-subscriptions.json"), JSON.stringify([sub("https://fcm.googleapis.com/a")]));
     const push = new Push(cfg);
     await push.loadStore();
 
     expect(push.enabled).toBe(false);
-    expect(push.listSubscriptions().map((r) => r.endpoint)).toEqual(["a"]);
+    expect(push.listSubscriptions().map((r) => r.endpoint)).toEqual(["https://fcm.googleapis.com/a"]);
     expect(await push.forget("*")).toBe(1);
   });
 
@@ -480,5 +483,74 @@ describe("Push — superseding, metadata and forget", () => {
     expect(await fileEndpoints(cfg.stateDir)).toEqual(["a"]);
     expect(await push.forget("*")).toBe(1);
     expect(await fileEndpoints(cfg.stateDir)).toEqual([]);
+  });
+
+  test("addSubscription returns full and stores nothing when cap of 20 is reached", async () => {
+    const { push } = await fresh();
+    for (let i = 0; i < 20; i++) {
+      const res = await push.addSubscription(sub(`https://fcm.googleapis.com/sub-${i}`));
+      expect(res).toBe("ok");
+    }
+    expect(push.listSubscriptions().length).toBe(20);
+
+    const fullRes = await push.addSubscription(sub("https://fcm.googleapis.com/sub-overflow"));
+    expect(fullRes).toBe("full");
+    expect(push.listSubscriptions().length).toBe(20);
+    expect(push.listSubscriptions().some((s) => s.endpoint === "https://fcm.googleapis.com/sub-overflow")).toBe(false);
+  });
+
+  test("re-subscribing an already-stored endpoint at the cap returns ok", async () => {
+    const { push } = await fresh();
+    for (let i = 0; i < 20; i++) {
+      await push.addSubscription(sub(`https://fcm.googleapis.com/sub-${i}`));
+    }
+    expect(push.listSubscriptions().length).toBe(20);
+
+    const reRes = await push.addSubscription(sub("https://fcm.googleapis.com/sub-0"), { userAgent: "updated-agent" });
+    expect(reRes).toBe("ok");
+    expect(push.listSubscriptions().length).toBe(20);
+    expect(push.listSubscriptions().find((s) => s.endpoint === "https://fcm.googleapis.com/sub-0")?.userAgent).toBe("updated-agent");
+  });
+
+  test("a replaces that frees a slot lets a new endpoint in at the cap", async () => {
+    const { push } = await fresh();
+    for (let i = 0; i < 20; i++) {
+      await push.addSubscription(sub(`https://fcm.googleapis.com/sub-${i}`));
+    }
+    expect(push.listSubscriptions().length).toBe(20);
+
+    const repRes = await push.addSubscription(sub("https://fcm.googleapis.com/new-sub"), {
+      replaces: "https://fcm.googleapis.com/sub-0",
+    });
+    expect(repRes).toBe("ok");
+    expect(push.listSubscriptions().length).toBe(20);
+    expect(push.listSubscriptions().some((s) => s.endpoint === "https://fcm.googleapis.com/new-sub")).toBe(true);
+    expect(push.listSubscriptions().some((s) => s.endpoint === "https://fcm.googleapis.com/sub-0")).toBe(false);
+  });
+
+  test("loadStore drops a row with a disallowed endpoint from a hand-written file", async () => {
+    const cfg = await tempCfg();
+    await writeFile(
+      join(cfg.stateDir, "push-subscriptions.json"),
+      JSON.stringify([
+        sub("https://fcm.googleapis.com/valid"),
+        sub("https://10.0.0.5:8443/admin/x"),
+        sub("https://evil.example.com/bad"),
+      ]),
+    );
+    const push = new Push(cfg);
+    await push.loadStore();
+
+    expect(push.listSubscriptions().map((r) => r.endpoint)).toEqual(["https://fcm.googleapis.com/valid"]);
+  });
+
+  test("loadStore stops loading when cap of 20 is reached", async () => {
+    const cfg = await tempCfg();
+    const rows = Array.from({ length: 25 }, (_, i) => sub(`https://fcm.googleapis.com/item-${i}`));
+    await writeFile(join(cfg.stateDir, "push-subscriptions.json"), JSON.stringify(rows));
+    const push = new Push(cfg);
+    await push.loadStore();
+
+    expect(push.listSubscriptions().length).toBe(20);
   });
 });

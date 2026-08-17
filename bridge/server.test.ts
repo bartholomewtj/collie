@@ -66,6 +66,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     deviceAllowlist: [],
     allowedOrigins: [],
     publicHosts: [],
+    pushAllowedHosts: [],
     vapidPublic: "",
     vapidPrivate: "",
     vapidSubject: "mailto:admin@example.com",
@@ -955,6 +956,17 @@ describe("startupWarnings — security-posture nags", () => {
     const ws = startupWarnings(cfg({ host: "0.0.0.0", allowNonLoopbackBind: true }));
     expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(true);
     expect(has(ws, "bound to 0.0.0.0")).toBe(true);
+  });
+
+  test("pushAllowedHosts with private/loopback entry produces a warning naming the offending host", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["10.0.0.5", "box.local"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS contains private/loopback host(s) (10.0.0.5, box.local)")).toBe(true);
+    expect(has(ws, "issue #7")).toBe(true);
+  });
+
+  test("pushAllowedHosts with normal push hosts produces no warning", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["push.custom.org", "fcm.googleapis.com"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS")).toBe(false);
   });
 });
 

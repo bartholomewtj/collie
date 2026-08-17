@@ -190,6 +190,12 @@ export interface Config {
    * to your MagicDNS name (`collie.<tailnet>.ts.net`), especially in http serve mode.
    */
   publicHosts: string[];
+  /**
+   * Additional push-service hosts allowed for Web Push endpoints (extends {@link DEFAULT_PUSH_HOSTS}).
+   * Entries are matched as an exact hostname or dot-suffix (e.g. `push.example.com` covers
+   * `a.push.example.com`). Only needed when running a self-hosted push service.
+   */
+  pushAllowedHosts: string[];
   /** Web Push (VAPID). All three required to enable push; otherwise push is disabled. */
   vapidPublic: string;
   vapidPrivate: string;
@@ -315,6 +321,7 @@ export function loadConfig(): Config {
     deviceAllowlist: envList("COLLIE_DEVICE_ALLOWLIST"),
     allowedOrigins: envList("COLLIE_ALLOWED_ORIGINS"),
     publicHosts: envList("COLLIE_PUBLIC_HOSTS"),
+    pushAllowedHosts: envList("COLLIE_PUSH_ALLOWED_HOSTS"),
     vapidPublic: process.env.COLLIE_VAPID_PUBLIC ?? "",
     vapidPrivate: process.env.COLLIE_VAPID_PRIVATE ?? "",
     vapidSubject: process.env.COLLIE_VAPID_SUBJECT ?? "mailto:admin@example.com",
