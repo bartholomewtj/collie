@@ -101,14 +101,15 @@ Four sharp edges:
   permissions keep other local users out; Collie's port is TCP, so they're all in. An agent you
   deliberately ran as another user to contain it can still `curl 127.0.0.1:8787` and type into any
   pane. Set the device gate below if that uid boundary was your containment — but it gates **writes
-  only**. Snapshots, pane output and transcript history stay readable by any local uid, so the gate
+  only** (including bridge-wide notification settings; silencing alerts counts as damage and is gated).
+  Snapshots, pane output and transcript history stay readable by any local uid, so the gate
   bounds damage, not disclosure
   ([Variant B](#variant-b--identity-aware-proxy--per-device-authorisation),
   [ARCHITECTURE.md §6](./ARCHITECTURE.md#6-security-model)).
 - **Access is device-level, not person-level.** Tailscale proves the device, not who's holding it.
   No password, no session — an unlocked or stolen phone (or anyone else on your tailnet) is an open
   shell. The idle-lock pauses an unattended screen and gates nothing — it is not auth, and never was
-  ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)). Every write action (replies, keys, uploads, pane/tab
+  ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)). Every terminal action (replies, keys, uploads, pane/tab
   create/close) is appended to `<state-dir>/audit.log`, so there is at least a trail — but a trail
   is not a gate.
 - **One bridge fronts _every_ session.** With `COLLIE_MULTI_SESSION` on (the default), the bridge
@@ -133,9 +134,9 @@ It's built single-user and tailnet-only. The defenses:
   had full write access. A host-local `curl` bypasses serve and has no header either; allow it back
   with `COLLIE_TRUSTED_USER_OPTIONAL=1`, at the cost of re-opening the tagged-node gap.
 - **Optional per-device gate** — behind a proxy that injects a device-identity header, set
-  `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents;
-  any other device is read-only, and so is a request that arrives without the header at all. Off by
-  default; revoke a device by dropping it from the list.
+  `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents
+  or change notification settings; any other device is read-only, and so is a request that arrives
+  without the header at all. Off by default; revoke a device by dropping it from the list.
   See [Deployment variants](#deployment-variants) for the proxy this requires.
 - **Same-origin gate + strict CSP**; pane output renders as React text nodes, never `innerHTML`.
 - **Optional Host allowlist** — set `COLLIE_PUBLIC_HOSTS` to the exact host(s) you serve on (e.g.
@@ -536,21 +537,23 @@ This is the right choice unless you specifically need per-device control.
 
 ### Variant B — identity-aware proxy + per-device authorisation
 
-Use this when some devices should **drive** agents and others should be **read-only** — e.g. your
-phone can reply, but a shared/less-trusted device can only watch. Collie reads an opaque device id
-from a request header (`COLLIE_DEVICE_HEADER`) and checks it against `COLLIE_DEVICE_ALLOWLIST`:
-allow-listed → full access, any other id → read-only, header absent → read-only as well.
+Use this when some devices should **drive** agents (or change notification settings) and others
+should be **read-only** — e.g. your phone can reply, but a shared/less-trusted device can only watch.
+Collie reads an opaque device id from a request header (`COLLIE_DEVICE_HEADER`) and checks it
+against `COLLIE_DEVICE_ALLOWLIST`: allow-listed → full access, any other id → read-only, header
+absent → read-only as well.
 
 Treating an absent header as read-only is the point: switching this on is you asserting that your
 proxy sets the header on every request, so a request without one did not come through that proxy and
-must not drive a terminal. **Device-auth only works behind a reverse proxy that authenticates the
-device and injects the header.** It is not a standalone flag.
+must not drive a terminal or alter bridge-wide alerts. **Device-auth only works behind a reverse
+proxy that authenticates the device and injects the header.** It is not a standalone flag.
 
-Note what "read-only" means here: the gate covers writes (replies, keys, uploads, pane and tab
-create/close). Reading panes, polling the snapshot and listing sessions stay open to any caller that
-gets past the same-origin and Host checks, exactly as they do for a device that is simply not on the
-allowlist. Pane text can contain anything your agents printed, so the header is not a confidentiality
-boundary.
+Note what "read-only" means here: the gate covers writes: replies, keys, uploads, pane and tab
+create/close, and the bridge-wide notification settings (do-not-disturb, which statuses push, and
+registering a device for push). Reading panes, polling the snapshot, listing sessions, and reading
+notification preferences stay open to any caller that gets past the same-origin and Host checks,
+exactly as they do for a device that is simply not on the allowlist. Pane text can contain anything
+your agents printed, so the header is not a confidentiality boundary.
 
 Two consequences worth knowing before you turn this on:
 
@@ -606,8 +609,9 @@ location / {
 Revoke a device by dropping its id from `COLLIE_DEVICE_ALLOWLIST` and restarting
 (`herdr plugin action invoke restart --plugin herdr.collie`). With the header set but the allowlist
 **empty**, every device is read-only (fail-closed), and so is a request that arrives without the
-header. In that state nothing can drive a pane, including a hand-made `curl`; recovery is an `.env`
-edit plus a restart.
+header. In that state nothing can drive a pane or change notification settings (snooze, push
+subscriptions and alert preferences are also frozen), including a hand-made `curl`; recovery is an
+`.env` edit plus a restart.
 
 This variant assumes the proxy is **on the same host**, reaching the bridge on loopback. If your
 proxy runs on a *different* node and its upstream is the bridge's own `tailscale serve` URL, the
@@ -773,9 +777,9 @@ the host's tailnet URL rather than `127.0.0.1`.
 > ```
 >
 > Per-device auth is still required, and it does real work: since 0.15.0 a request arriving *without*
-> the header is read-only, so a stray client, another service or the host's own loopback URL can watch
-> but never drive. What it cannot do is stop a caller who deliberately sets the header. The ACL is
-> what stops that, and the two together are the posture.
+> the header is read-only, so a stray client, another service or the host's own loopback URL can watch,
+> but never drive or change notification settings. What it cannot do is stop a caller who deliberately
+> sets the header. The ACL is what stops that, and the two together are the posture.
 
 **Host and Origin are different values here** — the one place this trips people up. `tailscale serve`
 Host-routes on the host's own MagicDNS name, so the proxy generally must rewrite `Host` to the

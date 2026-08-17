@@ -4,7 +4,8 @@ import { useRevalidator } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { setSnooze } from "@/lib/api";
+import { isApiErrorStatus, setSnooze } from "@/lib/api";
+import { setStatus } from "@/lib/status";
 
 // "Do not disturb" for push: a global snooze with quick presets. Server-enforced (the bridge sends
 // nothing while a deadline is active and self-resumes), so it quiets every device — for when you're
@@ -21,7 +22,13 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-export function SnoozeControl({ snoozedUntil }: { snoozedUntil: number | null }) {
+export function SnoozeControl({
+  snoozedUntil,
+  readOnly = false,
+}: {
+  snoozedUntil: number | null;
+  readOnly?: boolean;
+}) {
   const revalidator = useRevalidator();
   const [busy, setBusy] = useState(false);
   const snoozed = snoozedUntil !== null && snoozedUntil > Date.now();
@@ -31,6 +38,13 @@ export function SnoozeControl({ snoozedUntil }: { snoozedUntil: number | null })
     try {
       await setSnooze(next);
       revalidator.revalidate();
+    } catch (err) {
+      setStatus(
+        isApiErrorStatus(err, 403)
+          ? "Read-only — this device isn't authorised to change notification settings"
+          : "Couldn't change do not disturb",
+        "error",
+      );
     } finally {
       setBusy(false);
     }
@@ -44,9 +58,11 @@ export function SnoozeControl({ snoozedUntil }: { snoozedUntil: number | null })
           <div className="min-w-0">
             <div className="font-medium">Do not disturb</div>
             <p className="text-sm text-muted-foreground">
-              {snoozed
-                ? `Snoozed until ${formatTime(snoozedUntil)} — no pushes until then.`
-                : "Pause all push notifications for a while."}
+              {readOnly
+                ? "Read-only — this device isn't authorised to change notification settings."
+                : snoozed
+                  ? `Snoozed until ${formatTime(snoozedUntil)} — no pushes until then.`
+                  : "Pause all push notifications for a while."}
             </p>
           </div>
         </div>
@@ -55,7 +71,7 @@ export function SnoozeControl({ snoozedUntil }: { snoozedUntil: number | null })
 
       <div className="flex items-center gap-2 border-t border-border/60 p-3">
         {snoozed ? (
-          <Button variant="secondary" size="sm" disabled={busy} onClick={() => apply(null)}>
+          <Button variant="secondary" size="sm" disabled={busy || readOnly} onClick={() => apply(null)}>
             Resume now
           </Button>
         ) : (
@@ -64,7 +80,7 @@ export function SnoozeControl({ snoozedUntil }: { snoozedUntil: number | null })
               key={p.label}
               variant="outline"
               size="sm"
-              disabled={busy}
+              disabled={busy || readOnly}
               onClick={() => apply(Date.now() + p.minutes * 60_000)}
             >
               {p.label}

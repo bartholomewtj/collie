@@ -11,7 +11,8 @@ import type { UpdateStatus } from "./types.ts";
 //     over anonymous HTTPS (the repo is public) and compare the newest `vX.Y.Z` to the running
 //     version. No `git` subprocess (the SSH origin has no agent under systemd --user, and a
 //     non-git install has no origin at all), no auth (the 60/hr anonymous limit is irrelevant at a
-//     few-hours cadence), and the fetch is trivially injectable for `bun test`.
+//     few-hours cadence — the on-demand endpoint is what makes the limit reachable, so checkRelease()
+//     enforces CHECK_MIN_INTERVAL_MS), and the fetch is trivially injectable for `bun test`.
 //   • bridgeStale — is the running bridge PROCESS behind the on-disk bridge source? The frontend
 //     build id can't answer this (it's read fresh from disk, so a stale bridge reports the NEW
 //     bundle). We stamp the bridge sources at process start and compare; a rebuilt-but-not-restarted
@@ -27,6 +28,15 @@ const TAGS_TIMEOUT_MS = 10_000;
 // bridgeStale is read on every snapshot poll; recompute the on-disk stamp at most this often so a
 // busy poll loop doesn't stat the source tree dozens of times a second (the value barely changes).
 const STALE_TTL_MS = 5_000;
+
+/**
+ * Minimum gap between upstream release checks, whoever asks. The in-flight guard below only
+ * COALESCES concurrent calls — once a fetch settles the next call fetches again — so a client
+ * looping `POST /api/update/check` was one anonymous GitHub request per POST, against a 60/hr limit
+ * that the real 6-hourly check shares (issue #8). Counted from the ATTEMPT, not the success, so a
+ * failing upstream can't be retried in a tight loop either.
+ */
+export const CHECK_MIN_INTERVAL_MS = 60_000;
 
 // ── Pure helpers (unit-tested) ────────────────────────────────────────────────
 
@@ -204,6 +214,7 @@ export class UpdateMonitor {
   private checkedAt: number | null = null;
   private staleAt = Number.NEGATIVE_INFINITY;
   private staleValue = false;
+  private lastAttemptAt = Number.NEGATIVE_INFINITY;
   private inFlight: Promise<void> | null = null;
 
   constructor(private readonly deps: UpdateMonitorDeps) {}
@@ -215,6 +226,11 @@ export class UpdateMonitor {
    */
   checkRelease(): Promise<void> {
     if (this.inFlight) return this.inFlight;
+    const now = this.deps.now();
+    // Sentinel start means the first check is never throttled. The 6-hourly timer in index.ts is
+    // far outside this window, so only the on-demand endpoint is ever affected.
+    if (now - this.lastAttemptAt < CHECK_MIN_INTERVAL_MS) return Promise.resolve();
+    this.lastAttemptAt = now;
     this.inFlight = this.runCheck().finally(() => {
       this.inFlight = null;
     });

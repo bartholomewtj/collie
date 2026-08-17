@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getNotifyPrefs, setNotifyPrefs, type NotifyPrefs } from "@/lib/api";
+import { getNotifyPrefs, isApiErrorStatus, setNotifyPrefs, type NotifyPrefs } from "@/lib/api";
+import { setStatus } from "@/lib/status";
 
 // Settings-page controller for the bridge-wide notification-type prefs (which agent statuses push).
 // Loads once on mount; a toggle is optimistic — flip the switch immediately, POST the single-key
@@ -26,8 +27,14 @@ export function useNotifyPrefs() {
     try {
       const updated = await setNotifyPrefs({ [key]: next });
       setPrefs(updated); // reconcile with the server's merged view
-    } catch {
+    } catch (err) {
       setPrefs((prev) => (prev ? { ...prev, [key]: !next } : prev)); // revert on failure
+      setStatus(
+        isApiErrorStatus(err, 403)
+          ? "Read-only — this device isn't authorised to change notification settings"
+          : "Couldn't change notification preferences",
+        "error",
+      );
     } finally {
       setBusy(false);
     }
