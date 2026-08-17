@@ -45,8 +45,8 @@ Under `COLLIE_DEVICE_HEADER`, unallowlisted devices or callers without the devic
   - Checked `isReadOnly(root?.device)` and passed `readOnly` into `NotifyPrefsControl`, `SnoozeControl`, and disabled the push subscription toggle with reason explanation.
 
 ### 5. Architectural Record & Documentation
-- **`.adr/0012-notification-settings-are-writes.md`**: Recorded the decision to classify notification mutations as writes without adding a separate "settings" access level.
-- **`.adr/README.md`**: Added ADR 0012 to the index.
+- **`.adr/0013-notification-settings-are-writes.md`**: Recorded the decision to classify notification mutations as writes without adding a separate "settings" access level.
+- **`.adr/README.md`**: Added ADR 0013 to the index.
 - **`README.md` & `ARCHITECTURE.md`**: Updated security model documentation, Variant B proxy specifications, and audit log scope.
 - **`requests/issue-8-read-level-posts.md` & `specs/752e3ee2_read-level-posts.md`**: Captured request requirements and technical implementation plan.
 

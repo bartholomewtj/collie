@@ -12,7 +12,8 @@ import {
   verifyExpectedPrompt,
   type PromptBindingResult,
 } from "./prompt-binding.ts";
-import type { Push, PushSubscription } from "./push.ts";
+import type { Push } from "./push.ts";
+import { looksPrivateHost, parsePushSubscription } from "./push-endpoint.ts";
 import { herdTagFor, type SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
 import type { UpdateMonitor } from "./update.ts";
@@ -341,11 +342,15 @@ export function startServer(opts: {
         } catch {
           return text("bad subscription", 400);
         }
-        if (!isPushSubscription(body)) return text("bad subscription", 400);
-        await push.addSubscription(body, {
+        // Validate endpoint against allowed push hosts, validate key lengths, and strip unknown
+        // properties before passing to storage (issue #7).
+        const parsed = parsePushSubscription(body, cfg.pushAllowedHosts);
+        if (parsed === null) return text("bad subscription", 400);
+        const result = await push.addSubscription(parsed, {
           replaces: supersededEndpoint(body),
           userAgent: req.headers.get("user-agent") ?? undefined,
         });
+        if (result === "full") return text("too many subscriptions", 429);
         return secure(new Response(null, { status: 204 }));
       }
       if (pathname === "/api/notifications/snooze" && req.method === "POST") {
@@ -484,6 +489,12 @@ export function startupWarnings(cfg: Config): string[] {
   if (cfg.publicHosts.length === 0) {
     warnings.push(
       `[bridge] WARNING: COLLIE_PUBLIC_HOSTS is empty — Host-header validation is OFF (DNS rebinding not blocked). Set it to your MagicDNS name, especially under plain-HTTP serve mode or behind a reverse proxy.`,
+    );
+  }
+  const risky = cfg.pushAllowedHosts.filter(looksPrivateHost);
+  if (risky.length) {
+    warnings.push(
+      `[bridge] WARNING: COLLIE_PUSH_ALLOWED_HOSTS contains private/loopback host(s) (${risky.join(", ")}) — any read-level client can now make the bridge POST to them (issue #7)`,
     );
   }
   return warnings;
@@ -1402,21 +1413,6 @@ export function parseNotifyPrefsPatch(v: unknown): Partial<NotifyPrefs> | null {
     patch[key] = o[key] as boolean;
   }
   return patch;
-}
-
-// Shape-check an untrusted /api/subscribe body before persisting it (a malformed sub would be
-// stored keyed on `undefined` and silently never fire).
-function isPushSubscription(v: unknown): v is PushSubscription {
-  if (typeof v !== "object" || v === null) return false;
-  const o = v as Record<string, unknown>;
-  const keys = o.keys as Record<string, unknown> | undefined;
-  return (
-    typeof o.endpoint === "string" &&
-    typeof keys === "object" &&
-    keys !== null &&
-    typeof keys.p256dh === "string" &&
-    typeof keys.auth === "string"
-  );
 }
 
 /**

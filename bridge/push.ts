@@ -1,6 +1,11 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
+import {
+  MAX_SUBSCRIPTIONS,
+  validPushEndpoint,
+  validPushKey,
+} from "./push-endpoint.ts";
 
 // Optional Web Push (VAPID). Zero hard dependency: if `web-push` isn't installed or VAPID keys
 // aren't configured, push is silently disabled and the rest of the bridge works unchanged.
@@ -52,12 +57,15 @@ const USER_AGENT_MAX = 160;
 
 /** One row off disk. Anything that isn't a usable subscription is dropped; the two metadata fields
  *  are carried only when they are strings, so a file written before they existed loads unchanged. */
-function coerceStored(v: unknown): StoredSubscription | null {
+function coerceStored(v: unknown, extra: readonly string[] = []): StoredSubscription | null {
   if (typeof v !== "object" || v === null) return null;
   const o = v as Record<string, unknown>;
   const keys = o.keys as Record<string, unknown> | undefined;
   if (typeof o.endpoint !== "string" || typeof keys !== "object" || keys === null) return null;
   if (typeof keys.p256dh !== "string" || typeof keys.auth !== "string") return null;
+  if (!validPushEndpoint(o.endpoint, extra)) return null;
+  if (!validPushKey(keys.p256dh, 65, true)) return null;
+  if (!validPushKey(keys.auth, 16, false)) return null;
   const row: StoredSubscription = {
     endpoint: o.endpoint,
     keys: { p256dh: keys.p256dh, auth: keys.auth },
@@ -91,13 +99,17 @@ function coerceStored(v: unknown): StoredSubscription | null {
 //     `clear` leaves a handled alert on your lock screen, the exact thing the coordinator exists to
 //     prevent. It costs battery (high urgency punches through power-saving), which is the right trade
 //     for "an agent is waiting on you" and NOT for the update notice below.
-const SEND_OPTIONS = { TTL: 21_600, topic: "collie-herd", urgency: "high" } as const;
+//   • `timeout: 10_000` (10s) stops a black-hole endpoint from pinning a socket and stalling the
+//     round, since `broadcast` awaits every send under one `Promise.all`. A timed-out send surfaces
+//     as an error and feeds the existing `EVICT_AFTER` counter, so a permanently black-holed endpoint
+//     is evicted after 5 consecutive same-origin-witnessed failures without any new machinery.
+const SEND_OPTIONS = { TTL: 21_600, topic: "collie-herd", urgency: "high", timeout: 10_000 } as const;
 // Update-available pushes ride their OWN collapse topic (and a longer TTL). The `topic` — NOT the
 // client-side `tag` — is the push service's collapse key: sharing "collie-herd" would make an offline
 // device's queued herd summary and an update push silently overwrite each other. 3-day TTL, since an
 // update stays relevant far longer than a transient "needs you". The trailing "s" is not a typo:
 // "collie-update" is 13 characters, which Apple refuses outright — see the base64 note above.
-const UPDATE_SEND_OPTIONS = { TTL: 259_200, topic: "collie-updates" } as const;
+const UPDATE_SEND_OPTIONS = { TTL: 259_200, topic: "collie-updates", timeout: 10_000 } as const;
 
 /** Whether a collapse topic is one every push service will accept: RFC 8030's alphabet and 32-char
  *  ceiling, plus the length base64 can actually produce (Apple decodes it; ≡ 1 mod 4 is impossible).
@@ -136,8 +148,13 @@ function describeSendError(err: unknown): string {
   return `${message}${status}${body}`;
 }
 
-/** web-push delivery options (collapse topic + TTL + urgency), derived per message from its `type`. */
-export type SendOptions = { TTL: number; topic: string; urgency?: "very-low" | "low" | "normal" | "high" };
+/** web-push delivery options (collapse topic + TTL + urgency + timeout), derived per message from its `type`. */
+export type SendOptions = {
+  TTL: number;
+  topic: string;
+  urgency?: "very-low" | "low" | "normal" | "high";
+  timeout?: number;
+};
 
 /** Delivers one payload to one subscription with the given options. Injectable so the prune/log
  *  logic is testable. */
@@ -221,8 +238,11 @@ export class Push {
     console.log(`[push] enabled (${this.subs.size} saved subscription(s))`);
   }
 
-  async addSubscription(sub: PushSubscription, meta: SubscriptionMeta = {}): Promise<void> {
-    if (!this.enabled) return;
+  async addSubscription(
+    sub: PushSubscription,
+    meta: SubscriptionMeta = {},
+  ): Promise<"ok" | "disabled" | "full"> {
+    if (!this.enabled) return "disabled";
     // The row this one supersedes (SubscriptionMeta.replaces). Dropped BEFORE the new one is stored,
     // and only when it is a different endpoint — a device re-registering the endpoint it already
     // holds is naming itself, not a predecessor.
@@ -231,6 +251,12 @@ export class Push {
         console.log(`[push] replaced superseded subscription: ${meta.replaces}`);
       }
       this.failures.delete(meta.replaces);
+    }
+    if (!this.subs.has(sub.endpoint) && this.subs.size >= MAX_SUBSCRIPTIONS) {
+      console.warn(
+        `[push] subscription cap reached (${MAX_SUBSCRIPTIONS}) — dropping new subscription; run \`collie push forget\` to prune stale devices`,
+      );
+      return "full";
     }
     const previous = this.subs.get(sub.endpoint);
     const userAgent = meta.userAgent?.trim().slice(0, USER_AGENT_MAX) ?? previous?.userAgent;
@@ -243,6 +269,7 @@ export class Push {
     // told us it wants pushes, so it doesn't inherit the failure history of its predecessor.
     this.failures.delete(sub.endpoint);
     await this.save();
+    return "ok";
   }
 
   /**
@@ -374,9 +401,27 @@ export class Push {
     try {
       const raw: unknown = await Bun.file(this.file).json();
       if (!Array.isArray(raw)) return;
+      let skippedCap = 0;
       for (const item of raw) {
-        const row = coerceStored(item);
-        if (row !== null) this.subs.set(row.endpoint, row);
+        const row = coerceStored(item, this.cfg.pushAllowedHosts);
+        if (row === null) {
+          const ep =
+            typeof (item as Record<string, unknown>)?.endpoint === "string"
+              ? (item as Record<string, unknown>).endpoint
+              : "(unknown endpoint)";
+          console.warn(`[push] dropping invalid stored subscription: ${ep}`);
+          continue;
+        }
+        if (this.subs.size >= MAX_SUBSCRIPTIONS) {
+          skippedCap++;
+          continue;
+        }
+        this.subs.set(row.endpoint, row);
+      }
+      if (skippedCap > 0) {
+        console.warn(
+          `[push] skipped ${skippedCap} subscription(s) exceeding cap of ${MAX_SUBSCRIPTIONS}`,
+        );
       }
     } catch {
       /* no saved subs yet */
