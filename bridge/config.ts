@@ -328,6 +328,10 @@ export function loadConfig(): Config {
         "COLLIE_OPENCODE_ROOT",
         join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "opencode"),
       ),
+      grok: envRoots(
+        "COLLIE_GROK_ROOT",
+        join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "sessions"),
+      ),
     },
     submitKeys: submitKeys.length ? submitKeys : ["Enter"],
     trustedUser: process.env.COLLIE_TRUSTED_USER ?? "",

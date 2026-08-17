@@ -67,19 +67,21 @@ const MAX_CANDIDATES = 12;
  * differently-shaped filename.
  */
 function refFor(agent: string, path: string): AgentSessionRef | null {
-  const file = path.slice(path.lastIndexOf("/") + 1).replace(/\.jsonl$/, "");
-  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(file)?.[0];
   if (agent === "pi") return { kind: "path", value: path };
+  // Grok names the session in the PARENT directory (`<cwd>/<uuid>/chat_history.jsonl`), not the
+  // filename. Search the whole path so both layouts resolve.
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(path)?.[0];
   return uuid ? { kind: "id", value: uuid } : null;
 }
 
 /**
  * Candidate session refs for one harness, newest first.
  *
- * Two shapes of storage, so two strategies: the file-backed harnesses (claude/codex/pi) name their
- * sessions in `.jsonl` FILENAMES, while OpenCode has no per-session file at all — its sessions are
- * rows in `<root>/opencode.db`, which no amount of directory walking will find. Both branches stay
- * read-only and content-free, as this script's header promises: the sqlite branch selects ids only.
+ * Two shapes of storage, so two strategies: the file-backed harnesses (claude/codex/pi/grok) name
+ * their sessions in a path (filename, or for grok the parent directory), while OpenCode has no
+ * per-session file at all — its sessions are rows in `<root>/opencode.db`, which no amount of
+ * directory walking will find. Both branches stay read-only and content-free, as this script's
+ * header promises: the sqlite branch selects ids only.
  */
 async function candidateRefs(
   agent: string,

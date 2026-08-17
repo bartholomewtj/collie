@@ -93,22 +93,27 @@ export interface AgentView {
  * added to the omit list here. If you add one, strip it here in the same change.
  */
 export type PaneWire = Omit<AgentView, "agentSession"> & {
-  /** True when this pane's history is actually offerable: the agent named a session AND its harness
-   *  has a journal adapter. Says nothing about whether the log is readable — a named session whose
-   *  file is missing still answers `available:false` with reason `no-log`. */
+  /** True when this pane's history is actually offerable: the harness has a journal adapter AND
+   *  either Herdr named a session or the adapter can infer one from cwd (Grok). Says nothing about
+   *  whether the log is readable — a named session whose file is missing still answers
+   *  `available:false` with reason `no-log`. */
   hasSession?: boolean;
 };
 
 /**
  * Strip a pane down to its wire shape. The one place the session ref leaves the bridge's hands.
  *
- * `hasJournal` is asked rather than assumed: a harness can name a session while having no adapter to
- * read it (Herdr detects more agents than Collie has journals for). Keying the flag on the ref alone
- * would advertise a History affordance that always comes back empty, so the registry gets a vote.
+ * `offerHistory` is asked rather than assumed: a harness can name a session while having no adapter
+ * to read it (Herdr detects more agents than Collie has journals for), and a harness can have an
+ * adapter with no Herdr session (Grok, inferred from cwd). Keying the flag on the ref alone would
+ * hide Grok history and advertise empty History buttons for unsupported agents.
  */
-export function toPaneWire(pane: AgentView, hasJournal: (agent: string) => boolean): PaneWire {
+export function toPaneWire(
+  pane: AgentView,
+  offerHistory: (agent: string, hasSessionRef: boolean) => boolean,
+): PaneWire {
   const { agentSession, ...rest } = pane;
-  return agentSession && hasJournal(pane.agent) ? { ...rest, hasSession: true } : rest;
+  return offerHistory(pane.agent, Boolean(agentSession)) ? { ...rest, hasSession: true } : rest;
 }
 
 /** A Herdr workspace ("space") — a project-scoped container of tabs. From `workspace.list`. */

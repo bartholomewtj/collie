@@ -109,4 +109,9 @@ export interface JournalAdapter {
   readonly agent: string;
   readonly source: TranscriptSource;
   parse(text: string): TranscriptEntry[];
+  /**
+   * When Herdr named no session, find one from the pane's cwd. Optional: only harnesses whose log
+   * layout is keyed by cwd (Grok) implement it. A miss is `null`, same as "no-log".
+   */
+  inferFromCwd?(cwd: string): Promise<AgentSessionRef | null>;
 }
