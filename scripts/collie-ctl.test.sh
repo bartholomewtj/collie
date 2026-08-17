@@ -1386,6 +1386,52 @@ EOF
   assert_eq "$final_dir_mode" "700"
 }
 
+# The pidfile outlives its process and pids get recycled, so `start` re-checks before killing.
+# The check used to match any `bridge/index.ts` — a second checkout, a dev shell — and would kill
+# a bystander. It must match THIS checkout's absolute path and nothing else.
+test_pidfile_kill_requires_our_checkout() {
+  setup_case pidfile-match
+  local harness="${CASE_DIR}/harness.sh"
+  local kill_log="${CASE_DIR}/kill.log"
+
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+
+KILL_LOG="${kill_log}"
+ps() { printf '%s\n' "\$FAKE_CMDLINE"; }
+kill() { echo "\$*" >> "\$KILL_LOG"; }
+
+# Case A: foreign checkout
+printf '4242\n' > "\${CONFIG_DIR}/collie.pid"
+FAKE_CMDLINE="/usr/bin/bun run /some/other/checkout/bridge/index.ts"
+stop_pidfile_process
+[ ! -e "\${CONFIG_DIR}/collie.pid" ] || { echo "error: pidfile not removed in case A" >&2; exit 1; }
+if [ -s "\$KILL_LOG" ]; then
+  echo "error: foreign process was killed: \$(cat "\$KILL_LOG")" >&2
+  exit 1
+fi
+
+# Case B: our checkout
+printf '4242\n' > "\${CONFIG_DIR}/collie.pid"
+FAKE_CMDLINE="/usr/bin/bun run \${PLUGIN_ROOT}/bridge/index.ts"
+stop_pidfile_process
+[ ! -e "\${CONFIG_DIR}/collie.pid" ] || { echo "error: pidfile not removed in case B" >&2; exit 1; }
+if [ ! -s "\$KILL_LOG" ]; then
+  echo "error: our process was not killed" >&2
+  exit 1
+fi
+EOF
+
+  bash "$harness" > "${CASE_DIR}/run.out" 2> "${CASE_DIR}/run.err" || fail "test_pidfile_kill_requires_our_checkout failed: $(cat "${CASE_DIR}/run.err")"
+  local kill_out; kill_out="$(cat "$kill_log")"
+  assert_contains "$kill_out" "4242"
+}
+
 test_suite_ignores_an_inherited_git_dir
 test_tailscale_cutovers_and_collisions
 test_missing_tailscale_cli
@@ -1416,5 +1462,6 @@ test_env_parsing_grammar
 test_env_malformed_line_warns_without_leaking
 test_env_secrets_do_not_reach_build_children
 test_env_permissions_are_hardened_on_start
+test_pidfile_kill_requires_our_checkout
 
 echo "collie-ctl lifecycle tests: passed"
