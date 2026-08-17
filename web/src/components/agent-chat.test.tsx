@@ -480,20 +480,21 @@ describe("AgentChat — history affordance", () => {
   });
 });
 
-// The top-of-mirror affordance. This block previously rendered on NO pane at all: it was gated on
-// `truncated`, which Herdr never sets true even when a read demonstrably cut scrollback off. The
-// working signal is `readableLines` (scrollback depth + viewport), and which button appears is
-// decided by what the pane can actually offer — the two are never simultaneously possible.
+// The top-of-mirror affordance. Agent panes prefetch the transcript above the live tail (a swipe
+// up reads the conversation). Shells still page Herdr scrollback with Load older. The two are
+// never simultaneously possible — a transcript wins, because alt-screen panes have no ring.
 describe("AgentChat — top-of-mirror history affordance", () => {
   const showHistory = () => screen.queryByRole("button", { name: /show entire history/i });
   const loadOlder = () => screen.queryByRole("button", { name: /load older/i });
 
-  it("an agent pane with a transcript offers the full history, not scrollback paging", () => {
+  it("an agent pane with a transcript inlines it above the live tail, not a jump-away button", async () => {
     // A Claude pane: alt-screen, so readableLines is just its viewport — there IS no scrollback.
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 51 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
-    expect(showHistory()).toBeInTheDocument();
+    expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
   it("a pane with real scrollback and no transcript offers Load older", () => {
@@ -524,10 +525,18 @@ describe("AgentChat — top-of-mirror history affordance", () => {
     expect(showHistory()).not.toBeInTheDocument();
   });
 
-  it("a transcript wins even when the pane also reports scrollback", () => {
+  it("a transcript wins even when the pane also reports scrollback", async () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 6946 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
-    expect(showHistory()).toBeInTheDocument();
+    expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
+  });
+
+  it("keeps the header History button so find / jump-to-turn still have a page", async () => {
+    const agent = { ...fixtureAgents[0]!, hasSession: true };
+    renderChat({ agent, agents: [agent] });
+    expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
   });
 });
