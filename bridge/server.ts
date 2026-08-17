@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, normalize, sep } from "node:path";
 import type { ActivityLedger } from "./activity.ts";
@@ -17,6 +17,7 @@ import { looksPrivateHost, parsePushSubscription } from "./push-endpoint.ts";
 import { herdTagFor, type SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
 import type { UpdateMonitor } from "./update.ts";
+import { imageExtFromBytes, makeRoomForUpload, SNIFF_BYTES } from "./uploads.ts";
 import type { StateEngine } from "./state-engine.ts";
 import { adapterFor, buildJournalRegistry } from "./journal/registry.ts";
 import { TranscriptStore } from "./journal/store.ts";
@@ -49,12 +50,6 @@ const MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024; // 12 MB
 const MAX_READ_LINES = 10_000;
 const MAX_EXPECTED_PROMPT_CHARS = 8192;
 const PROMPT_BINDING_BLANK_LINE_HEADROOM = 6;
-const IMAGE_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
 
 // The built PWA lives in web/dist (Vite output). If it's missing, the bridge still runs the API
 // — only the static UI 503s with a hint to build.
@@ -1110,7 +1105,8 @@ async function createWorkspace(
 
 // Save an uploaded image to a host file and return its absolute path. The client then references
 // that path in a message; Claude Code / Codex read images by path (the terminal can't take a
-// pasted image over the socket). Validated by MIME and size; the filename is server-generated.
+// pasted image over the socket). Validated by SIZE and by its MAGIC BYTES — never by the declared
+// Content-Type, which the client writes (issue #9). The filename is server-generated.
 async function uploadPane(
   cfg: Config,
   paneId: string,
@@ -1145,22 +1141,43 @@ async function uploadPane(
   if (!(file instanceof File)) {
     return json({ ok: false, error: "no file" } satisfies UploadResponse, ae);
   }
-  const ext = IMAGE_EXT[file.type];
-  if (!ext) {
-    return json({ ok: false, error: `unsupported type: ${file.type || "unknown"}` } satisfies UploadResponse, ae);
-  }
   if (file.size > MAX_UPLOAD_BYTES) {
     return json({ ok: false, error: "image too large (max 10 MB)" } satisfies UploadResponse, ae);
+  }
+  // formData() has already buffered the body, so this is a copy, not a second read. Take it once
+  // and use it for both the sniff and the write.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = imageExtFromBytes(bytes.subarray(0, SNIFF_BYTES));
+  if (!ext) {
+    // Deliberately does not echo file.type back: it is client-controlled and, now that the bytes
+    // decide, it is not the reason for the refusal either.
+    return json(
+      { ok: false, error: "unsupported image type (expected PNG, JPEG, GIF or WebP)" } satisfies UploadResponse,
+      ae,
+    );
   }
   try {
     const dir = join(cfg.stateDir, "uploads");
     // 0700 — uploads (and the state dir they live under) may hold sensitive images; keep them
     // owner-only. recursive:true applies the mode to any intermediate dirs it creates too.
     await mkdir(dir, { recursive: true, mode: 0o700 });
+    // ...but mkdir applies `mode` only to dirs it CREATES, so a dir left over from an earlier build
+    // (or from a COLLIE_STATE_DIR pointing at something shared) keeps its old perms. Re-assert it.
+    // Best-effort: if we don't own the dir we still write the file at 0600 below, which is the
+    // protection that actually matters. cfg.stateDir itself is left alone on purpose — the operator
+    // chose that path and may share it deliberately.
+    await chmod(dir, 0o700).catch(() => {});
+    // Bound the directory's total size, evicting oldest-first (issue #9).
+    if (!(await makeRoomForUpload(dir, file.size))) {
+      return json({ ok: false, error: "upload storage full" } satisfies UploadResponse, ae);
+    }
     const safePane = paneId.replace(/[^A-Za-z0-9_-]/g, "_");
     const filename = `${safePane}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const fullPath = join(dir, filename);
-    await Bun.write(fullPath, file);
+    // node:fs write (not Bun.write, which has no mode option) so the file is owner-only from the
+    // moment it exists — a chmod after the fact leaves a window where it is world-readable at the
+    // process umask. The name is a fresh UUID, so O_CREAT always applies the mode.
+    await writeFile(fullPath, bytes, { mode: 0o600 });
     audit.record({
       action: "upload",
       paneId,
