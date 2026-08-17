@@ -1,9 +1,0 @@
-#4: OK adw=dec98c8b pr=https://github.com/bartholomewtj/collie/pull/16
-#5: OK adw=37f85c39 pr=https://github.com/bartholomewtj/collie/pull/17
-#6: FAILED adw=d14d25f7 branch=fix/6-verified-update (left in place, not pushed)
-#7: FAILED adw=028c3651 branch=fix/7-subscribe-ssrf (left in place, not pushed)
-#8: OK adw=752e3ee2 pr=https://github.com/bartholomewtj/collie/pull/21
-#9: OK adw=04c55cf9 pr=https://github.com/bartholomewtj/collie/pull/22
-#10: FAILED adw=b1e8130a branch=fix/10-error-page-leak (left in place, not pushed)
-#11: FAILED adw=a817adcb branch=fix/11-frontend-static-hardening (left in place, not pushed)
-#12: FAILED adw=387ddb4e branch=fix/12-ops-hardening (left in place, not pushed)
