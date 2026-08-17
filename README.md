@@ -917,6 +917,8 @@ bunx web-push generate-vapid-keys
 # set COLLIE_VAPID_PUBLIC / _PRIVATE / _SUBJECT in your .env, then restart
 ```
 
+Collie validates push endpoints against known Web Push hosts (Chrome, Firefox, Safari, and Edge work out of the box). If you run a custom or self-hosted push service, extend the allowlist with `COLLIE_PUSH_ALLOWED_HOSTS=push.example.com`. Note that setting this to a private/loopback host allows any read-level client to make the bridge POST requests there.
+
 Push needs a **secure context (HTTPS)**, which any HTTPS-terminating front door provides — the
 default `tailscale serve` (Tailscale manages the MagicDNS cert; nothing to obtain or renew) or a
 [Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) proxy that terminates TLS.
