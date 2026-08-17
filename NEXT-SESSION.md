@@ -1,51 +1,58 @@
 # Next session
 
-_Last handoff: 2026-08-17 — branch `chore/claudesssf-install`_
+_Last handoff: 2026-08-17 — branch `docs/handoff-2026-08-17` (main at 0.30.1)_
 
 ## Where this stopped
 
-This is a fork of [AltanS/collie](https://github.com/AltanS/collie) (a phone web UI that drives
-terminal AI agents through a Herdr socket, published via `tailscale serve`). A security audit of
-upstream was done on 2026-08-16 and its 12 findings are filed as issues #1–#12 on **this fork**
-(`bartholomewtj/collie`), ordered by severity. Nothing has been fixed yet and nothing has been
-reported upstream. claudeSSSF is installed so the fixes can be run as ADWs; PR #13 carries that
-install and is waiting for you to merge.
+Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
+agents through a Herdr socket, served via `tailscale serve`). The 2026-08-16 security audit filed
+12 issues on this fork; **9 are fixed and merged** (1, 2, 4, 5, 6, 7, 8, 9, 10), each by a
+claudeSSSF `adw_simple_sdlc` run. Every fix has its own spec in `specs/`, write-up in `app_docs/`,
+and ADR where a default changed (`.adr/0011`–`0013`). Nothing has been reported upstream.
+
+Left when this session ended: #11 and #12 were still running through the driver, and #3 was
+built + reviewer-approved but sitting unrebased on `fix/3-dns-rebinding-default`.
 
 ## Resume with
 
 ```bash
 cd C:\claudeOS\Projects\collie
-git checkout main && git pull            # after merging PR #13
-bun install --frozen-lockfile && bun test ./bridge   # 547 pass / 39 fail on Windows — see below
-just demo                                # claudeSSSF smoke test (or: uv run adws/adw_prompt.py "hi" --agent scout)
+git checkout main && git pull
+gh pr list; gh issue list                        # what #11 / #12 / #3 look like now
+bun install --frozen-lockfile && bun test ./bridge/server.test.ts   # ~2 known Windows path fails
 ```
+
+To watch or rerun the factory: `PORT=4601 just obs` (4600 is usually geneanalysis's visualizer),
+`bash adws/drive_issues.sh 11 12` (run detached — see the script header).
 
 ## Next thing to do
 
-1. Merge PR #13 (claudeSSSF install) — https://github.com/bartholomewtj/collie/pull/13
-2. Fix issue #1 (High: any `localhost` Origin bypasses the same-origin gate) — one clause in
-   `bridge/server.ts:1141-1145` plus the test at `bridge/server.test.ts:92-99` that asserts the
-   bug. Say "run adw_simple_sdlc on issue #1" and the orchestrator will drive it; branch + PR
-   on this fork, you merge.
-3. Decide whether to send #1 upstream to AltanS/collie (not sent yet — your call). Then work
-   down #2–#7 (Medium) the same way.
+1. **#11 / #12** — check `adws/adw_data/run_rest_summary.txt` and `gh pr list`. If a run failed
+   with "nothing to commit", the work is still on the branch (agy commits it itself); push and
+   `gh pr create --base main` by hand — that's what happened for #3, #6, #7, #10.
+2. **#3** — `git checkout fix/3-dns-rebinding-default`, rebase onto main (conflicts in
+   `bridge/server.ts` `checkAccess`, version files, `.adr/README.md` — ADR must become 0014).
+   Decide on the `chore(release): 1.0.0` commit (planner's call: fail-closed Host is breaking);
+   drop it for a 0.31.0 unless you want the fork to be 1.x. Then PR.
+3. Decide whether to send any of #1–#12 upstream to AltanS/collie (parked, your call).
 
 ## Open
 
-- PR #13 — Install claudeSSSF factory — waiting on your review/merge (no CI on the fork)
-- Issues #1 High CSRF via loopback Origin · #2 TRUSTED_USER fails open · #3 DNS rebinding default
-  · #4 0.0.0.0 bind accepted · #5 `.env` sourced as shell · #6 unverified update · #7 push SSRF
-  · #8–#12 Low hardening (read-level POSTs, upload MIME, error page leak, frontend, ops/CI)
+- Issues #3 (branch pushed, needs rebase + PR), #11, #12 (driver was running them)
+- claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits its work;
+  both bit this project repeatedly. Fix belongs in the factory, not here.
 
 ## Watch out for
 
-- **`bun test ./bridge` fails 39 tests on Windows** — all POSIX path assumptions (`/srv/...`,
-  chmod, unix sockets). Upstream targets Linux/macOS; its CI is green. Don't chase these; judge
-  fixes by the tests you touch, or run in WSL/a sandbox for a clean bar.
-- `gh` default repo is now set to `bartholomewtj/collie`. Remotes: `origin` = fork,
-  `upstream` = AltanS/collie. `gh issue`/`gh pr` without `--repo` used to hit upstream — that's why
-  the handoff survey listed upstream's #91/#99/#105.
-- claudeSSSF roster (`adws/adw_sssf_config/sssf.config.yaml`): planner=opus on Claude Code,
-  builder/scout/documenter=agy (free Gemini quota), reviewer=grok. `.env` exists and is
-  gitignored; `PYTHONUTF8=1` needed on Windows for the ADW scripts.
-- The audit's full write-up lives only in the issues — there is no separate report file.
+- **Merge PRs by retargeting to `main` first**, then merge, then delete the branch. Deleting a
+  branch that another PR is based on auto-closes that PR (that's how #15 died; #18 replaced it).
+- **Don't edit `adws/adw_sssf_config/sssf.config.yaml` while a run is going** — the builder's
+  permission check sees a changed protected file and rolls it back (a planner-to-grok switch
+  vanished this way and #6's build died with it).
+- `bun test ./bridge` fails ~39 tests on Windows (POSIX paths, chmod, unix sockets). Judge by the
+  tests you touched, or run in WSL for a clean bar.
+- `sssf.db` shows sessions `30d5df7b`, `a45c9a59`, `41f3fa90`, `d14d25f7`, `028c3651`, `b1e8130a`
+  as `running`/`fail` — killed or commit-phase-tripped runs whose work was harvested by hand.
+- Roster (`sssf.config.yaml`): planner opus, builder/scout/documenter agy, reviewer grok-4.5. Each
+  opus plan burns 3–5M tokens (~$2–4 notional); the Claude session limit hit once mid-run.
+- `gh` default repo is this fork; `origin` = fork, `upstream` = AltanS/collie.
