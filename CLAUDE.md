@@ -211,3 +211,7 @@ E: the operator owns the ingress, Collie publishes nothing. **Don't add a second
 door** — [ADR 0001](./.adr/0001-one-managed-front-door.md).
 
 **Push subscribe stays read-level** — closed by endpoint validation and caps, not by gating notifications away from read-only devices ([ADR 0012](./.adr/0012-subscribe-stays-read-level.md)).
+
+**Host validation is fail-closed** — a non-loopback Host must be loopback, a `COLLIE_PUBLIC_HOSTS`
+entry, a ctl-discovered Tailscale host, or an allowed origin's host
+([ADR 0014](./.adr/0014-host-validation-is-fail-closed.md)).

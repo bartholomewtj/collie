@@ -90,7 +90,7 @@ install_fake_tailscale() {
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "\${1:-}" = status ] && [ "\${2:-}" = --json ]; then
-  echo '{"Self":{"DNSName":"host.example."}}'
+  echo '{"Self":{"DNSName":"host.example.","TailscaleIPs":["100.64.0.1","fd7a::1"]}}'
   exit 0
 fi
 if [ "\${1:-}" = serve ] && [ "\${2:-}" = status ] && [ "\${3:-}" = --json ]; then
@@ -1176,6 +1176,48 @@ test_suite_ignores_an_inherited_git_dir() {
     fail "the suite corrupted the repository it was run from"
 }
 
+# Host-header validation is fail-closed by default (issue #3). collie-ctl.sh discovers the tailnet
+# identity (MagicDNS + TailscaleIPs) and injects COLLIE_TAILSCALE_HOSTS into the systemd unit.
+# Under COLLIE_SKIP_SERVE=1 it must NOT inject it.
+test_tailscale_hosts_systemd_injection() {
+  setup_case systemd-tailscale-hosts
+  install_fake_tailscale
+
+  local unit_file="${HOME_DIR}/.config/systemd/user/collie.service"
+  local harness="${CASE_DIR}/start.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+ensure_build() { return 0; }
+have_systemd() { return 0; }
+have_launchd() { return 1; }
+BUN=/bin/true
+cmd_serve() { return 0; }
+print_status_banner() { :; }
+systemctl() { return 0; }
+cmd_start
+EOF
+
+  bash "$harness" > "${CASE_DIR}/start.out" 2>&1 || fail "cmd_start failed on systemd path"
+  [ -f "$unit_file" ] || fail "systemd unit was not written"
+  local unit; unit="$(cat "$unit_file")"
+  assert_contains "$unit" 'Environment=COLLIE_TAILSCALE_HOSTS=host.example,100.64.0.1,[fd7a::1]'
+
+  # Under COLLIE_SKIP_SERVE=1 no tailscale hosts are injected into the unit.
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_SKIP_SERVE=1
+EOF
+  bash "$harness" > "${CASE_DIR}/start-skip.out" 2>&1 || fail "cmd_start with skip-serve failed"
+  local unit_skip; unit_skip="$(cat "$unit_file")"
+  case "$unit_skip" in
+    *COLLIE_TAILSCALE_HOSTS*) fail "COLLIE_TAILSCALE_HOSTS was injected under COLLIE_SKIP_SERVE=1" ;;
+  esac
+}
+
 # ── .env parsing and permissions (issue #5) ──────────────────────────────────────
 
 test_env_is_parsed_not_executed() {
@@ -1411,6 +1453,7 @@ test_update_is_idempotent_on_the_newest_tag
 test_update_fast_forwards_a_linked_clone
 test_update_reports_a_non_git_checkout
 test_registry_refresh_skips_a_managed_checkout
+test_tailscale_hosts_systemd_injection
 test_env_is_parsed_not_executed
 test_env_parsing_grammar
 test_env_malformed_line_warns_without_leaking

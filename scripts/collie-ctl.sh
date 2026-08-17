@@ -274,6 +274,15 @@ self_dnsname() {
     "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).Self.DNSName.replace(/\.\$/,''))}catch{}})"
 }
 
+# The host identities this node actually answers to on the tailnet — MagicDNS name plus Self
+# TailscaleIPs — comma-joined for COLLIE_TAILSCALE_HOSTS. The bridge's Host allowlist is fail-closed
+# (issue #3), and without this every tailnet deployment would need COLLIE_PUBLIC_HOSTS set by hand.
+# Prints nothing if tailscale is absent or not up; callers must tolerate empty.
+self_hosts() {
+  tailscale status --json 2>/dev/null | bun -e \
+    "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d).Self;const o=[];if(s.DNSName)o.push(s.DNSName.replace(/\.\$/,''));for(const ip of s.TailscaleIPs||[])o.push(ip.includes(':')?'['+ip+']':ip);process.stdout.write(o.join(','))}catch{}})"
+}
+
 bridge_url() {
   local name; name="$(self_dnsname)"
   if [ -z "$name" ]; then echo "http://127.0.0.1:${PORT} (Tailscale name unavailable)"; return; fi
@@ -428,6 +437,8 @@ write_unit() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   mkdir -p "$(dirname "$UNIT_FILE")" "$CONFIG_DIR"
   harden_config_perms
+  local ts_env=""
+  [ -n "${COLLIE_TAILSCALE_HOSTS:-}" ] && ts_env="Environment=COLLIE_TAILSCALE_HOSTS=${COLLIE_TAILSCALE_HOSTS}"
   cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=Collie
@@ -449,6 +460,7 @@ PrivateTmp=yes
 Environment=HERDR_SOCKET_PATH=${SOCKET}
 Environment=COLLIE_PORT=${PORT}
 Environment=HERDR_PLUGIN_CONFIG_DIR=${CONFIG_DIR}
+${ts_env}
 EnvironmentFile=-${CONFIG_DIR}/.env
 
 [Install]
@@ -524,6 +536,10 @@ EOF
 cmd_exec_bridge() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   export_bridge_env
+  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ] && [ -z "${COLLIE_TAILSCALE_HOSTS:-}" ]; then
+    COLLIE_TAILSCALE_HOSTS="$(self_hosts)"
+  fi
+  export COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}"
   export COLLIE_PORT="$PORT"
   export HERDR_SOCKET_PATH="$SOCKET"
   export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
@@ -542,12 +558,19 @@ start_unsupervised() {
     HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
       nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
     echo $! > "${CONFIG_DIR}/collie.pid" )
+  COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}" \
+  HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
+    nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
+  echo $! > "${CONFIG_DIR}/collie.pid"
   echo "bridge started (pid $(cat "${CONFIG_DIR}/collie.pid"), unsupervised)"
 }
 
 cmd_start() {
   harden_config_perms
   ensure_build || true
+  COLLIE_TAILSCALE_HOSTS=""
+  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ]; then COLLIE_TAILSCALE_HOSTS="$(self_hosts)"; fi
+  export COLLIE_TAILSCALE_HOSTS
   if have_systemd; then
     write_unit
     systemctl --user enable --now "$UNIT"

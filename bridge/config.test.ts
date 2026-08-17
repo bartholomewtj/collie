@@ -32,6 +32,8 @@ const KEYS = [
   "COLLIE_DEVICE_ALLOWLIST",
   "COLLIE_ALLOWED_ORIGINS",
   "COLLIE_PUBLIC_HOSTS",
+  "COLLIE_TAILSCALE_HOSTS",
+  "COLLIE_ALLOW_ANY_HOST",
   "COLLIE_VAPID_PUBLIC",
   "COLLIE_VAPID_PRIVATE",
   "COLLIE_VAPID_SUBJECT",
@@ -267,6 +269,19 @@ describe("loadConfig", () => {
     expect(loadConfig().publicHosts).toEqual([
       "collie.example.ts.net",
       "collie.example.com:8443",
+    ]);
+  });
+
+  test("reads the tailscale-hosts allowlist and allowAnyHost flag", () => {
+    expect(loadConfig().allowAnyHost).toBe(false);
+    process.env.COLLIE_ALLOW_ANY_HOST = "1";
+    expect(loadConfig().allowAnyHost).toBe(true);
+
+    process.env.COLLIE_TAILSCALE_HOSTS = " host.example.ts.net , 100.64.0.1 , [fd7a::1] ,";
+    expect(loadConfig().tailscaleHosts).toEqual([
+      "host.example.ts.net",
+      "100.64.0.1",
+      "[fd7a::1]",
     ]);
   });
 

@@ -6,6 +6,18 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.31.0] - 2026-08-17
+
+### Changed
+
+- **BREAKING: Host-header validation is on by default and fails closed** — the bridge answers only to loopback, the Tailscale name/IPs `collie-ctl.sh` discovers, `COLLIE_PUBLIC_HOSTS`, and `COLLIE_ALLOWED_ORIGINS` hosts. A DNS-rebound `Host: evil.example` no longer gets reads or writes (#3, 213b024)
+- **`COLLIE_SKIP_SERVE=1` deployments must now set `COLLIE_PUBLIC_HOSTS`** — behind your own reverse proxy Collie can't discover the public host, so an unpinned install returns 403 `host not allowed` until you set it (#3, 213b024)
+
+### Added
+
+- `COLLIE_ALLOW_ANY_HOST=1` — explicit opt-out that turns Host validation off, with a loud startup warning. Re-opens the rebinding hole; only for a deployment whose Host genuinely can't be enumerated (#3, 213b024)
+- `collie-ctl.sh` injects `COLLIE_TAILSCALE_HOSTS` (MagicDNS name + tailnet IPs) into the service env, so a normal tailnet install needs no manual allowlist (#3, 213b024)
+
 ## [0.30.1] - 2026-08-17
 
 ### Fixed
