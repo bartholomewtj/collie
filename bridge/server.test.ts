@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join, normalize } from "node:path";
 
 import {
   BUILD_HEADER,
@@ -14,6 +15,7 @@ import {
   isHostAllowed,
   isJsonContentType,
   isLoopbackPeer,
+  isPrivateStaticFile,
   isReservedAuthPath,
   isStateChangingMethod,
   keysPane,
@@ -1053,7 +1055,6 @@ describe("cacheControlFor", () => {
       "sw.js",
       "index.html",
       "manifest.webmanifest",
-      "build-info.json",
       "favicon.svg",
       "favicon.ico",
       "apple-touch-icon.png",
@@ -1110,6 +1111,40 @@ describe("marksPaneSeen — CSRF guard on marking a pane seen", () => {
   test("any header value counts — presence is the proof, not the contents", () => {
     expect(marksPaneSeen(withHeader({ [SEEN_HEADER]: "" }), undefined)).toBe(true);
     expect(marksPaneSeen(withHeader({ [SEEN_HEADER]: "anything" }), undefined)).toBe(true);
+  });
+});
+
+// issue #11: three checks key off `rel` (the private-file denial, sw.js's Service-Worker-Allowed
+// header, and cacheControlFor's immutable/no-cache split), but `rel` used to come straight from the
+// request while only `full` was normalised — so "/./build-info.json" cleared the containment check
+// and then dodged a rel-keyed denial. WEB is built with join() so this runs on Windows too; the
+// older describe above hardcodes a POSIX path and is a known Windows-only failure.
+describe("resolveStaticPath — rel is normalised, not echoed", () => {
+  const WEB = normalize(join("/srv", "collie", "web", "dist"));
+
+  test.each([
+    ["/./build-info.json", "build-info.json"],
+    ["/a/../build-info.json", "build-info.json"],
+    ["/./assets/app.js", "assets/app.js"],
+    ["/assets/app.js", "assets/app.js"],
+    ["/", "index.html"],
+    ["//sw.js", "sw.js"],
+  ])("%s → rel %s", (pathname, rel) => {
+    expect(resolveStaticPath(pathname, WEB)?.rel).toBe(rel);
+  });
+});
+
+// The build id in a file, served to anyone who could reach the port. Nothing fetches this path —
+// the bridge and collie-ctl read it off disk — so refusing it costs nothing (issue #11).
+describe("isPrivateStaticFile", () => {
+  test("build-info.json is never served", () => {
+    expect(isPrivateStaticFile("build-info.json")).toBe(true);
+  });
+
+  test("every other dist file still is", () => {
+    for (const rel of ["index.html", "sw.js", "manifest.webmanifest", "assets/app.js"]) {
+      expect(isPrivateStaticFile(rel)).toBe(false);
+    }
   });
 });
 
