@@ -402,7 +402,7 @@ below as `invoke <cmd>`). The ones you'll actually use:
 | **URL** — print the tailnet URL | `collie-ctl.sh url` | `invoke url` |
 | **QR** — the same URL as a scannable code | `collie-ctl.sh qr` | — (script only) |
 | **Version** — the running version (`0.x.y+sha`) | `collie-ctl.sh version` | `invoke version` |
-| **Update** — advance the checkout + rebuild + restart | `collie-ctl.sh update` | `invoke update` |
+| **Update** — advance to the newest release + rebuild + restart | `collie-ctl.sh update` | `invoke update` |
 | **Uninstall** — remove the service; keep `.env` + checkout | `collie-ctl.sh uninstall` | `invoke uninstall` |
 | **Logs** — tail the journal / log file | `collie-ctl.sh logs` | — (script only) |
 
@@ -430,7 +430,7 @@ Collie registers these actions in `herdr-plugin.toml`; invoke any with
 | `status` | Bridge status | The *Collie is running* banner — readiness ✓/⚠, version, URLs |
 | `url` | Show bridge URL | Print the tailnet URL |
 | `version` | Show version | Print the running version (`0.x.y+sha`) |
-| `update` | Update plugin | Advance the checkout (pull, or fetch + re-detach) + rebuild + restart |
+| `update` | Update plugin | Advance to the newest release (pull, or fetch tag + re-detach) + rebuild + restart |
 | `uninstall` | Uninstall web bridge (remove service) | Tear down the service (keeps `.env` + checkout) |
 
 ## Manage & update
@@ -463,8 +463,9 @@ The checkout *is* the plugin, and Herdr has no `plugin update` of its own. One c
 scripts/collie-ctl.sh update    # or: herdr plugin action invoke update --plugin herdr.collie
 ```
 
-It advances the checkout, rebuilds the UI and restarts the bridge (re-execing itself, so it's safe
-even when the update rewrites the script). Confirm via the footer build stamp.
+It advances the checkout to the release the banner named (not the unreleased branch tip), rebuilds the UI
+and restarts the bridge (re-execing itself, so it's safe even when the update rewrites the script).
+Confirm via the footer build stamp.
 
 #### If that fails with *"You are not currently on a branch"*
 
@@ -487,15 +488,19 @@ survive. Pinned to a version with `--ref`? Keep refreshing with `herdr plugin in
 #### What `update` actually does to the checkout
 
 Two install paths, two on-disk shapes, one command across both — the reasoning, and what it costs, is
-[ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md):
+[ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md) and
+[ADR 0011](./.adr/0011-update-pins-to-the-newest-release-tag.md):
 
 - **Linked clone** (on a branch) — `git pull --ff-only`, then **re-links the plugin** so Herdr picks
-  up any new actions and the new version.
-- **`herdr plugin install`** (detached, shallow) — fetches the default-branch tip and re-detaches onto
-  it. `--depth 1` only if it's already shallow, so a full history is never truncated; `--force` so a
-  lockfile the build rewrote can't wedge the *next* update. It deliberately does **not** re-link:
-  linking re-registers the plugin as a local path, after which Herdr refuses `herdr plugin install` —
-  the reinstall above, which is your recovery path if this checkout ever breaks again.
+  up any new actions and the new version. Tag-pinning is scoped to managed checkouts so a developer's
+  working branch is never detached.
+- **`herdr plugin install`** (detached, shallow) — fetches the newest `vX.Y.Z` release tag (matching the
+  banner) and re-detaches onto it. If no release tag exists, it refuses rather than checking out
+  unreleased origin HEAD (`COLLIE_UPDATE_REF=<tag-or-ref>` overrides). `--depth 1` only if it's already
+  shallow, so a full history is never truncated; `--force` so dirty untracked state can't wedge the
+  *next* update. It deliberately does **not** re-link: linking re-registers the plugin as a local path,
+  after which Herdr refuses `herdr plugin install` — the reinstall above, which is your recovery path if
+  this checkout ever breaks again.
 
 By hand: frontend (`web/`) → `collie-ctl.sh build` (live, no restart — served from disk); backend
 (`bridge/`) → `systemctl --user restart collie`. Run `scripts/install-hooks.sh` once to enable the

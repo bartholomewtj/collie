@@ -171,7 +171,7 @@ function Invoke-CollieApplicationBuild([string]$Bun) {
   # Operators never need it; run it from WSL or Git Bash if you are cutting a release.
 
   Invoke-InDirectory $script:PluginRoot {
-    & $Bun install
+    & $Bun install --frozen-lockfile
     Assert-LastExit "root bun install"
     & $Bun run typecheck
     Assert-LastExit "root typecheck"
@@ -181,7 +181,7 @@ function Invoke-CollieApplicationBuild([string]$Bun) {
   $staging = Join-Path $webRoot "dist-staging"
   if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
   Invoke-InDirectory $webRoot {
-    & $Bun install
+    & $Bun install --frozen-lockfile
     Assert-LastExit "web bun install"
     & $Bun run typecheck
     Assert-LastExit "web typecheck"
@@ -420,6 +420,29 @@ function Test-CollieManagedCheckout {
   return -not (Test-CollieGitCommand @("symbolic-ref", "-q", "HEAD"))
 }
 
+function Get-CollieNewestReleaseTag {
+  $output = & git -C $script:PluginRoot ls-remote --tags --refs --sort=-v:refname origin "v*" 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    $output = & git -C $script:PluginRoot ls-remote --tags --refs origin "v*"
+    Assert-LastExit "git ls-remote"
+    $tags = @()
+    foreach ($line in $output) {
+      if ($line -match 'refs/tags/(v\d+\.\d+\.\d+)$') {
+        $tags += $Matches[1]
+      }
+    }
+    if ($tags.Count -eq 0) { return "" }
+    $sorted = $tags | Sort-Object { [version]($_ -replace '^v', '') }
+    return $sorted[-1]
+  }
+  foreach ($line in $output) {
+    if ($line -match 'refs/tags/(v\d+\.\d+\.\d+)$') {
+      return $Matches[1]
+    }
+  }
+  return ""
+}
+
 function Update-CollieCheckout {
   if (-not (Test-CollieGitCommand @("rev-parse", "--git-dir"))) {
     throw "not a git checkout - refresh with: herdr plugin install AltanS/collie --yes"
@@ -432,17 +455,29 @@ function Update-CollieCheckout {
     return
   }
 
-  Write-Output "updating Collie (Herdr-managed checkout: fetch + detach onto origin HEAD)..."
+  $target = $env:COLLIE_UPDATE_REF
+  if ([string]::IsNullOrWhiteSpace($target)) {
+    $target = Get-CollieNewestReleaseTag
+  }
+  if ([string]::IsNullOrWhiteSpace($target)) {
+    throw "no vX.Y.Z release tag found on origin; refuse to update to unverified origin HEAD (override with COLLIE_UPDATE_REF=<tag-or-ref>)"
+  }
+
+  Write-Output "updating Collie (Herdr-managed checkout: fetch + detach onto tag $target)..."
   $shallow = (& git -C $script:PluginRoot rev-parse --is-shallow-repository | Out-String).Trim()
   Assert-LastExit "git shallow check"
   $depth = if ($shallow -eq "true") { @("--depth", "1") } else { @() }
-  & git -C $script:PluginRoot fetch @depth origin HEAD
+  & git -C $script:PluginRoot fetch @depth origin tag $target
   Assert-LastExit "git fetch"
-  & git -C $script:PluginRoot checkout -q --detach --force FETCH_HEAD
+  & git -C $script:PluginRoot checkout -q --detach --force "refs/tags/$target"
   Assert-LastExit "git checkout"
+  $exactTag = (& git -C $script:PluginRoot describe --tags --exact-match 2>$null | Out-String).Trim()
+  if ($exactTag -ne $target) {
+    throw "checkout landed at '$exactTag', expected tag '$target'"
+  }
   $head = (& git -C $script:PluginRoot log -1 --format="%h %s" | Out-String).Trim()
   Assert-LastExit "git log"
-  Write-Output "now at $head"
+  Write-Output "now at $target ($head)"
 }
 
 function Refresh-CollieRegistry {
