@@ -1,4 +1,4 @@
-# 0012 — Notification settings are writes
+# 0013 — Notification settings are writes
 
 Status: **Accepted** (2026-08-17)
 

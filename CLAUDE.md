@@ -209,3 +209,5 @@ the mapping in `tailscale-managed-handler`, and only ever tears down a mapping m
 Every other tunnel (NetBird, ZeroTier, Cloudflare Tunnel) is `COLLIE_SKIP_SERVE=1` + README Variant
 E: the operator owns the ingress, Collie publishes nothing. **Don't add a second managed front
 door** — [ADR 0001](./.adr/0001-one-managed-front-door.md).
+
+**Push subscribe stays read-level** — closed by endpoint validation and caps, not by gating notifications away from read-only devices ([ADR 0012](./.adr/0012-subscribe-stays-read-level.md)).
