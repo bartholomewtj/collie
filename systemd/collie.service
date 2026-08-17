@@ -14,19 +14,40 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=@PLUGIN_ROOT@
-ExecStart=@BUN@ run @PLUGIN_ROOT@/bridge/index.ts
+WorkingDirectory="@PLUGIN_ROOT@"
+ExecStart="@BUN@" run "@PLUGIN_ROOT@/bridge/index.ts"
 Restart=on-failure
 RestartSec=5
-# Hardening: the bridge is remote shell access, so deny privilege escalation and give it a private
-# /tmp. ProtectSystem is intentionally NOT set — the only write path is the env-driven state dir,
-# which Herdr may inject to an arbitrary location, so it can't be enumerated in a static ReadWritePaths.
+# Hardening: the bridge is remote shell access, so deny privilege escalation, lock down kernel /
+# cgroup / SUID / realtime access, restrict system calls to native, clamp umask to 0077, and give
+# it a private /tmp.
+#
+# Three directives are deliberately absent:
+# - MemoryDenyWriteExecute is deliberately absent — Bun's JIT needs W^X-capable mappings and the
+#   bridge will not start with it set.
+# - ProtectHome is deliberately absent — bridge/journal/ reads the agent's own session logs from
+#   under $HOME, and the config dir lives there too.
+# - ProtectSystem is intentionally NOT set — the only write path is the env-driven state dir,
+#   which Herdr may inject to an arbitrary location, so it can't be enumerated in a static ReadWritePaths.
 NoNewPrivileges=yes
 PrivateTmp=yes
-Environment=HERDR_SOCKET_PATH=%h/.config/herdr/herdr.sock
-Environment=COLLIE_PORT=8787
-Environment=HERDR_PLUGIN_CONFIG_DIR=%h/.config/collie
-EnvironmentFile=-%h/.config/collie/.env
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+# Address families the bridge actually uses: AF_UNIX for Herdr's socket, AF_INET/AF_INET6 for the
+# loopback listener and outbound HTTPS (the update check hits api.github.com, web push hits the
+# provider endpoints), AF_NETLINK because glibc's resolver enumerates interfaces over netlink —
+# omit it and DNS fails in ways that look like the network is down.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+Environment="HERDR_SOCKET_PATH=%h/.config/herdr/herdr.sock"
+Environment="COLLIE_PORT=8787"
+Environment="HERDR_PLUGIN_CONFIG_DIR=%h/.config/collie"
+EnvironmentFile=-"%h/.config/collie/.env"
 
 [Install]
 WantedBy=default.target
