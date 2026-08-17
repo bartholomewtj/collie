@@ -212,7 +212,7 @@ stop_pidfile_process() {
         # The pidfile outlives its process (SIGKILL, a panic, a reboot) and pids get recycled, so
         # confirm it is still ours — this also runs on `start`, where a wrong guess kills a bystander.
         case "$(ps -p "$pid" -o command= 2>/dev/null)" in
-          *bridge/index.ts*) kill -- "$pid" 2>/dev/null || true ;;
+          *"${PLUGIN_ROOT}/bridge/index.ts"*) kill -- "$pid" 2>/dev/null || true ;;
         esac
       fi
       ;;

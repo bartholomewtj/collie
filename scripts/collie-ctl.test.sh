@@ -398,8 +398,9 @@ kill() { printf '%s\n' "\$*" >> "$kill_calls"; }
 # Stand in for the process table: 4242 is still our bridge, 4243 is whatever recycled that pid.
 ps() {
   case " \$* " in
-    *" 4242 "*) echo "/opt/homebrew/bin/bun run /x/bridge/index.ts" ;;
+    *" 4242 "*) echo "/opt/homebrew/bin/bun run ${ROOT}/bridge/index.ts" ;;
     *" 4243 "*) echo "/Applications/Something.app/Contents/MacOS/Something" ;;
+    *" 4244 "*) echo "/opt/homebrew/bin/bun run /elsewhere/collie/bridge/index.ts" ;;
   esac
 }
 cmd_start
@@ -409,6 +410,9 @@ cmd_stop
 printf '4243\n' > "${CONFIG_DIR}/collie.pid"
 stop_pidfile_process
 [ -e "${CONFIG_DIR}/collie.pid" ] && exit 81
+printf '4244\n' > "${CONFIG_DIR}/collie.pid"
+stop_pidfile_process
+[ -e "${CONFIG_DIR}/collie.pid" ] && exit 82
 # Invalid pidfile contents are removed but must never reach the kill builtin.
 printf '%s\n' 'not-a-pid' > "${CONFIG_DIR}/collie.pid"
 stop_pidfile_process
@@ -418,8 +422,9 @@ EOF
 
   [ -f "$plist" ] || fail "start did not write a LaunchAgent plist"
   [ ! -e "${CONFIG_DIR}/collie.pid" ] || fail "launchd migration left the legacy pidfile behind"
-  # Exactly one signal, to the pid that was still the bridge. 4243 (recycled to something else) and
-  # the malformed record must not appear — a stale pidfile must not kill an unrelated process.
+  # Exactly one signal, to the pid that was still the bridge. 4243 (recycled to something else),
+  # 4244 (different checkout) and the malformed record must not appear — a stale pidfile must not
+  # kill an unrelated process.
   assert_eq "$(cat "$kill_calls")" '-- 4242'
   local body; body="$(cat "$plist")"
   assert_contains "$body" '<string>_exec-bridge</string>'

@@ -6,6 +6,15 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.31.1] - 2026-08-17
+
+### Fixed
+
+- **A stale pidfile only kills this checkout's bridge** — the process-table check matched the bare
+  substring `bridge/index.ts`, so a recycled pid running another checkout or a dev shell could be
+  signalled on `start`; it now matches the full `${PLUGIN_ROOT}/bridge/index.ts` path, as the Windows
+  script already did (#12)
+
 ## [0.31.0] - 2026-08-17
 
 ### Changed
