@@ -104,7 +104,8 @@ PRIMARY_ARGS = ("command", "file_path", "path", "pattern", "query", "url", "prom
 # rules apply in every mode. Without the deny list, pi's hard `--tools` filter
 # would arrive here as a no-op and every CC agent would run with everything.
 DENYABLE_TOOLS = {"Read", "Grep", "Glob", "Bash", "Edit", "Write",
-                  "NotebookEdit", "Task", "WebFetch", "WebSearch",
+                  "NotebookEdit", "Task", "Agent", "TaskOutput", "TaskStop",
+                  "WebFetch", "WebSearch",
                   "SendMessage", "ListAgents"}
 
 # `thinking` in the config is pi's vocabulary; Claude Code spends the same
@@ -208,6 +209,26 @@ def _pi_shaped_usage(usage: dict) -> dict:
         "cacheRead": usage.get("cache_read_input_tokens") or 0,
         "cacheWrite": usage.get("cache_creation_input_tokens") or 0,
     }
+
+
+def apply_session_cost(result: PiResult, event: dict) -> None:
+    """Record the CLI's running session total. Do not add successive totals.
+
+    `total_cost_usd` on a `result` event is the price of the whole session so
+    far, not a per-event delta. Claude Code (and grok, which speaks the same
+    dialect) emits more than one: the parent finish, then a `task-notification`
+    wake for each late subagent. Summing those counts the same dollars many
+    times — run 15f5f883 stored $839 from 24 cumulative totals whose last
+    value was $37.
+
+    A later event with no cost field leaves the previous total alone.
+    """
+    raw = event.get("total_cost_usd")
+    if raw is None:
+        return
+    cost = float(raw)
+    result.cost = cost
+    result.usage.total_cost = cost
 
 
 def _context_tokens(usage: dict) -> int:
@@ -432,13 +453,12 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
             elif etype == "result":
                 # The result event is authoritative for the answer and the
                 # price: `result` is the final assistant text with subagent
-                # chatter already excluded, and total_cost_usd covers every
-                # turn including the ones this loop never saw usage for.
+                # chatter already excluded, and total_cost_usd is the running
+                # session total — later result events replace it, they do not
+                # add (see apply_session_cost).
                 if event.get("result"):
                     result.text = str(event["result"])
-                cost = float(event.get("total_cost_usd") or 0.0)
-                result.cost += cost
-                result.usage.total_cost += cost
+                apply_session_cost(result, event)
                 window = _reported_window(event, model_id)
                 if window:
                     result.context_window = window
@@ -455,7 +475,10 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     # Only mark the session created once the CLI has actually made it. Recording
     # it up front would send the next call to --resume a session that a crashed
     # start never wrote, turning one failure into every failure after it.
-    if starting and result.returncode == 0:
+    # A terminal result event counts too: the CLI wrote the session before it
+    # reported (say) a rate limit and exited non-zero, so the retry has to
+    # --resume it -- sending --session-id again fails with 'already in use'.
+    if starting and (result.returncode == 0 or terminal is not None):
         _record_session(session_dir, request.session_id)
 
     if terminal is not None:
