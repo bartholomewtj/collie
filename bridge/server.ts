@@ -168,8 +168,11 @@ export function startServer(opts: {
   // journal/registry.ts, never here.
   const journals = cfg.transcript ? buildJournalRegistry(cfg.journalRoots) : null;
   const transcripts = cfg.transcript ? new TranscriptStore() : null;
-  /** Does this agent have a journal at all — the snapshot's History-affordance gate. */
-  const hasJournal = (agent: string) => adapterFor(journals ?? {}, agent) !== undefined;
+  // Grok (and any future cwd-keyed harness) can offer history without Herdr naming a session.
+  const offerHistory = (agent: string, hasSessionRef: boolean) => {
+    const adapter = adapterFor(journals ?? {}, agent);
+    return adapter !== undefined && (hasSessionRef || typeof adapter.inferFromCwd === "function");
+  };
   // Per-session background notifications live in each session's runtime (built by the factory in
   // index.ts, wired to its StateEngine transitions). The routes here only fan preference changes and
   // snooze-clears across every live session's coordinator.
@@ -242,8 +245,8 @@ export function startServer(opts: {
             // journal for doesn't advertise a History button that can only ever come back empty.
             // withActivity runs FIRST: it returns an AgentView, which is what toPaneWire consumes,
             // and the two timestamps then ride through its rest-spread onto the wire shape.
-            agents: agents.map((p) => toPaneWire(withActivity(p), hasJournal)),
-            shellPanes: shellPanes.map((p) => toPaneWire(withActivity(p), hasJournal)),
+            agents: agents.map((p) => toPaneWire(withActivity(p), offerHistory)),
+            shellPanes: shellPanes.map((p) => toPaneWire(withActivity(p), offerHistory)),
             workspaces,
             tabs,
             sessions: registry.list(),
@@ -622,14 +625,19 @@ async function paneHistory(
   const pane = [...agents, ...shellPanes].find((a) => a.paneId === paneId);
   // No pane, or an agent that named no session (a shell, or a harness whose integration isn't
   // installed): nothing to read, and that's an ordinary answer rather than an error.
-  if (!pane?.agentSession) return unavailable("no-session");
+  if (!pane) return unavailable("no-session");
   // An agent with no adapter has no journal. Same answer — the UI shouldn't distinguish "this
   // harness isn't supported" from "this pane never started one"; both mean there's nothing to show.
   const adapter = adapterFor(journals, pane.agent);
   if (adapter === undefined) return unavailable("no-session");
+  // Herdr has no grok integration, so a grok pane arrives with no session ref. Infer from cwd.
+  const session =
+    pane.agentSession ??
+    (adapter.inferFromCwd !== undefined && pane.cwd ? await adapter.inferFromCwd(pane.cwd) : null);
+  if (!session) return unavailable("no-session");
 
   try {
-    const page = await transcripts.page(adapter, pane.agentSession, historyParams(url));
+    const page = await transcripts.page(adapter, session, historyParams(url));
     if (page === null) return unavailable("no-log");
     return json({ paneId, available: true, ...page } satisfies PaneHistoryResponse, accept);
   } catch (err) {
