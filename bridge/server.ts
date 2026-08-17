@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, normalize, sep } from "node:path";
+import { extname, join, normalize, relative, sep } from "node:path";
 import type { ActivityLedger } from "./activity.ts";
 import type { AuditLog } from "./audit.ts";
 import { isLoopbackBindHost, type Config } from "./config.ts";
@@ -428,7 +428,7 @@ export function startServer(opts: {
       if (isReservedAuthPath(pathname)) return reservedAuthPlaceholder();
 
       // ── Static PWA (with SPA fallback) ───────────────────────────────────
-      return serveStatic(pathname);
+      return serveStatic(pathname, req.headers.get("host") ?? "", cfg);
     },
   });
 
@@ -1478,10 +1478,16 @@ export function resolveStaticPath(
   pathname: string,
   webDir: string = WEB_DIR,
 ): { rel: string; full: string } | null {
-  const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const full = normalize(join(webDir, rel));
+  const raw = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const full = normalize(join(webDir, raw));
   if (full !== webDir && !full.startsWith(webDir + sep)) return null;
-  return { rel, full };
+  // `rel` is derived from the NORMALISED path, never from the request string. Otherwise a dot
+  // segment presents one path to the containment check above and a different one to the three
+  // checks keyed on `rel` below: "/./build-info.json" would dodge the private-file denial
+  // (issue #11), "/./sw.js" would lose its Service-Worker-Allowed header, and "/./assets/x.js"
+  // would be served no-cache instead of immutable. Forward slashes so `rel` reads the same on
+  // Windows as on the deployment host.
+  return { rel: relative(webDir, full).split(sep).join("/"), full };
 }
 
 /**
@@ -1533,10 +1539,22 @@ behind your own reverse proxy</em> in the README.</p>
   );
 }
 
-async function serveStatic(pathname: string): Promise<Response> {
+async function serveStatic(pathname: string, host: string, cfg: Config): Promise<Response> {
+  // The Host allowlist, which every /api/* route gets via guard() → checkAccess. The static route
+  // was the last one that skipped it, so with COLLIE_PUBLIC_HOSTS set a rebound DNS name was still
+  // served the app shell, build-info.json, and the X-Collie-Build header on every asset — the same
+  // hole that was closed for /api/config in #32 (issue #11). Deliberately ONLY the host check and
+  // not guard(): a top-level navigation carries no Origin, and the identity gate would 403 the whole
+  // PWA rather than one endpoint. Rebinding is a Host problem. First, before any path handling, so a
+  // rebound host cannot tell 403/404/503 apart by probing paths.
+  if (cfg.publicHosts.length > 0 && !isHostAllowed(host, cfg)) return text("host not allowed", 403);
+
   const resolved = resolveStaticPath(pathname);
   if (!resolved) return text("forbidden", 403);
   let { rel, full } = resolved;
+
+  // 404, not 403: a refusal that differs from "no such file" confirms the file is there.
+  if (isPrivateStaticFile(rel)) return text("not found", 404);
 
   let file = Bun.file(full);
   if (!(await file.exists())) {
@@ -1567,7 +1585,7 @@ async function serveStatic(pathname: string): Promise<Response> {
 /**
  * Cache-Control for a served dist file, keyed by its path relative to web/dist. Hashed assets under
  * `assets/` are content-addressed, so cache them hard + immutable. EVERYTHING else — index.html,
- * sw.js, manifest.webmanifest, build-info.json, the favicons — is MUTABLE across a rebuild and must
+ * sw.js, manifest.webmanifest, the favicons — is MUTABLE across a rebuild and must
  * always be revalidated (`no-cache`), so neither the browser NOR an intermediary reverse proxy can
  * pin a stale copy. This matters most for sw.js: a proxy that heuristically caches it (it shipped
  * with no Cache-Control before) starves `registration.update()` and wedges the whole SW update
@@ -1576,4 +1594,17 @@ async function serveStatic(pathname: string): Promise<Response> {
  */
 export function cacheControlFor(rel: string): string {
   return rel.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+}
+
+/**
+ * Dist files that exist on disk but must never be answered over HTTP.
+ *
+ * `build-info.json` is the build id in a file. Nothing fetches it: the bridge reads it off DISK for
+ * the X-Collie-Build header and /api/config (see `buildId`), collie-ctl reads it off disk, and the
+ * frontend learns the server build from that header and from /api/config — it has no fetch for this
+ * path. Serving it was purely an artefact of the whole dist tree being public, and it put the build
+ * id behind no gate at all (issue #11). Pure + exported for unit tests.
+ */
+export function isPrivateStaticFile(rel: string): boolean {
+  return rel === "build-info.json";
 }
