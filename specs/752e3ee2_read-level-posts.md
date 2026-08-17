@@ -60,7 +60,7 @@ and nothing throttles the upstream release check.
 - The settings page tells a read-only device why those controls are off instead of failing silently.
 - `bun test bridge/server.test.ts bridge/snooze.test.ts bridge/update.test.ts` and
   `cd web && bun run test` pass; `bun run build` typechecks clean.
-- README, ARCHITECTURE and the route comments say what the code now does; ADR 0012 records why push
+- README, ARCHITECTURE and the route comments say what the code now does; ADR 0013 records why push
   subscription is no longer read-level.
 
 ## Scope
@@ -77,7 +77,7 @@ and nothing throttles the upstream release check.
 - `web/src/components/snooze-control.test.tsx`, `web/src/components/notify-prefs-control.test.tsx`,
   `web/src/lib/push.test.ts`
 - `README.md`, `ARCHITECTURE.md`
-- `.adr/0012-notification-settings-are-writes.md` (new) + the index in `.adr/README.md`
+- `.adr/0013-notification-settings-are-writes.md` (new) + the index in `.adr/README.md`
 - `requests/issue-8-read-level-posts.md` (new — the ADW input file is missing; see *Change 8*)
 
 **Do NOT touch:** `herdr-plugin.toml`, `package.json`, `web/package.json`, `CHANGELOG.md` — this is a
@@ -552,7 +552,7 @@ Also mention the 7-day snooze cap and the 60 s update-check floor wherever those
 described (search README for `snooze` and `check for updates`); if there is no such passage, a line
 in the ARCHITECTURE notifications section is enough.
 
-**ADR 0012** — `.adr/0012-notification-settings-are-writes.md`, Nygard format (Context / Decision /
+**ADR 0013** — `.adr/0013-notification-settings-are-writes.md`, Nygard format (Context / Decision /
 Consequences), status `Accepted`, dated the day it lands. It clears the `.adr/README.md` bar because
 the code itself argued the other way — the comments being deleted in *Change 2* say "registering for
 push isn't terminal-driving, so a read-only device may still subscribe". Content:
@@ -645,5 +645,5 @@ behaviour on a deployment that has the device gate on, the PR body must call out
 2. That the change is breaking only when `COLLIE_DEVICE_HEADER` is set, and what a read-only device
    loses (nothing it can read; only the three settings actions).
 3. The 7-day snooze cap and the 60 s update-check floor.
-4. A pointer to ADR 0012, so a reviewer reads the omission of a third "settings" level as a decision
+4. A pointer to ADR 0013, so a reviewer reads the omission of a third "settings" level as a decision
    rather than an oversight.

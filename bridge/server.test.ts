@@ -5,6 +5,8 @@ import {
   BUILD_HEADER,
   cacheControlFor,
   checkAccess,
+  decodePathSegment,
+  failureText,
   marksPaneSeen,
   SEEN_HEADER,
   deviceAuth,
@@ -66,6 +68,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     deviceAllowlist: [],
     allowedOrigins: [],
     publicHosts: [],
+    pushAllowedHosts: [],
     vapidPublic: "",
     vapidPrivate: "",
     vapidSubject: "mailto:admin@example.com",
@@ -411,17 +414,17 @@ describe("sendReplySteps — two-step send & partial-failure clarity", () => {
     expect(client.calls).toEqual(["text", "keys"]);
   });
 
-  test("text step fails → nothing delivered, surfaces Herdr's message (safe to resend)", async () => {
+  test("text step fails → nothing delivered, generic failure (safe to resend)", async () => {
     const client = new FakeClient("text");
     const out = await sendReplySteps(client, "p1", "hello", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "text rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["text"]); // never reached the keys step
   });
 
   test("submit-only (empty text) failure is a plain failure, not the partial-delivery message", async () => {
     const client = new FakeClient("keys");
     const out = await sendReplySteps(client, "p1", "", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "keys rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["keys"]); // no text typed
   });
 
@@ -956,6 +959,17 @@ describe("startupWarnings — security-posture nags", () => {
     expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(true);
     expect(has(ws, "bound to 0.0.0.0")).toBe(true);
   });
+
+  test("pushAllowedHosts with private/loopback entry produces a warning naming the offending host", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["10.0.0.5", "box.local"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS contains private/loopback host(s) (10.0.0.5, box.local)")).toBe(true);
+    expect(has(ws, "issue #7")).toBe(true);
+  });
+
+  test("pushAllowedHosts with normal push hosts produces no warning", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["push.custom.org", "fcm.googleapis.com"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS")).toBe(false);
+  });
 });
 
 describe("isLoopbackPeer", () => {
@@ -1130,6 +1144,87 @@ describe("isPrivateStaticFile", () => {
   test("every other dist file still is", () => {
     for (const rel of ["index.html", "sw.js", "manifest.webmanifest", "assets/app.js"]) {
       expect(isPrivateStaticFile(rel)).toBe(false);
+    }
+  });
+});
+
+describe("decodePathSegment", () => {
+  test("valid plain segment round-trips", () => {
+    expect(decodePathSegment("pane-123")).toBe("pane-123");
+    expect(decodePathSegment("tab1")).toBe("tab1");
+  });
+
+  test("decodes valid percent-escapes", () => {
+    expect(decodePathSegment("%20")).toBe(" ");
+    expect(decodePathSegment("w1%3Ap1")).toBe("w1:p1");
+    expect(decodePathSegment("hello%2Fworld")).toBe("hello/world");
+  });
+
+  test("returns null on malformed percent-escapes", () => {
+    expect(decodePathSegment("%ff")).toBeNull();
+    expect(decodePathSegment("%E0%A4%A")).toBeNull();
+    expect(decodePathSegment("%")).toBeNull();
+    expect(decodePathSegment("%1")).toBeNull();
+    expect(decodePathSegment("%ZZ")).toBeNull();
+  });
+
+  test("returns empty string when decoding an empty string (falsy but valid)", () => {
+    expect(decodePathSegment("")).toBe("");
+  });
+});
+
+describe("failureText", () => {
+  test("returns exactly '<context> failed'", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("something went wrong");
+      expect(failureText("upload", err)).toBe("upload failed");
+      expect(failureText("herdr read", err)).toBe("herdr read failed");
+      expect(failureText("transcript read", err)).toBe("transcript read failed");
+      expect(failureText("reply", err)).toBe("reply failed");
+      expect(failureText("key send", err)).toBe("key send failed");
+      expect(failureText("close pane", err)).toBe("close pane failed");
+      expect(failureText("rename pane", err)).toBe("rename pane failed");
+      expect(failureText("close tab", err)).toBe("close tab failed");
+      expect(failureText("rename tab", err)).toBe("rename tab failed");
+      expect(failureText("create tab", err)).toBe("create tab failed");
+      expect(failureText("create space", err)).toBe("create space failed");
+      expect(failureText("request", err)).toBe("request failed");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the returned string does NOT contain the error's message or paths", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("/home/op/.local/state/collie/push-subscriptions.json: EACCES");
+      const result = failureText("transcript read", err);
+      expect(result).toBe("transcript read failed");
+      expect(result.includes("/home")).toBe(false);
+      expect(result.includes("EACCES")).toBe(false);
+      expect(result.includes("push-subscriptions.json")).toBe(false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the real error is logged to console.error with full object", () => {
+    const originalConsoleError = console.error;
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logged.push(args);
+    };
+    const err = new Error("something internal");
+    try {
+      failureText("reply", err);
+      expect(logged.length).toBe(1);
+      expect(logged[0]![0]).toBe("[bridge] reply failed:");
+      expect(logged[0]![1]).toBe(err);
+    } finally {
+      console.error = originalConsoleError;
     }
   });
 });
