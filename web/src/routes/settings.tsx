@@ -18,7 +18,8 @@ import { usePushControl } from "@/hooks/use-push";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
 import { homePath } from "@/lib/nav";
 import { useSession } from "@/lib/session";
-import type { PushAvailability } from "@/lib/push";
+import type { EnableFailure, PushAvailability } from "@/lib/push";
+import { isReadOnly } from "@/lib/types";
 
 // Settings page — currently just the push-notification toggle. Reachable from the home header gear.
 // Lives under the root route, so the snapshot polling/push-setup in RootLayout keeps running behind it.
@@ -30,6 +31,7 @@ export function SettingsRoute() {
 
   // Settings lives under the root route, so the live snapshot (bridge + device auth) is right here.
   const root = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData | undefined;
+  const readOnly = isReadOnly(root?.device);
   // The build the bridge reports it's serving — handy in the diagnostics panel alongside the local
   // stamp in the footer. Best-effort: stays undefined if the bridge is unreachable.
   const [serverBuild, setServerBuild] = useState<string | undefined>();
@@ -47,7 +49,7 @@ export function SettingsRoute() {
   const on = Boolean(state && !state.userDisabled && state.subscribed);
   const blocked = Boolean(state && state.availability !== "ready");
   // When blocked we can still allow turning OFF a lingering subscription, but never turning ON.
-  const toggleDisabled = busy || !state || (blocked && !on);
+  const toggleDisabled = busy || !state || (blocked && !on) || readOnly;
 
   async function toggle(next: boolean) {
     setError(null);
@@ -107,9 +109,9 @@ export function SettingsRoute() {
             </div>
           </div>
 
-          {state && blocked && (
+          {((state && blocked) || readOnly) && (
             <p className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground">
-              {availabilityNote(state.availability)}
+              {readOnly ? reasonText("refused") : availabilityNote(state!.availability)}
             </p>
           )}
           {error && (
@@ -126,8 +128,8 @@ export function SettingsRoute() {
             whatever this particular device's push status turns out to be. */}
         {state?.availability !== "server-off" && (
           <>
-            <NotifyPrefsControl />
-            <SnoozeControl snoozedUntil={root?.snoozedUntil ?? null} />
+            <NotifyPrefsControl readOnly={readOnly} />
+            <SnoozeControl snoozedUntil={root?.snoozedUntil ?? null} readOnly={readOnly} />
           </>
         )}
 
@@ -146,8 +148,10 @@ export function SettingsRoute() {
   );
 }
 
-function reasonText(reason: PushAvailability | undefined): string {
+function reasonText(reason: EnableFailure | undefined): string {
   switch (reason) {
+    case "refused":
+      return "This device isn't authorised to change notification settings.";
     case "insecure":
       return "Push needs an HTTPS connection.";
     case "server-off":

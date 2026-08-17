@@ -333,9 +333,11 @@ export function startServer(opts: {
         } satisfies BridgeConfig, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/subscribe" && req.method === "POST") {
-        // Read-level: registering for push isn't terminal-driving, so a read-only device may still
-        // subscribe to notifications.
-        const denied = guard(req, cfg, "read");
+        // Write-level: a subscription is a standing grant to receive every alert this bridge sends,
+        // so an unallowlisted device must not be able to create one for itself (issue #8). It isn't
+        // terminal-driving, but "read-only" has never meant "may register for the operator's push
+        // stream" — see .adr/0012.
+        const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const bad = requireJsonBody(req);
         if (bad) return bad;
@@ -357,8 +359,10 @@ export function startServer(opts: {
         return secure(new Response(null, { status: 204 }));
       }
       if (pathname === "/api/notifications/snooze" && req.method === "POST") {
-        // Managing your own notification quiet-hours isn't terminal-driving — read-level, like subscribe.
-        const denied = guard(req, cfg, "read");
+        // Write-level: snooze is BRIDGE-WIDE (.adr/0003), so one read-only device muting itself
+        // mutes the operator's phone too. Silencing every alert is damage, which is exactly what the
+        // device gate bounds (issue #8).
+        const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const bad = requireJsonBody(req);
         if (bad) return bad;
@@ -369,7 +373,9 @@ export function startServer(opts: {
           return text("bad request", 400);
         }
         const until = (body as { snoozedUntil?: unknown }).snoozedUntil;
-        if (until !== null && typeof until !== "number") return text("bad snoozedUntil", 400);
+        // Reject NaN/Infinity here so a nonsense deadline is a 400, not a silent clamp.
+        if (until !== null && (typeof until !== "number" || !Number.isFinite(until)))
+          return text("bad snoozedUntil", 400);
         await snooze.set(until);
         // Snoozing should also clear whatever's already on the lock screen — across every session,
         // since snooze is bridge-wide. Each session owns its own notification slot (tag).
@@ -381,15 +387,16 @@ export function startServer(opts: {
         return json({ snoozedUntil: snooze.until() }, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/notifications/prefs") {
-        // Which agent statuses push (bridge-wide). Read-level like snooze — managing your own
-        // notification preferences isn't terminal-driving.
+        // Which agent statuses push, bridge-wide. Reading them discloses nothing and changes
+        // nothing, so GET stays read-level; POST is a write, like snooze — {"blocked":false,
+        // "done":false,"updates":false} silences every alert for every device (issue #8).
         if (req.method === "GET") {
           const denied = guard(req, cfg, "read");
           if (denied) return denied;
           return json(notifyPrefs.current(), req.headers.get("accept-encoding"));
         }
         if (req.method === "POST") {
-          const denied = guard(req, cfg, "read");
+          const denied = guard(req, cfg, "write");
           if (denied) return denied;
           const bad = requireJsonBody(req);
           if (bad) return bad;
@@ -410,9 +417,12 @@ export function startServer(opts: {
         return text("method not allowed", 405);
       }
       if (pathname === "/api/update/check" && req.method === "POST") {
-        // Force an immediate upstream check (the "check for updates" button), instead of waiting for
-        // the periodic timer. Read-level — checking a version isn't terminal-driving — and idempotent
-        // (the monitor de-dupes concurrent checks). Returns the fresh status the client revalidates on.
+        // Force an immediate upstream check (the "check for updates" button) instead of waiting for
+        // the periodic timer. Still read-level — a version check isn't operator-visible state — but
+        // the monitor now enforces a minimum interval between upstream fetches (update.ts), because
+        // the in-flight guard only coalesces CONCURRENT calls: a sequential loop was one anonymous
+        // GitHub request each, against a 60/hr limit (issue #8). A throttled call is a no-op that
+        // returns the last known status.
         const denied = guard(req, cfg, "read");
         if (denied) return denied;
         await updateMonitor.checkRelease();
@@ -1165,6 +1175,23 @@ async function uploadPane(
 }
 
 /**
+ * Whether this request's method can change state — anything that is not a safe read.
+ *
+ * The Origin requirement keys off this as well as the access level, because the two are different
+ * questions: `level` is what the caller is permitted to do, while the method is whether this
+ * particular call mutates. A read-level POST (issue #8 — snooze, prefs, subscribe, update/check)
+ * was accepted with no Origin at all from a remote Host, which is exactly the non-browser /
+ * Origin-stripped shape the write rule exists to refuse. Browsers always send Origin on a POST.
+ *
+ * `req.method` is read defensively: the gate unit tests hand `checkAccess` a headers-only stub, so
+ * an absent method reads as GET.
+ */
+export function isStateChangingMethod(req: Request): boolean {
+  const method = (req.method ?? "GET").toUpperCase();
+  return method !== "GET" && method !== "HEAD";
+}
+
+/**
  * Access gate for the API:
  *  - Host allowlist (opt-in): when COLLIE_PUBLIC_HOSTS is set, the request's Host header must be a
  *    loopback form, one of those hosts, or the host of an allowed origin — otherwise rejected,
@@ -1177,9 +1204,10 @@ async function uploadPane(
  *    http://localhost:<any port> is a different origin from a remote Collie, and treating it as
  *    trusted handed any local page a CSRF write against the bridge. Browsers omit Origin on
  *    same-origin GETs (so the snapshot poll passes); they send it on POSTs.
- *  - Origin required for writes: a state-changing (`level === "write"`) request with no Origin is
- *    trusted only from loopback (curl on the host). Browsers always send Origin on fetch/SW POSTs,
- *    so a missing Origin on a remote write is a non-browser or Origin-stripped request — reject it.
+ *  - Origin required for anything state-changing: a request with no Origin is trusted only from
+ *    loopback (curl on the host) if it is a write OR its method is not GET/HEAD. Browsers always
+ *    send Origin on fetch/SW POSTs, so a missing Origin on a remote POST is a non-browser or
+ *    Origin-stripped request — reject it whatever access level the route asks for (issue #8).
  *  - Optional Tailscale identity: when a trusted user is configured under `tailscale serve`, the
  *    request must carry a matching `Tailscale-User-Login`. A missing header is rejected too —
  *    serve injects none for tagged nodes, so tolerating it let any tagged node write. Under
@@ -1211,8 +1239,9 @@ export function checkAccess(
     // Local dev through the vite proxy re-permits itself via COLLIE_ALLOWED_ORIGINS.
     const allowed = originHost === host || cfg.allowedOrigins.includes(origin);
     if (!allowed) return { ok: false, reason: "cross-origin rejected" };
-  } else if (level === "write" && !LOOPBACK_HOST.test(host)) {
-    // A write with no Origin header from a non-loopback Host isn't a real browser request — refuse.
+  } else if ((level === "write" || isStateChangingMethod(req)) && !LOOPBACK_HOST.test(host)) {
+    // A state-changing request with no Origin header from a non-loopback Host isn't a real browser
+    // request — refuse. Loopback (curl on the host) is still exempt.
     return { ok: false, reason: "origin required" };
   }
 

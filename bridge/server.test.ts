@@ -13,6 +13,7 @@ import {
   isJsonContentType,
   isLoopbackPeer,
   isReservedAuthPath,
+  isStateChangingMethod,
   keysPane,
   normalizeTabLabel,
   paneReadResponse,
@@ -30,10 +31,11 @@ import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 // checkAccess is the API security gate (same-origin/CSRF + optional Tailscale identity). A
 // regression here silently opens remote shell access, so it gets the most direct coverage.
 
-function req(headers: Record<string, string>): Request {
+function req(headers: Record<string, string>, method = "GET"): Request {
   const lower: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) lower[k.toLowerCase()] = v;
   return {
+    method,
     headers: { get: (name: string) => lower[name.toLowerCase()] ?? null },
   } as unknown as Request;
 }
@@ -244,7 +246,7 @@ describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
   });
 });
 
-describe("checkAccess — Origin required for writes", () => {
+describe("checkAccess — Origin required for anything state-changing", () => {
   test("write with no Origin from a non-loopback Host is rejected", () => {
     expect(checkAccess(req({ host: "collie.example.ts.net" }), cfg(), "write")).toEqual({
       ok: false,
@@ -268,6 +270,47 @@ describe("checkAccess — Origin required for writes", () => {
         "write",
       ),
     ).toEqual({ ok: true });
+  });
+
+  // Issue #8: the Origin fallback used to key off the access level alone, so a read-level POST from
+  // a remote Host with no Origin at all sailed through — the exact non-browser shape the rule
+  // exists to refuse. The method is now part of the question.
+  test("a read-level POST with no Origin from a non-loopback Host is rejected (issue #8)", () => {
+    expect(checkAccess(req({ host: "collie.ts.net" }, "POST"), cfg(), "read")).toEqual({
+      ok: false,
+      reason: "origin required",
+    });
+  });
+
+  test("a read-level POST with no Origin from loopback is allowed (curl on the host)", () => {
+    expect(checkAccess(req({ host: "127.0.0.1:8787" }, "POST"), cfg(), "read")).toEqual({ ok: true });
+  });
+
+  test("a read-level POST WITH a matching Origin passes (the settings page)", () => {
+    expect(
+      checkAccess(
+        req({ host: "collie.ts.net", origin: "https://collie.ts.net" }, "POST"),
+        cfg(),
+        "read",
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  test("a GET with no Origin still passes — browsers omit it on same-origin reads", () => {
+    expect(checkAccess(req({ host: "collie.ts.net" }, "GET"), cfg(), "read")).toEqual({ ok: true });
+  });
+});
+
+describe("isStateChangingMethod", () => {
+  test("GET and HEAD are reads; everything else changes state", () => {
+    expect(isStateChangingMethod(req({}, "GET"))).toBe(false);
+    expect(isStateChangingMethod(req({}, "head"))).toBe(false);
+    expect(isStateChangingMethod(req({}, "POST"))).toBe(true);
+    expect(isStateChangingMethod(req({}, "delete"))).toBe(true);
+  });
+
+  test("a request with no method reads as GET (the header-only test stub)", () => {
+    expect(isStateChangingMethod({ headers: { get: () => null } } as unknown as Request)).toBe(false);
   });
 });
 
@@ -807,6 +850,9 @@ describe("guard applies the device gate to writes only", () => {
   // The scope of the gate, stated as a test rather than only in prose: a header-less caller keeps
   // READ access (it is read-only, not rejected outright). If someone later tightens this, it should
   // be a deliberate change with this test updated, not an accident.
+  // Tightened deliberately in issue #8: snooze, notification prefs (POST) and push subscribe are
+  // now guarded as "write", so a read-only device can watch and read its prefs but can no longer
+  // silence the herd for everyone. Pane reads, history and the snapshot are unchanged.
   test("read with no device header still proceeds (read-only, not rejected)", () => {
     expect(read({})).toBeNull();
     expect(read({ "x-device-id": "intruder" })).toBeNull();

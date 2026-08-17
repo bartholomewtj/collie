@@ -1,4 +1,6 @@
-import { keysMatch, subscribeBody } from "./push";
+import { http, HttpResponse } from "msw";
+import { server } from "@/test/setup";
+import { enablePush, isPushDisabledByUser, keysMatch, subscribeBody } from "./push";
 
 // The VAPID-rotation guard in enablePush hinges on this byte compare: an existing PushManager
 // subscription is bound to the applicationServerKey it was created with, so when the server rotates
@@ -59,5 +61,64 @@ describe("subscribeBody", () => {
   it("never forwards a field the browser happened to put on the subscription", () => {
     const extra = { ...json, expirationTime: 123, junk: "x" } as PushSubscriptionJSON;
     expect(Object.keys(subscribeBody(extra, null)).sort()).toEqual(["endpoint", "keys"]);
+  });
+});
+
+describe("enablePush", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
+    Object.defineProperty(window, "PushManager", { value: class PushManager {}, configurable: true });
+    Object.defineProperty(window, "Notification", {
+      value: {
+        permission: "granted",
+        requestPermission: vi.fn().mockResolvedValue("granted"),
+      },
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        register: vi.fn().mockResolvedValue({
+          pushManager: {
+            getSubscription: vi.fn().mockResolvedValue(null),
+            subscribe: vi.fn().mockResolvedValue({
+              toJSON: () => ({
+                endpoint: "https://push/ep-test",
+                keys: { p256dh: "P", auth: "A" },
+              }),
+            }),
+          },
+        }),
+      },
+      configurable: true,
+    });
+
+    server.use(
+      http.get("/api/config", () =>
+        HttpResponse.json({
+          push: true,
+          vapidPublicKey: "AQIDBA",
+        }),
+      ),
+    );
+  });
+
+  it("returns refused on 403, does not remember endpoint, and does not clear user-disabled", async () => {
+    localStorage.setItem("collie:push-disabled", "1");
+    server.use(http.post("/api/subscribe", () => new HttpResponse(null, { status: 403 })));
+
+    const result = await enablePush();
+    expect(result).toEqual({ ok: false, reason: "refused" });
+    expect(localStorage.getItem("collie:push-endpoint")).toBeNull();
+    expect(isPushDisabledByUser()).toBe(true);
+  });
+
+  it("returns ok on success, remembers endpoint, and clears user-disabled", async () => {
+    localStorage.setItem("collie:push-disabled", "1");
+    server.use(http.post("/api/subscribe", () => new HttpResponse(null, { status: 204 })));
+
+    const result = await enablePush();
+    expect(result).toEqual({ ok: true });
+    expect(localStorage.getItem("collie:push-endpoint")).toBe("https://push/ep-test");
+    expect(isPushDisabledByUser()).toBe(false);
   });
 });

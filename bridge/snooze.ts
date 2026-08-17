@@ -8,6 +8,24 @@ import type { Config } from "./config.ts";
 // survives the `systemctl restart` that backend changes require, and self-expiring. `now` is
 // injected so `bun test` can drive expiry without real time.
 
+/**
+ * Longest a snooze may run. A snooze is "back in a bit", not an off-switch: `snoozedUntil: 9e15` was
+ * accepted and persisted, muting every push forever with nothing in the UI ever saying so (issue
+ * #8). Seven days is comfortably longer than any real quiet-hours window and short enough that a
+ * forgotten snooze self-heals.
+ */
+export const MAX_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Clamp a requested deadline: null / non-finite / already-past resumes immediately, anything beyond
+ * {@link MAX_SNOOZE_MS} from `now` is trimmed back to the cap. Pure + exported so the boundary is
+ * unit-tested without touching disk.
+ */
+export function clampSnooze(mutedUntil: number | null, now: number): number | null {
+  if (mutedUntil === null || !Number.isFinite(mutedUntil) || mutedUntil <= now) return null;
+  return Math.min(mutedUntil, now + MAX_SNOOZE_MS);
+}
+
 export class Snooze {
   private mutedUntil: number | null = null;
   private readonly file: string;
@@ -22,7 +40,10 @@ export class Snooze {
   async load(): Promise<void> {
     try {
       const raw = (await Bun.file(this.file).json()) as { mutedUntil?: unknown };
-      this.mutedUntil = typeof raw.mutedUntil === "number" ? raw.mutedUntil : null;
+      // Clamped on the way in as well as the way out: an uncapped value persisted by an earlier
+      // build would otherwise survive every restart.
+      this.mutedUntil =
+        typeof raw.mutedUntil === "number" ? clampSnooze(raw.mutedUntil, this.now()) : null;
     } catch {
       /* none saved yet */
     }
@@ -40,7 +61,7 @@ export class Snooze {
 
   /** Snooze until `mutedUntil` (epoch ms); a past timestamp or null resumes immediately. */
   async set(mutedUntil: number | null): Promise<void> {
-    this.mutedUntil = mutedUntil !== null && mutedUntil > this.now() ? mutedUntil : null;
+    this.mutedUntil = clampSnooze(mutedUntil, this.now());
     await mkdir(this.cfg.stateDir, { recursive: true, mode: 0o700 });
     // node:fs write (not Bun.write) so we can set owner-only perms — the state dir holds push keys.
     await writeFile(this.file, JSON.stringify({ mutedUntil: this.mutedUntil }, null, 2), {

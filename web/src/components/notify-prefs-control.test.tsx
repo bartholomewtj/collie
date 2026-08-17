@@ -72,4 +72,17 @@ describe("NotifyPrefsControl", () => {
 
     await waitFor(() => expect(needs).toBeChecked());
   });
+
+  test("with readOnly, the switches are disabled and read-only note renders", async () => {
+    render(<NotifyPrefsControl readOnly={true} />);
+    expect(
+      screen.getByText(/read-only — this device isn't authorised to change notification settings/i),
+    ).toBeInTheDocument();
+    const needs = await screen.findByRole("switch", { name: /needs input/i });
+    const finished = await screen.findByRole("switch", { name: /finished/i });
+    const updates = await screen.findByRole("switch", { name: /app updates/i });
+    expect(needs).toBeDisabled();
+    expect(finished).toBeDisabled();
+    expect(updates).toBeDisabled();
+  });
 });
