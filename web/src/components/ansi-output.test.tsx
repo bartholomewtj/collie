@@ -110,6 +110,12 @@ describe("mirror line wrapping", () => {
     expect(pannedPre.querySelector("span.inline-block")).toBeNull();
     expect(pannedPre.textContent).toBe(`${border}\n`);
   });
+
+  it("clips a long rounded box border while wrapping (Grok/omp composer chrome)", () => {
+    const top = `  ╭${"─".repeat(40)}╮`;
+    const { container } = render(<AnsiOutput text={`${top}\n`} />);
+    expect(container.querySelector("span.inline-block")?.textContent).toBe(top);
+  });
 });
 
 // URLs printed by an agent are plain characters — the mirror finds them and wraps those ranges in

@@ -1,0 +1,16 @@
+  C:\\project                                                                 12K / 500K
+
+     > can I attach images from the phone?                                  3:01 PM
+
+     ♦ Thought for 1.2s
+
+     Yes. Tap the image button on the reply box.                            3:01 PM
+
+    | Read composer.tsx  6.0s                                     1m13s ↓134k [stop]
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ >                                                                  │
+  ╰───────────────────────────────── Grok 4.6 (high) · always-approve ─╯
+
+  Enter:send now  │  Shift+Tab:mode  │  Esc:cancel  │  Ctrl+x:shortcuts
+

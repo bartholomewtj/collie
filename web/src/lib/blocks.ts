@@ -171,7 +171,7 @@ export function splitLines(segments: AnsiSegment[]): StyledLine[] {
 
 // A terminal-width horizontal border is visually useless when browser wrapping turns it into several rows.
 // This deliberately accepts only one repeated horizontal rule glyph (apart from terminal padding): labels,
-// mixed rows, corners/tables, prose, and ASCII rules keep the mirror's ordinary wrapping.
+// mixed rows, square table edges, prose, and ASCII rules keep the mirror's ordinary wrapping.
 //
 // Twenty stands on two facts of its own, and deliberately cites no other threshold. (1) Nothing in prose,
 // markdown or code runs to twenty IDENTICAL rule glyphs, so the classifier cannot fire on real content.
@@ -184,14 +184,24 @@ export function splitLines(segments: AnsiSegment[]): StyledLine[] {
 // display-cell floor. Do not re-couple the two. They classify borders for different consumers with
 // opposite failure costs — a false positive there types Enter into the wrong screen, a false positive here
 // crops a short rule — so they share the glyph alphabet in rule-glyphs.ts and nothing else.
+//
+// Rounded `╭─╮` / `╰─╯` box borders are the same wrap problem with corners: Grok (and omp) draw the
+// composer that way at the full pane width (~200 columns). Wrap-on turns one of those rows into a
+// wall of `─` on a phone. Square `┌─┐` table edges stay unclipped — they are mixed TUI chrome, not
+// a single rule, and clipping one would crop a table. The rounded pair is required to have the same
+// 20-glyph `─` run, so a short `╭─╮` in prose still wraps.
 const MIN_NO_WRAP_BORDER_LENGTH = 20;
 const PURE_HORIZONTAL_BORDER = new RegExp(
   `^([${PURE_HORIZONTAL_RULE_GLYPH_CLASS}])\\1{${MIN_NO_WRAP_BORDER_LENGTH - 1},}$`,
 );
+const ROUNDED_BOX_BORDER = new RegExp(
+  `^[╭╰]─{${MIN_NO_WRAP_BORDER_LENGTH},}[\\s\\S]*[╮╯]$`,
+);
 
 function styledLine(segments: AnsiSegment[]): StyledLine {
-  const text = segments.map((segment) => segment.text).join("");
-  return PURE_HORIZONTAL_BORDER.test(text.trim()) ? { segments, noWrap: true } : { segments };
+  const text = segments.map((segment) => segment.text).join("").trim();
+  const clip = PURE_HORIZONTAL_BORDER.test(text) || ROUNDED_BOX_BORDER.test(text);
+  return clip ? { segments, noWrap: true } : { segments };
 }
 
 // The two generic StyledLine probes. They live HERE, in the core AST module that imports nothing
