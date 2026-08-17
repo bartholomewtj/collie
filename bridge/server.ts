@@ -181,6 +181,20 @@ export function startServer(opts: {
     // Content-Length is absent or false. The upload handler still does its own precise check.
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
+    // Bun's `development` default is `NODE_ENV !== "production"`, and nothing in Collie's launch paths
+    // sets NODE_ENV — so without this the bridge served Bun's HTML error page, stack trace and absolute
+    // source paths included, to anyone who could make a handler throw. Pinned in code rather than via a
+    // unit Environment= line because the three launch paths in collie-ctl.sh plus the hand-maintained
+    // systemd/collie.service copy would all have to agree, and nothing tests that they do.
+    development: false,
+
+    // Last line of defence: anything that escapes `fetch` (or a rejected promise a handler returned)
+    // lands here instead of Bun's default page. `text()` applies the shared hardening headers, which a
+    // raw `new Response` here would skip.
+    error(err: unknown) {
+      return text(failureText("request", err), 500);
+    },
+
     async fetch(req, srv) {
       // Peer-address gate, ahead of routing so it covers the static PWA too. Under the loopback bind
       // that config.ts enforces this can never fire; it exists so a wide bind reached some other way
@@ -264,7 +278,8 @@ export function startServer(opts: {
         if (denied) return denied;
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
-        const tabId = decodeURIComponent(tabMatch[1]!);
+        const tabId = decodePathSegment(tabMatch[1]!);
+        if (tabId === null) return text("bad tab id", 400);
         const action = tabMatch[2];
         const device = deviceAuth(req, cfg).device;
         if (action === "close") return closeTab(rt.herdr, tabId, req, audit, device, rt.name);
@@ -274,7 +289,6 @@ export function startServer(opts: {
       // ── Per-pane read / send ─────────────────────────────────────────────
       const paneMatch = pathname.match(PANE_ROUTE);
       if (paneMatch) {
-        const paneId = decodeURIComponent(paneMatch[1]!);
         const action = paneMatch[2];
         // Reading a pane is allowed for any access-gated client; every action (reply/keys/upload/
         // close) types into or restructures a terminal, so it additionally needs an authorised device.
@@ -282,6 +296,8 @@ export function startServer(opts: {
         const isRead = !action || action === "history";
         const denied = guard(req, cfg, isRead ? "read" : "write");
         if (denied) return denied;
+        const paneId = decodePathSegment(paneMatch[1]!);
+        if (paneId === null) return text("bad pane id", 400);
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
         const { herdr, name: session } = rt;
@@ -545,7 +561,7 @@ async function readPane(
       build,
     );
   } catch (err) {
-    return text(`herdr read failed: ${(err as Error).message}`, 502);
+    return text(failureText("herdr read", err), 502);
   }
 }
 
@@ -609,7 +625,7 @@ async function paneHistory(
     if (page === null) return unavailable("no-log");
     return json({ paneId, available: true, ...page } satisfies PaneHistoryResponse, accept);
   } catch (err) {
-    return text(`transcript read failed: ${(err as Error).message}`, 502);
+    return text(failureText("transcript read", err), 502);
   }
 }
 
@@ -665,7 +681,7 @@ export async function sendReplySteps(
         error: "typed into the pane but not submitted — check the pane before resending",
       };
     }
-    return { ok: false, textDelivered, error: (err as Error).message };
+    return { ok: false, textDelivered, error: failureText("reply", err) };
   }
 }
 
@@ -787,7 +803,7 @@ export async function keysPane(
         detail: { keys, sent: false, promptBinding: binding.audit },
       });
     }
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("key send", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -853,7 +869,7 @@ async function checkPromptBinding(
   } catch (err) {
     return {
       ok: false,
-      error: `herdr read failed: ${(err as Error).message}`,
+      error: failureText("herdr read", err),
       status: 502,
       audit: { checked: true, passed: false, expected, reason: "read_failed" },
     };
@@ -910,7 +926,7 @@ async function closePane(
     audit.record({ action: "pane.close", paneId, session, device, detail: {} });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("close pane", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -943,7 +959,7 @@ async function renamePane(
     audit.record({ action: "pane.rename", paneId, session, device, detail: { label } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("rename pane", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -990,7 +1006,7 @@ async function renameTab(
     audit.record({ action: "tab.rename", session, device, detail: { tabId, label: parsed.label } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("rename tab", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -1012,7 +1028,7 @@ async function closeTab(
     audit.record({ action: "tab.close", session, device, detail: { tabId } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("close tab", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -1055,7 +1071,7 @@ async function createTab(
       pane: { ...created, workspaceLabel: label },
     } satisfies CreateResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies CreateResponse, ae);
+    return json({ ok: false, error: failureText("create tab", err) } satisfies CreateResponse, ae);
   }
 }
 
@@ -1099,7 +1115,7 @@ async function createWorkspace(
       },
     } satisfies CreateResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies CreateResponse, ae);
+    return json({ ok: false, error: failureText("create space", err) } satisfies CreateResponse, ae);
   }
 }
 
@@ -1144,19 +1160,19 @@ async function uploadPane(
   if (file.size > MAX_UPLOAD_BYTES) {
     return json({ ok: false, error: "image too large (max 10 MB)" } satisfies UploadResponse, ae);
   }
-  // formData() has already buffered the body, so this is a copy, not a second read. Take it once
-  // and use it for both the sniff and the write.
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const ext = imageExtFromBytes(bytes.subarray(0, SNIFF_BYTES));
-  if (!ext) {
-    // Deliberately does not echo file.type back: it is client-controlled and, now that the bytes
-    // decide, it is not the reason for the refusal either.
-    return json(
-      { ok: false, error: "unsupported image type (expected PNG, JPEG, GIF or WebP)" } satisfies UploadResponse,
-      ae,
-    );
-  }
   try {
+    // formData() has already buffered the body, so this is a copy, not a second read. Take it once
+    // and use it for both the sniff and the write.
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ext = imageExtFromBytes(bytes.subarray(0, SNIFF_BYTES));
+    if (!ext) {
+      // Deliberately does not echo file.type back: it is client-controlled and, now that the bytes
+      // decide, it is not the reason for the refusal either.
+      return json(
+        { ok: false, error: "unsupported image type (expected PNG, JPEG, GIF or WebP)" } satisfies UploadResponse,
+        ae,
+      );
+    }
     const dir = join(cfg.stateDir, "uploads");
     // 0700 — uploads (and the state dir they live under) may hold sensitive images; keep them
     // owner-only. recursive:true applies the mode to any intermediate dirs it creates too.
@@ -1187,7 +1203,7 @@ async function uploadPane(
     });
     return json({ ok: true, path: fullPath } satisfies UploadResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies UploadResponse, ae);
+    return json({ ok: false, error: failureText("upload", err) } satisfies UploadResponse, ae);
   }
 }
 
@@ -1379,6 +1395,34 @@ function jsonError(message: string, status: number, _acceptEncoding: string | nu
 
 function text(body: string, status: number): Response {
   return secure(new Response(body, { status }));
+}
+
+/**
+ * Decode one path segment, or null if the client sent a malformed percent-escape.
+ *
+ * `decodeURIComponent` throws `URIError` on input like `%ff` or `%E0%A4%A`. Every such throw used to
+ * escape the fetch handler. Pure + exported so the malformed-input table is unit-tested without
+ * standing up Bun.serve.
+ */
+export function decodePathSegment(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The single place an exception becomes a client-visible string.
+ *
+ * The real error — which routinely carries absolute journal, state-dir and Herdr-socket paths, and
+ * for a socket failure the whole raw reply line — goes to the log, where the operator reads it with
+ * `journalctl --user -u collie -f`. The client gets a fixed phrase naming only what was being
+ * attempted. Never interpolate `err` into the return value.
+ */
+export function failureText(context: string, err: unknown): string {
+  console.error(`[bridge] ${context} failed:`, err);
+  return `${context} failed`;
 }
 
 /**

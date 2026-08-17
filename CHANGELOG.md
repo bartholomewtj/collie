@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.30.1] - 2026-08-17
+
+### Fixed
+
+- **Malformed percent-escapes in a pane or tab URL return 400** instead of Bun's HTML dev error page (#10)
+- **`Bun.serve` runs with `development: false` and an `error()` catch-all**, so no stack trace or source path can reach a client (#10)
+- **Error responses name what failed and nothing else**; the full error, with paths, now goes only to the log — read it with `journalctl --user -u collie -f` (#10)
+
 ## [0.30.0] - 2026-08-17
 
 ### Added
