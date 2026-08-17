@@ -734,13 +734,15 @@ EOF
   assert_eq "$(grep -c '^bootstrap ' "$LAUNCHCTL_CALLS")" 3
 }
 
-# A bun that reports only how it was found: its own path, and the PATH it inherited.
+# A bun that reports only how it was found: its own path, the PATH it inherited, and the VAPID secret.
 install_fake_bun() {
   local target="$1" calls="$2"
   mkdir -p "$(dirname "$target")"
+  : > "$calls"
   cat > "$target" <<EOF
 #!/bin/sh
-printf '%s|%s\n' "\$0" "\$PATH" > "$calls"
+printf '%s|%s|%s|%s\n' "\$0" "\$PATH" "\${COLLIE_VAPID_PRIVATE:-unset}" "\$*" >> "$calls"
+mkdir -p dist-staging
 exit 0
 EOF
   chmod +x "$target"
@@ -777,9 +779,9 @@ test_bun_resolution() {
   assert_eq "$(cut -d'|' -f1 "$calls")" "${CASE_DIR}/alt/bin/bun"
 }
 
-# `command -v` reports a function or alias as a BARE word, and the plugin .env is sourced before we
-# resolve — so a `bun()` defined there yields dirname `.`, and prepending that would hand every later
-# `git` / `systemctl` / `tailscale` a cwd-relative lookup. Only absolute paths reach PATH.
+# `command -v` reports a function or alias as a BARE word (e.g. if inherited from a caller's shell
+# when this script is sourced) — so a `bun()` function yields dirname `.`, and prepending that would
+# hand every later `git` / `systemctl` / `tailscale` a cwd-relative lookup. Only absolute paths reach PATH.
 test_non_absolute_bun_never_reaches_path() {
   setup_case bun-not-absolute
   local harness="${CASE_DIR}/harness.sh"
@@ -789,7 +791,7 @@ set -euo pipefail
 export HOME="$HOME_DIR"
 export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
 export PATH="$BIN_DIR:$BASE_PATH"
-bun() { :; }   # what a doctored .env would leave behind
+bun() { :; }   # a function inherited from the caller's shell
 source "$CTL"
 echo "PATH=\$PATH"
 EOF
@@ -849,23 +851,31 @@ stage_origin() {
   git_q -C "$ORIGIN_DIR" commit -qm "first"
 }
 
+# An annotated release tag on the origin repo.
+tag_origin() {
+  git_q -C "$ORIGIN_DIR" tag -a "$1" -m "$1"
+}
+
 # One more upstream commit, so an update has something to move to.
 advance_origin() {
-  echo "v2" > "${ORIGIN_DIR}/VERSION"
+  local ver="${1:-v2}"
+  echo "$ver" > "${ORIGIN_DIR}/VERSION"
   git_q -C "$ORIGIN_DIR" add -A
-  git_q -C "$ORIGIN_DIR" commit -qm "second"
+  git_q -C "$ORIGIN_DIR" commit -qm "${ver}"
 }
 
 # Run update_checkout() against an arbitrary checkout, with the control script's own PLUGIN_ROOT
 # repointed at it (sourcing computes PLUGIN_ROOT from BASH_SOURCE, so it must be overridden after).
+# Optional second argument injects extra environment lines (e.g. export COLLIE_UPDATE_REF=v0.29.0).
 run_update_checkout() {
-  local root="$1" harness="${CASE_DIR}/update-harness.sh"
+  local root="$1" extra_env="${2:-}" harness="${CASE_DIR}/update-harness.sh"
   cat > "$harness" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export HOME="$HOME_DIR"
 export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
 export PATH="$BIN_DIR:$BASE_PATH"
+${extra_env}
 source "$CTL"
 PLUGIN_ROOT="$root"
 update_checkout
@@ -873,20 +883,22 @@ EOF
   bash "$harness" 2>&1
 }
 
-# The #63 regression: a Herdr-managed checkout must advance — even with a tracked file dirtied by the
-# build (`bun install` can rewrite the committed lockfiles), which a plain checkout would refuse on,
-# re-breaking update permanently. It must stay detached and stay shallow.
+# The #63 regression: a Herdr-managed checkout must advance to the newest release tag — even with a
+# tracked file dirtied by the build (`bun install` can rewrite the committed lockfiles), which a plain
+# checkout would refuse on, re-breaking update permanently. It must stay detached and stay shallow.
 test_update_advances_a_herdr_managed_checkout() {
   setup_case update-managed
   stage_origin
+  tag_origin v0.29.0
   local root="${CASE_DIR}/managed"
   mkdir -p "$root"
   # Verbatim what herdr's plugin_install does (src/cli/plugin.rs, git_checkout).
   git_q -C "$root" init -q
   git_q -C "$root" remote add origin "$ORIGIN_DIR"
-  git_q -C "$root" fetch -q --depth 1 origin HEAD
-  git_q -C "$root" checkout -q --detach FETCH_HEAD
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
   advance_origin
+  tag_origin v0.30.0
   echo "rewritten-by-bun-install" > "${root}/bun.lock"
 
   local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
@@ -895,18 +907,156 @@ test_update_advances_a_herdr_managed_checkout() {
   assert_eq "$(cat "${root}/VERSION")" "v2"
   assert_eq "$(cat "${root}/bun.lock")" "lock-v1"   # --force discarded the build's rewrite
   assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "true"
-  git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1 &&
+  if git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
     fail "managed checkout should still be detached"
+  fi
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
   # Idempotent: a second update with nothing new upstream is a no-op, not an error.
   run_update_checkout "$root" >/dev/null || fail "second update_checkout failed"
 }
 
+# Issue #6: update must pin to the newest vX.Y.Z release tag on origin rather than whatever commit
+# sits on the default branch tip. An unreleased commit on main must be ignored.
+test_update_pins_a_managed_checkout_to_the_newest_release_tag() {
+  setup_case update-pin-tag
+  stage_origin
+  tag_origin v0.29.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
+
+  advance_origin
+  tag_origin v0.30.0
+  # Untagged commit past v0.30.0 — update must NOT checkout this commit
+  echo "v3-unreleased" > "${ORIGIN_DIR}/VERSION"
+  git_q -C "$ORIGIN_DIR" add -A
+  git_q -C "$ORIGIN_DIR" commit -qm "unreleased tip"
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_contains "$out" "v0.30.0"
+  assert_eq "$(cat "${root}/VERSION")" "v2"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+  assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "true"
+  if git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    fail "managed checkout should still be detached"
+  fi
+}
+
+# The tag selector must match bridge/update.ts:24 (^v\d+\.\d+\.\d+$) exactly: non-semver tags and
+# prereleases are ignored even when they sort higher.
+test_update_ignores_prereleases_and_non_semver_tags() {
+  setup_case update-filter-semver
+  stage_origin
+  tag_origin v0.30.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.30.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.30.0
+
+  advance_origin v2-rc
+  tag_origin v0.31.0-rc.1
+  advance_origin v2-nightly
+  tag_origin nightly
+  advance_origin v2-latest
+  tag_origin latest
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+}
+
+# Sort order must be version-numeric, not lexical — e.g. v0.100.1 outranks v0.9.0.
+test_update_picks_the_highest_version_not_the_highest_string() {
+  setup_case update-numeric-sort
+  stage_origin
+  tag_origin v0.9.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.9.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.9.0
+
+  advance_origin
+  tag_origin v0.100.1
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.100.1"
+}
+
+# When origin has no vX.Y.Z release tags, update must refuse and leave HEAD completely untouched.
+test_update_refuses_when_no_release_tag_exists() {
+  setup_case update-no-tags
+  stage_origin
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin HEAD
+  git_q -C "$root" checkout -q --detach FETCH_HEAD
+
+  advance_origin
+  local head_before; head_before="$(git -C "$root" rev-parse HEAD)"
+
+  set +e
+  local out; out="$(run_update_checkout "$root")"; local rc=$?
+  set -e
+
+  [ "$rc" -ne 0 ] || fail "update succeeded on origin without release tags"
+  assert_contains "$out" "COLLIE_UPDATE_REF"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$head_before"
+}
+
+# COLLIE_UPDATE_REF overrides tag selection (for rollbacks, incident pinning, and untagged forks).
+test_update_honours_an_explicit_ref_override() {
+  setup_case update-ref-override
+  stage_origin
+  tag_origin v0.29.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.29.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.29.0
+
+  advance_origin
+  tag_origin v0.30.0
+
+  local out; out="$(run_update_checkout "$root" "export COLLIE_UPDATE_REF=v0.29.0")" ||
+    fail "update_checkout with override failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.29.0"
+}
+
+# Updating when already on the newest release tag is a clean, idempotent no-op.
+test_update_is_idempotent_on_the_newest_tag() {
+  setup_case update-idempotent
+  stage_origin
+  tag_origin v0.30.0
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin tag v0.30.0
+  git_q -C "$root" checkout -q --detach refs/tags/v0.30.0
+
+  run_update_checkout "$root" >/dev/null || fail "first update failed"
+  local out; out="$(run_update_checkout "$root")" || fail "second update failed: $out"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v0.30.0"
+}
+
 # The other shape — a dev clone linked with `herdr plugin link`. It is on a branch, so it must still
-# fast-forward, keep its branch, and keep its full history (no --depth truncation).
+# fast-forward, keep its branch, and keep its full history (no --depth truncation), even when release
+# tags exist on the remote (tag-pinning is scoped to managed checkouts so it never detaches dev branches).
 test_update_fast_forwards_a_linked_clone() {
   setup_case update-linked
   stage_origin
+  tag_origin v0.29.0
   advance_origin
+  tag_origin v0.30.0
   local root="${CASE_DIR}/clone"
   git_q clone -q "$ORIGIN_DIR" "$root"
   git_q -C "$ORIGIN_DIR" commit -q --allow-empty -m "third"
@@ -917,6 +1067,34 @@ test_update_fast_forwards_a_linked_clone() {
   assert_eq "$(git -C "$root" symbolic-ref --short HEAD)" "main"
   assert_eq "$(git -C "$root" rev-list --count HEAD)" "3"
   assert_eq "$(git -C "$root" rev-parse --is-shallow-repository)" "false"
+}
+
+# cmd_build must pass --frozen-lockfile to bun install in both root and web/ so that dependencies
+# cannot silently drift or execute untracked resolutions during update.
+test_build_installs_with_a_frozen_lockfile() {
+  setup_case build-frozen-lockfile
+  local calls="${CASE_DIR}/bun.calls"
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+
+  local harness="${CASE_DIR}/build-harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+export SKIP_VERSION_CHECK=1
+export SKIP_TYPECHECK=1
+source "$CTL"
+PLUGIN_ROOT="${CASE_DIR}/repo"
+mkdir -p "\${PLUGIN_ROOT}/web"
+cmd_build
+EOF
+  bash "$harness" > "${CASE_DIR}/build.out" 2>&1 || fail "cmd_build failed"
+  local install_calls
+  install_calls="$(grep '|install ' "$calls" || true)"
+  [ -n "$install_calls" ] || fail "no bun install calls were recorded"
+  assert_eq "$(grep -c -- '--frozen-lockfile' "$calls")" "2"
 }
 
 # A checkout that isn't a git repo at all (a copied tree) must fail with the reinstall command, not a
@@ -1040,6 +1218,216 @@ EOF
   esac
 }
 
+# ── .env parsing and permissions (issue #5) ──────────────────────────────────────
+
+test_env_is_parsed_not_executed() {
+  setup_case env-no-eval
+  cat > "${CONFIG_DIR}/.env" <<EOF
+COLLIE_PORT=9999
+PWNED=\$(touch "$CASE_DIR/pwned")
+ALSO_PWNED=\`touch "$CASE_DIR/pwned2"\`
+bun() { :; }
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\$COLLIE_PORT"
+echo "PWNED=\$PWNED"
+echo "ALSO_PWNED=\$ALSO_PWNED"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/harness.out" 2>&1 || fail "sourcing ctl script failed"
+  [ ! -e "${CASE_DIR}/pwned" ] || fail "command substitution in .env was executed"
+  [ ! -e "${CASE_DIR}/pwned2" ] || fail "backticks in .env were executed"
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" "PORT=9999"
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" 'PWNED=$(touch'
+  assert_contains "$(cat "${CASE_DIR}/harness.out")" 'ALSO_PWNED=`touch'
+}
+
+test_env_parsing_grammar() {
+  setup_case env-grammar
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+# Leading comment
+COLLIE_PORT=8787
+
+   # Indented comment
+DOUBLE_QUOTES="hello world"
+SINGLE_QUOTES='single value'
+WITH_EQUALS=foo=bar=baz
+WITH_HASH=https://example.com/#section
+export EXPORTED_VAR=123
+export   EXPORTED_SPACES="spaced out"
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\${COLLIE_PORT:-}"
+echo "DOUBLE=\${DOUBLE_QUOTES:-}"
+echo "SINGLE=\${SINGLE_QUOTES:-}"
+echo "EQUALS=\${WITH_EQUALS:-}"
+echo "HASH=\${WITH_HASH:-}"
+echo "EXP=\${EXPORTED_VAR:-}"
+echo "EXPSP=\${EXPORTED_SPACES:-}"
+echo "CRLF=\${CRLF_VAR:-}"
+echo "NONL=\${NO_NEWLINE:-}"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/grammar.out" 2>&1 || fail "parsing grammar failed"
+  local out; out="$(cat "${CASE_DIR}/grammar.out")"
+  assert_contains "$out" "PORT=8787"
+  assert_contains "$out" "DOUBLE=hello world"
+  assert_contains "$out" "SINGLE=single value"
+  assert_contains "$out" "EQUALS=foo=bar=baz"
+  assert_contains "$out" "HASH=https://example.com/#section"
+  assert_contains "$out" "EXP=123"
+  assert_contains "$out" "EXPSP=spaced out"
+
+  # Test CRLF line endings
+  printf 'COLLIE_PORT=9001\r\nCRLF_VAR="crlf value"\r\n' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/crlf.out" 2>&1 || fail "CRLF parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/crlf.out")" "PORT=9001"
+  assert_contains "$(cat "${CASE_DIR}/crlf.out")" "CRLF=crlf value"
+
+  # Test final line with no trailing newline
+  printf 'COLLIE_PORT=9002\nNO_NEWLINE=works' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/nonl.out" 2>&1 || fail "no-newline parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/nonl.out")" "PORT=9002"
+  assert_contains "$(cat "${CASE_DIR}/nonl.out")" "NONL=works"
+
+  # Test export prefix overriding port
+  printf 'export COLLIE_PORT=9003\n' > "${CONFIG_DIR}/.env"
+  bash "$harness" > "${CASE_DIR}/export.out" 2>&1 || fail "export prefix parsing failed"
+  assert_contains "$(cat "${CASE_DIR}/export.out")" "PORT=9003"
+}
+
+test_env_malformed_line_warns_without_leaking() {
+  setup_case env-malformed
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+not a valid line COLLIE_VAPID_PRIVATE=s3cret-value
+ANOTHER_VAR=valid
+EOF
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+echo "PORT=\$COLLIE_PORT"
+echo "ANOTHER=\$ANOTHER_VAR"
+EOF
+
+  bash "$harness" > "${CASE_DIR}/out.txt" 2> "${CASE_DIR}/err.txt" || fail "sourcing failed on malformed line"
+  local stdout; stdout="$(cat "${CASE_DIR}/out.txt")"
+  local stderr; stderr="$(cat "${CASE_DIR}/err.txt")"
+  assert_contains "$stdout" "PORT=8787"
+  assert_contains "$stdout" "ANOTHER=valid"
+  assert_contains "$stderr" "${CONFIG_DIR}/.env"
+  assert_contains "$stderr" ":2"
+  case "$stderr" in
+    *"s3cret-value"*) fail "stderr leaked secret value from malformed line" ;;
+  esac
+}
+
+test_env_secrets_do_not_reach_build_children() {
+  setup_case env-secrets
+  local calls="${CASE_DIR}/bun.calls"
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+COLLIE_VAPID_PRIVATE=s3cret-key-12345
+EOF
+
+  # 1) push-test should see the secret
+  HOME="$HOME_DIR" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" PATH="$BIN_DIR:$BASE_PATH" \
+    bash "$CTL" push-test > /dev/null 2>&1 || fail "push-test failed"
+  [ -s "$calls" ] || fail "push-test did not invoke bun"
+  local secret_seen; secret_seen="$(cut -d'|' -f3 "$calls" | head -n 1)"
+  assert_eq "$secret_seen" "s3cret-key-12345"
+
+  # 2) build path (cmd_build) should NOT see the secret
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+  HOME="$HOME_DIR" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" PATH="$BIN_DIR:$BASE_PATH" \
+    SKIP_TYPECHECK=1 bash "$CTL" build > /dev/null 2>&1 || fail "build failed"
+  [ -s "$calls" ] || fail "build did not invoke bun"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    local s; s="$(printf '%s' "$line" | cut -d'|' -f3)"
+    assert_eq "$s" "unset"
+  done < "$calls"
+}
+
+test_env_permissions_are_hardened_on_start() {
+  setup_case env-perms
+  # Guard on working stat
+  local probe_mode; probe_mode="$(stat -c '%a' "$CONFIG_DIR" 2>/dev/null || stat -f '%Lp' "$CONFIG_DIR" 2>/dev/null || true)"
+  if [ -z "$probe_mode" ]; then
+    return 0
+  fi
+
+  # Check if chmod 600 actually takes effect on this OS/filesystem
+  local probe_file="${CASE_DIR}/probe.env"
+  touch "$probe_file"
+  chmod 600 "$probe_file" 2>/dev/null || true
+  local probe_chmod_mode; probe_chmod_mode="$(stat -c '%a' "$probe_file" 2>/dev/null || stat -f '%Lp' "$probe_file" 2>/dev/null || true)"
+  rm -f "$probe_file"
+  if [ "$probe_chmod_mode" != "600" ]; then
+    return 0
+  fi
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+COLLIE_VAPID_PRIVATE=secret
+EOF
+  chmod 755 "$CONFIG_DIR" 2>/dev/null || true
+  chmod 644 "${CONFIG_DIR}/.env" 2>/dev/null || true
+
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+ensure_build() { return 0; }
+have_systemd() { return 0; }
+have_launchd() { return 0; }
+systemctl() { return 0; }
+cmd_serve() { return 0; }
+print_status_banner() { return 0; }
+cmd_start
+EOF
+
+  bash "$harness" > "${CASE_DIR}/start.out" 2> "${CASE_DIR}/start.err" || fail "cmd_start failed"
+  local stderr; stderr="$(cat "${CASE_DIR}/start.err")"
+  assert_contains "$stderr" "was mode 644"
+  assert_contains "$stderr" "tightened to 600"
+  assert_contains "$stderr" "rotate COLLIE_VAPID_PRIVATE"
+
+  local final_env_mode; final_env_mode="$(stat -c '%a' "${CONFIG_DIR}/.env" 2>/dev/null || stat -f '%Lp' "${CONFIG_DIR}/.env" 2>/dev/null || true)"
+  local final_dir_mode; final_dir_mode="$(stat -c '%a' "$CONFIG_DIR" 2>/dev/null || stat -f '%Lp' "$CONFIG_DIR" 2>/dev/null || true)"
+  assert_eq "$final_env_mode" "600"
+  assert_eq "$final_dir_mode" "700"
+}
+
 test_suite_ignores_an_inherited_git_dir
 test_tailscale_cutovers_and_collisions
 test_missing_tailscale_cli
@@ -1054,10 +1442,22 @@ test_launchd_bootstrap_retries
 test_bun_resolution
 test_non_absolute_bun_never_reaches_path
 test_missing_bun_still_reports
+test_build_installs_with_a_frozen_lockfile
 test_update_advances_a_herdr_managed_checkout
+test_update_pins_a_managed_checkout_to_the_newest_release_tag
+test_update_ignores_prereleases_and_non_semver_tags
+test_update_picks_the_highest_version_not_the_highest_string
+test_update_refuses_when_no_release_tag_exists
+test_update_honours_an_explicit_ref_override
+test_update_is_idempotent_on_the_newest_tag
 test_update_fast_forwards_a_linked_clone
 test_update_reports_a_non_git_checkout
 test_registry_refresh_skips_a_managed_checkout
 test_tailscale_hosts_systemd_injection
+test_env_is_parsed_not_executed
+test_env_parsing_grammar
+test_env_malformed_line_warns_without_leaking
+test_env_secrets_do_not_reach_build_children
+test_env_permissions_are_hardened_on_start
 
 echo "collie-ctl lifecycle tests: passed"

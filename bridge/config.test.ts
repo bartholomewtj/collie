@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { defaultSocketPath, loadConfig } from "./config.ts";
+import { defaultSocketPath, isLoopbackBindHost, loadConfig } from "./config.ts";
 
 // loadConfig is the deployment contract — env vars in, a resolved Config out. Pure (just reads
 // process.env + homedir), so we drive it by mutating the environment and restoring it after.
@@ -10,6 +10,7 @@ import { defaultSocketPath, loadConfig } from "./config.ts";
 const KEYS = [
   "COLLIE_PORT",
   "COLLIE_HOST",
+  "COLLIE_ALLOW_NON_LOOPBACK_BIND",
   "COLLIE_POLL_MS",
   "COLLIE_POLL_IDLE_MS",
   "COLLIE_NOTIFY_DELAY_MS",
@@ -67,6 +68,7 @@ describe("loadConfig", () => {
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.host).toBe("127.0.0.1");
+    expect(cfg.allowNonLoopbackBind).toBe(false);
     expect(cfg.pollMs).toBe(1500);
     expect(cfg.pollIdleMs).toBe(12_000);
     expect(cfg.readLines).toBe(200);
@@ -295,12 +297,19 @@ describe("loadConfig", () => {
     expect(loadConfig().submitKeys).toEqual(["Enter"]);
   });
 
-  test("honours an explicit trusted user and host override", () => {
-    process.env.COLLIE_TRUSTED_USER = "me@example.com";
+  test("refuses a non-loopback COLLIE_HOST", () => {
     process.env.COLLIE_HOST = "0.0.0.0";
+    expect(() => loadConfig()).toThrow(/not a loopback address/);
+  });
+
+  test("a non-loopback bind needs the explicit override", () => {
+    process.env.COLLIE_HOST = "0.0.0.0";
+    process.env.COLLIE_ALLOW_NON_LOOPBACK_BIND = "1";
+    process.env.COLLIE_TRUSTED_USER = "me@example.com";
     const cfg = loadConfig();
-    expect(cfg.trustedUser).toBe("me@example.com");
     expect(cfg.host).toBe("0.0.0.0");
+    expect(cfg.allowNonLoopbackBind).toBe(true);
+    expect(cfg.trustedUser).toBe("me@example.com");
   });
 
   test("dial mode defaults to auto and accepts a forced dialer", () => {
@@ -314,6 +323,36 @@ describe("loadConfig", () => {
   test("an unrecognised dial mode falls back to auto rather than dialling nothing", () => {
     process.env.COLLIE_HERDR_DIAL = "carrier-pigeon";
     expect(loadConfig().dialMode).toBe("auto");
+  });
+});
+
+describe("isLoopbackBindHost", () => {
+  test("accepts loopback host spellings", () => {
+    for (const host of [
+      "127.0.0.1",
+      "127.0.0.2",
+      "127.1.2.3",
+      "localhost",
+      "LOCALHOST",
+      "::1",
+      "[::1]",
+      "0:0:0:0:0:0:0:1",
+    ]) {
+      expect(isLoopbackBindHost(host)).toBe(true);
+    }
+  });
+
+  test("rejects non-loopback bind hosts", () => {
+    for (const host of [
+      "0.0.0.0",
+      "::",
+      "192.168.1.10",
+      "10.0.0.1",
+      "collie.example.ts.net",
+      "",
+    ]) {
+      expect(isLoopbackBindHost(host)).toBe(false);
+    }
   });
 });
 

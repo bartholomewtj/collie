@@ -101,14 +101,15 @@ Four sharp edges:
   permissions keep other local users out; Collie's port is TCP, so they're all in. An agent you
   deliberately ran as another user to contain it can still `curl 127.0.0.1:8787` and type into any
   pane. Set the device gate below if that uid boundary was your containment — but it gates **writes
-  only**. Snapshots, pane output and transcript history stay readable by any local uid, so the gate
+  only** (including bridge-wide notification settings; silencing alerts counts as damage and is gated).
+  Snapshots, pane output and transcript history stay readable by any local uid, so the gate
   bounds damage, not disclosure
   ([Variant B](#variant-b--identity-aware-proxy--per-device-authorisation),
   [ARCHITECTURE.md §6](./ARCHITECTURE.md#6-security-model)).
 - **Access is device-level, not person-level.** Tailscale proves the device, not who's holding it.
   No password, no session — an unlocked or stolen phone (or anyone else on your tailnet) is an open
   shell. The idle-lock pauses an unattended screen and gates nothing — it is not auth, and never was
-  ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)). Every write action (replies, keys, uploads, pane/tab
+  ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)). Every terminal action (replies, keys, uploads, pane/tab
   create/close) is appended to `<state-dir>/audit.log`, so there is at least a trail — but a trail
   is not a gate.
 - **One bridge fronts _every_ session.** With `COLLIE_MULTI_SESSION` on (the default), the bridge
@@ -118,7 +119,11 @@ Four sharp edges:
 
 It's built single-user and tailnet-only. The defenses:
 
-- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`.
+- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`. The bridge enforces this at startup and refuses
+  to start on a non-loopback `COLLIE_HOST`. Off-loopback requests are also rejected by a TCP peer-address
+  check ahead of routing. An operator who deliberately wants a wide bind sets
+  `COLLIE_ALLOW_NON_LOOPBACK_BIND=1`, which turns off both checks; whatever fronts the port is then
+  your only control.
 - **Exactly one hardened front door** — either `tailscale serve` (default, Variant A: terminates
   TLS, injects the identity header) or a conforming reverse proxy
   ([Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)). Never
@@ -129,9 +134,9 @@ It's built single-user and tailnet-only. The defenses:
   had full write access. A host-local `curl` bypasses serve and has no header either; allow it back
   with `COLLIE_TRUSTED_USER_OPTIONAL=1`, at the cost of re-opening the tagged-node gap.
 - **Optional per-device gate** — behind a proxy that injects a device-identity header, set
-  `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents;
-  any other device is read-only, and so is a request that arrives without the header at all. Off by
-  default; revoke a device by dropping it from the list.
+  `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents
+  or change notification settings; any other device is read-only, and so is a request that arrives
+  without the header at all. Off by default; revoke a device by dropping it from the list.
   See [Deployment variants](#deployment-variants) for the proxy this requires.
 - **Same-origin gate + strict CSP**; pane output renders as React text nodes, never `innerHTML`.
 - **Host allowlist (fail-closed)** — the bridge answers only to loopback (`localhost`, `127.0.0.1`,
@@ -332,12 +337,13 @@ directly or via a Herdr action:
 
 ```bash
 cp .env.example "$(herdr plugin config-dir herdr.collie)/.env"
+chmod 600 "$(herdr plugin config-dir herdr.collie)/.env"
 ```
 
-The bridge reads `.env` only at startup — after any edit, `scripts/collie-ctl.sh restart`. See
-[`.env.example`](./.env.example) for the full option list — commonly `COLLIE_PORT`, or
-`COLLIE_SERVE_MODE=http` (Headscale / `.internal` domains; read by the control script when it runs
-`tailscale serve`).
+The `.env` is parsed as plain `KEY=value` (not executed as shell). The bridge reads `.env` only at
+startup — after any edit, `scripts/collie-ctl.sh restart`. See [`.env.example`](./.env.example) for
+the full option list — commonly `COLLIE_PORT`, or `COLLIE_SERVE_MODE=http` (Headscale / `.internal`
+domains; read by the control script when it runs `tailscale serve`).
 
 **Custom domain or reverse proxy?** See
 [Variant C](#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) for the full reverse-proxy
@@ -398,7 +404,7 @@ below as `invoke <cmd>`). The ones you'll actually use:
 | **URL** — print the tailnet URL | `collie-ctl.sh url` | `invoke url` |
 | **QR** — the same URL as a scannable code | `collie-ctl.sh qr` | — (script only) |
 | **Version** — the running version (`0.x.y+sha`) | `collie-ctl.sh version` | `invoke version` |
-| **Update** — advance the checkout + rebuild + restart | `collie-ctl.sh update` | `invoke update` |
+| **Update** — advance to the newest release + rebuild + restart | `collie-ctl.sh update` | `invoke update` |
 | **Uninstall** — remove the service; keep `.env` + checkout | `collie-ctl.sh uninstall` | `invoke uninstall` |
 | **Logs** — tail the journal / log file | `collie-ctl.sh logs` | — (script only) |
 
@@ -426,7 +432,7 @@ Collie registers these actions in `herdr-plugin.toml`; invoke any with
 | `status` | Bridge status | The *Collie is running* banner — readiness ✓/⚠, version, URLs |
 | `url` | Show bridge URL | Print the tailnet URL |
 | `version` | Show version | Print the running version (`0.x.y+sha`) |
-| `update` | Update plugin | Advance the checkout (pull, or fetch + re-detach) + rebuild + restart |
+| `update` | Update plugin | Advance to the newest release (pull, or fetch tag + re-detach) + rebuild + restart |
 | `uninstall` | Uninstall web bridge (remove service) | Tear down the service (keeps `.env` + checkout) |
 
 ## Manage & update
@@ -459,8 +465,9 @@ The checkout *is* the plugin, and Herdr has no `plugin update` of its own. One c
 scripts/collie-ctl.sh update    # or: herdr plugin action invoke update --plugin herdr.collie
 ```
 
-It advances the checkout, rebuilds the UI and restarts the bridge (re-execing itself, so it's safe
-even when the update rewrites the script). Confirm via the footer build stamp.
+It advances the checkout to the release the banner named (not the unreleased branch tip), rebuilds the UI
+and restarts the bridge (re-execing itself, so it's safe even when the update rewrites the script).
+Confirm via the footer build stamp.
 
 #### If that fails with *"You are not currently on a branch"*
 
@@ -483,15 +490,19 @@ survive. Pinned to a version with `--ref`? Keep refreshing with `herdr plugin in
 #### What `update` actually does to the checkout
 
 Two install paths, two on-disk shapes, one command across both — the reasoning, and what it costs, is
-[ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md):
+[ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md) and
+[ADR 0011](./.adr/0011-update-pins-to-the-newest-release-tag.md):
 
 - **Linked clone** (on a branch) — `git pull --ff-only`, then **re-links the plugin** so Herdr picks
-  up any new actions and the new version.
-- **`herdr plugin install`** (detached, shallow) — fetches the default-branch tip and re-detaches onto
-  it. `--depth 1` only if it's already shallow, so a full history is never truncated; `--force` so a
-  lockfile the build rewrote can't wedge the *next* update. It deliberately does **not** re-link:
-  linking re-registers the plugin as a local path, after which Herdr refuses `herdr plugin install` —
-  the reinstall above, which is your recovery path if this checkout ever breaks again.
+  up any new actions and the new version. Tag-pinning is scoped to managed checkouts so a developer's
+  working branch is never detached.
+- **`herdr plugin install`** (detached, shallow) — fetches the newest `vX.Y.Z` release tag (matching the
+  banner) and re-detaches onto it. If no release tag exists, it refuses rather than checking out
+  unreleased origin HEAD (`COLLIE_UPDATE_REF=<tag-or-ref>` overrides). `--depth 1` only if it's already
+  shallow, so a full history is never truncated; `--force` so dirty untracked state can't wedge the
+  *next* update. It deliberately does **not** re-link: linking re-registers the plugin as a local path,
+  after which Herdr refuses `herdr plugin install` — the reinstall above, which is your recovery path if
+  this checkout ever breaks again.
 
 By hand: frontend (`web/`) → `collie-ctl.sh build` (live, no restart — served from disk); backend
 (`bridge/`) → `systemctl --user restart collie`. Run `scripts/install-hooks.sh` once to enable the
@@ -527,21 +538,23 @@ This is the right choice unless you specifically need per-device control.
 
 ### Variant B — identity-aware proxy + per-device authorisation
 
-Use this when some devices should **drive** agents and others should be **read-only** — e.g. your
-phone can reply, but a shared/less-trusted device can only watch. Collie reads an opaque device id
-from a request header (`COLLIE_DEVICE_HEADER`) and checks it against `COLLIE_DEVICE_ALLOWLIST`:
-allow-listed → full access, any other id → read-only, header absent → read-only as well.
+Use this when some devices should **drive** agents (or change notification settings) and others
+should be **read-only** — e.g. your phone can reply, but a shared/less-trusted device can only watch.
+Collie reads an opaque device id from a request header (`COLLIE_DEVICE_HEADER`) and checks it
+against `COLLIE_DEVICE_ALLOWLIST`: allow-listed → full access, any other id → read-only, header
+absent → read-only as well.
 
 Treating an absent header as read-only is the point: switching this on is you asserting that your
 proxy sets the header on every request, so a request without one did not come through that proxy and
-must not drive a terminal. **Device-auth only works behind a reverse proxy that authenticates the
-device and injects the header.** It is not a standalone flag.
+must not drive a terminal or alter bridge-wide alerts. **Device-auth only works behind a reverse
+proxy that authenticates the device and injects the header.** It is not a standalone flag.
 
-Note what "read-only" means here: the gate covers writes (replies, keys, uploads, pane and tab
-create/close). Reading panes, polling the snapshot and listing sessions stay open to any caller that
-gets past the same-origin and Host checks, exactly as they do for a device that is simply not on the
-allowlist. Pane text can contain anything your agents printed, so the header is not a confidentiality
-boundary.
+Note what "read-only" means here: the gate covers writes: replies, keys, uploads, pane and tab
+create/close, and the bridge-wide notification settings (do-not-disturb, which statuses push, and
+registering a device for push). Reading panes, polling the snapshot, listing sessions, and reading
+notification preferences stay open to any caller that gets past the same-origin and Host checks,
+exactly as they do for a device that is simply not on the allowlist. Pane text can contain anything
+your agents printed, so the header is not a confidentiality boundary.
 
 Two consequences worth knowing before you turn this on:
 
@@ -574,7 +587,7 @@ Your fronting proxy **must**:
 Collie side (`.env`):
 
 ```bash
-COLLIE_HOST=127.0.0.1                       # keep loopback (default)
+COLLIE_HOST=127.0.0.1                       # loopback is enforced; the bridge refuses to start otherwise
 COLLIE_DEVICE_HEADER=X-Device-Id            # the header your proxy injects
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop  # ids allowed to drive agents; others → read-only
 # COLLIE_ALLOWED_ORIGINS=https://collie.example.com   # only if the proxy does NOT forward the public Host
@@ -597,8 +610,9 @@ location / {
 Revoke a device by dropping its id from `COLLIE_DEVICE_ALLOWLIST` and restarting
 (`herdr plugin action invoke restart --plugin herdr.collie`). With the header set but the allowlist
 **empty**, every device is read-only (fail-closed), and so is a request that arrives without the
-header. In that state nothing can drive a pane, including a hand-made `curl`; recovery is an `.env`
-edit plus a restart.
+header. In that state nothing can drive a pane or change notification settings (snooze, push
+subscriptions and alert preferences are also frozen), including a hand-made `curl`; recovery is an
+`.env` edit plus a restart.
 
 This variant assumes the proxy is **on the same host**, reaching the bridge on loopback. If your
 proxy runs on a *different* node and its upstream is the bridge's own `tailscale serve` URL, the
@@ -764,9 +778,9 @@ the host's tailnet URL rather than `127.0.0.1`.
 > ```
 >
 > Per-device auth is still required, and it does real work: since 0.15.0 a request arriving *without*
-> the header is read-only, so a stray client, another service or the host's own loopback URL can watch
-> but never drive. What it cannot do is stop a caller who deliberately sets the header. The ACL is
-> what stops that, and the two together are the posture.
+> the header is read-only, so a stray client, another service or the host's own loopback URL can watch,
+> but never drive or change notification settings. What it cannot do is stop a caller who deliberately
+> sets the header. The ACL is what stops that, and the two together are the posture.
 
 **Host and Origin are different values here** — the one place this trips people up. `tailscale serve`
 Host-routes on the host's own MagicDNS name, so the proxy generally must rewrite `Host` to the
@@ -775,7 +789,7 @@ browser's Origin is your *public* name, so the two settings take different value
 
 ```bash
 COLLIE_SERVE_MODE=http                                # proxy terminates TLS; this hop is tailnet-internal
-COLLIE_HOST=127.0.0.1                                 # keep loopback (default)
+COLLIE_HOST=127.0.0.1                                 # loopback is enforced; the bridge refuses to start otherwise
 COLLIE_DEVICE_HEADER=X-Tailnet-Device                 # header your forward-auth injects — REQUIRED here
 COLLIE_DEVICE_ALLOWLIST=my-phone,my-laptop            # ids allowed to drive; others + header-less → read-only
 COLLIE_PUBLIC_HOSTS=host:8787,host.your-tailnet.ts.net:8787   # REQUIRED: the Host the proxy forwards
@@ -907,6 +921,8 @@ bun add web-push
 bunx web-push generate-vapid-keys
 # set COLLIE_VAPID_PUBLIC / _PRIVATE / _SUBJECT in your .env, then restart
 ```
+
+Collie validates push endpoints against known Web Push hosts (Chrome, Firefox, Safari, and Edge work out of the box). If you run a custom or self-hosted push service, extend the allowlist with `COLLIE_PUSH_ALLOWED_HOSTS=push.example.com`. Note that setting this to a private/loopback host allows any read-level client to make the bridge POST requests there.
 
 Push needs a **secure context (HTTPS)**, which any HTTPS-terminating front door provides — the
 default `tailscale serve` (Tailscale manages the MagicDNS cert; nothing to obtain or renew) or a

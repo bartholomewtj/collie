@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { join, normalize } from "node:path";
 
 import {
   BUILD_HEADER,
   cacheControlFor,
   checkAccess,
+  decodePathSegment,
+  failureText,
   marksPaneSeen,
   SEEN_HEADER,
   deviceAuth,
@@ -11,7 +14,10 @@ import {
   historyParams,
   isHostAllowed,
   isJsonContentType,
+  isLoopbackPeer,
+  isPrivateStaticFile,
   isReservedAuthPath,
+  isStateChangingMethod,
   keysPane,
   normalizeTabLabel,
   paneReadResponse,
@@ -29,10 +35,11 @@ import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 // checkAccess is the API security gate (same-origin/CSRF + optional Tailscale identity). A
 // regression here silently opens remote shell access, so it gets the most direct coverage.
 
-function req(headers: Record<string, string>): Request {
+function req(headers: Record<string, string>, method = "GET"): Request {
   const lower: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) lower[k.toLowerCase()] = v;
   return {
+    method,
     headers: { get: (name: string) => lower[name.toLowerCase()] ?? null },
   } as unknown as Request;
 }
@@ -42,6 +49,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     socketPath: "/tmp/herdr.sock",
     port: 8787,
     host: "127.0.0.1",
+    allowNonLoopbackBind: false,
     pollMs: 1500,
     pollIdleMs: 12_000,
     notifyDelayMs: 30_000,
@@ -60,6 +68,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     deviceAllowlist: [],
     allowedOrigins: [],
     publicHosts: [],
+    pushAllowedHosts: [],
     tailscaleHosts: [],
     // Test helper default only — keeps non-Host tests testing their own rules without needing ~30
     // call sites updated. The product default is allowAnyHost: false (fail-closed, issue #3).
@@ -313,7 +322,7 @@ describe("checkAccess — Host-header validation", () => {
   });
 });
 
-describe("checkAccess — Origin required for writes", () => {
+describe("checkAccess — Origin required for anything state-changing", () => {
   test("write with no Origin from a non-loopback Host is rejected", () => {
     expect(checkAccess(req({ host: "collie.example.ts.net" }), cfg(), "write")).toEqual({
       ok: false,
@@ -337,6 +346,47 @@ describe("checkAccess — Origin required for writes", () => {
         "write",
       ),
     ).toEqual({ ok: true });
+  });
+
+  // Issue #8: the Origin fallback used to key off the access level alone, so a read-level POST from
+  // a remote Host with no Origin at all sailed through — the exact non-browser shape the rule
+  // exists to refuse. The method is now part of the question.
+  test("a read-level POST with no Origin from a non-loopback Host is rejected (issue #8)", () => {
+    expect(checkAccess(req({ host: "collie.ts.net" }, "POST"), cfg(), "read")).toEqual({
+      ok: false,
+      reason: "origin required",
+    });
+  });
+
+  test("a read-level POST with no Origin from loopback is allowed (curl on the host)", () => {
+    expect(checkAccess(req({ host: "127.0.0.1:8787" }, "POST"), cfg(), "read")).toEqual({ ok: true });
+  });
+
+  test("a read-level POST WITH a matching Origin passes (the settings page)", () => {
+    expect(
+      checkAccess(
+        req({ host: "collie.ts.net", origin: "https://collie.ts.net" }, "POST"),
+        cfg(),
+        "read",
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  test("a GET with no Origin still passes — browsers omit it on same-origin reads", () => {
+    expect(checkAccess(req({ host: "collie.ts.net" }, "GET"), cfg(), "read")).toEqual({ ok: true });
+  });
+});
+
+describe("isStateChangingMethod", () => {
+  test("GET and HEAD are reads; everything else changes state", () => {
+    expect(isStateChangingMethod(req({}, "GET"))).toBe(false);
+    expect(isStateChangingMethod(req({}, "head"))).toBe(false);
+    expect(isStateChangingMethod(req({}, "POST"))).toBe(true);
+    expect(isStateChangingMethod(req({}, "delete"))).toBe(true);
+  });
+
+  test("a request with no method reads as GET (the header-only test stub)", () => {
+    expect(isStateChangingMethod({ headers: { get: () => null } } as unknown as Request)).toBe(false);
   });
 });
 
@@ -453,17 +503,17 @@ describe("sendReplySteps — two-step send & partial-failure clarity", () => {
     expect(client.calls).toEqual(["text", "keys"]);
   });
 
-  test("text step fails → nothing delivered, surfaces Herdr's message (safe to resend)", async () => {
+  test("text step fails → nothing delivered, generic failure (safe to resend)", async () => {
     const client = new FakeClient("text");
     const out = await sendReplySteps(client, "p1", "hello", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "text rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["text"]); // never reached the keys step
   });
 
   test("submit-only (empty text) failure is a plain failure, not the partial-delivery message", async () => {
     const client = new FakeClient("keys");
     const out = await sendReplySteps(client, "p1", "", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "keys rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["keys"]); // no text typed
   });
 
@@ -893,6 +943,9 @@ describe("guard applies the device gate to writes only", () => {
   // The scope of the gate, stated as a test rather than only in prose: a header-less caller keeps
   // READ access (it is read-only, not rejected outright). If someone later tightens this, it should
   // be a deliberate change with this test updated, not an accident.
+  // Tightened deliberately in issue #8: snooze, notification prefs (POST) and push subscribe are
+  // now guarded as "write", so a read-only device can watch and read its prefs but can no longer
+  // silence the herd for everyone. Pane reads, history and the snapshot are unchanged.
   test("read with no device header still proceeds (read-only, not rejected)", () => {
     expect(read({})).toBeNull();
     expect(read({ "x-device-id": "intruder" })).toBeNull();
@@ -997,6 +1050,50 @@ describe("startupWarnings — security-posture nags", () => {
     );
     expect(has(ws, "Host")).toBe(false);
   });
+
+  test("loopback IPv6 host ::1 produces no bind warning", () => {
+    const ws = startupWarnings(cfg({ host: "::1" }));
+    expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(false);
+    expect(has(ws, "bound to")).toBe(false);
+  });
+
+  test("non-loopback host with override produces a bind warning naming COLLIE_ALLOW_NON_LOOPBACK_BIND", () => {
+    const ws = startupWarnings(cfg({ host: "0.0.0.0", allowNonLoopbackBind: true }));
+    expect(has(ws, "COLLIE_ALLOW_NON_LOOPBACK_BIND")).toBe(true);
+    expect(has(ws, "bound to 0.0.0.0")).toBe(true);
+  });
+
+  test("pushAllowedHosts with private/loopback entry produces a warning naming the offending host", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["10.0.0.5", "box.local"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS contains private/loopback host(s) (10.0.0.5, box.local)")).toBe(true);
+    expect(has(ws, "issue #7")).toBe(true);
+  });
+
+  test("pushAllowedHosts with normal push hosts produces no warning", () => {
+    const ws = startupWarnings(cfg({ pushAllowedHosts: ["push.custom.org", "fcm.googleapis.com"] }));
+    expect(has(ws, "COLLIE_PUSH_ALLOWED_HOSTS")).toBe(false);
+  });
+});
+
+describe("isLoopbackPeer", () => {
+  test("accepts loopback addresses across IPv4 and IPv6 representations", () => {
+    expect(isLoopbackPeer("127.0.0.1")).toBe(true);
+    expect(isLoopbackPeer("127.5.5.5")).toBe(true);
+    expect(isLoopbackPeer("::1")).toBe(true);
+    expect(isLoopbackPeer("::ffff:127.0.0.1")).toBe(true);
+    expect(isLoopbackPeer("0:0:0:0:0:0:0:1")).toBe(true);
+    // Deliberately abstains on null/undefined/empty rather than failing closed (defence in depth).
+    expect(isLoopbackPeer(null)).toBe(true);
+    expect(isLoopbackPeer(undefined)).toBe(true);
+    expect(isLoopbackPeer("")).toBe(true);
+  });
+
+  test("rejects non-loopback addresses", () => {
+    expect(isLoopbackPeer("192.168.1.10")).toBe(false);
+    expect(isLoopbackPeer("100.64.0.1")).toBe(false); // tailnet address — realistic attacker
+    expect(isLoopbackPeer("::ffff:192.168.1.10")).toBe(false);
+    expect(isLoopbackPeer("10.0.0.1")).toBe(false);
+  });
 });
 
 // A tab's label is a non-null, non-empty string (herdr rejects null and stores "" literally — no
@@ -1061,7 +1158,6 @@ describe("cacheControlFor", () => {
       "sw.js",
       "index.html",
       "manifest.webmanifest",
-      "build-info.json",
       "favicon.svg",
       "favicon.ico",
       "apple-touch-icon.png",
@@ -1120,3 +1216,119 @@ describe("marksPaneSeen — CSRF guard on marking a pane seen", () => {
     expect(marksPaneSeen(withHeader({ [SEEN_HEADER]: "anything" }), undefined)).toBe(true);
   });
 });
+
+// issue #11: three checks key off `rel` (the private-file denial, sw.js's Service-Worker-Allowed
+// header, and cacheControlFor's immutable/no-cache split), but `rel` used to come straight from the
+// request while only `full` was normalised — so "/./build-info.json" cleared the containment check
+// and then dodged a rel-keyed denial. WEB is built with join() so this runs on Windows too; the
+// older describe above hardcodes a POSIX path and is a known Windows-only failure.
+describe("resolveStaticPath — rel is normalised, not echoed", () => {
+  const WEB = normalize(join("/srv", "collie", "web", "dist"));
+
+  test.each([
+    ["/./build-info.json", "build-info.json"],
+    ["/a/../build-info.json", "build-info.json"],
+    ["/./assets/app.js", "assets/app.js"],
+    ["/assets/app.js", "assets/app.js"],
+    ["/", "index.html"],
+    ["//sw.js", "sw.js"],
+  ])("%s → rel %s", (pathname, rel) => {
+    expect(resolveStaticPath(pathname, WEB)?.rel).toBe(rel);
+  });
+});
+
+// The build id in a file, served to anyone who could reach the port. Nothing fetches this path —
+// the bridge and collie-ctl read it off disk — so refusing it costs nothing (issue #11).
+describe("isPrivateStaticFile", () => {
+  test("build-info.json is never served", () => {
+    expect(isPrivateStaticFile("build-info.json")).toBe(true);
+  });
+
+  test("every other dist file still is", () => {
+    for (const rel of ["index.html", "sw.js", "manifest.webmanifest", "assets/app.js"]) {
+      expect(isPrivateStaticFile(rel)).toBe(false);
+    }
+  });
+});
+
+describe("decodePathSegment", () => {
+  test("valid plain segment round-trips", () => {
+    expect(decodePathSegment("pane-123")).toBe("pane-123");
+    expect(decodePathSegment("tab1")).toBe("tab1");
+  });
+
+  test("decodes valid percent-escapes", () => {
+    expect(decodePathSegment("%20")).toBe(" ");
+    expect(decodePathSegment("w1%3Ap1")).toBe("w1:p1");
+    expect(decodePathSegment("hello%2Fworld")).toBe("hello/world");
+  });
+
+  test("returns null on malformed percent-escapes", () => {
+    expect(decodePathSegment("%ff")).toBeNull();
+    expect(decodePathSegment("%E0%A4%A")).toBeNull();
+    expect(decodePathSegment("%")).toBeNull();
+    expect(decodePathSegment("%1")).toBeNull();
+    expect(decodePathSegment("%ZZ")).toBeNull();
+  });
+
+  test("returns empty string when decoding an empty string (falsy but valid)", () => {
+    expect(decodePathSegment("")).toBe("");
+  });
+});
+
+describe("failureText", () => {
+  test("returns exactly '<context> failed'", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("something went wrong");
+      expect(failureText("upload", err)).toBe("upload failed");
+      expect(failureText("herdr read", err)).toBe("herdr read failed");
+      expect(failureText("transcript read", err)).toBe("transcript read failed");
+      expect(failureText("reply", err)).toBe("reply failed");
+      expect(failureText("key send", err)).toBe("key send failed");
+      expect(failureText("close pane", err)).toBe("close pane failed");
+      expect(failureText("rename pane", err)).toBe("rename pane failed");
+      expect(failureText("close tab", err)).toBe("close tab failed");
+      expect(failureText("rename tab", err)).toBe("rename tab failed");
+      expect(failureText("create tab", err)).toBe("create tab failed");
+      expect(failureText("create space", err)).toBe("create space failed");
+      expect(failureText("request", err)).toBe("request failed");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the returned string does NOT contain the error's message or paths", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("/home/op/.local/state/collie/push-subscriptions.json: EACCES");
+      const result = failureText("transcript read", err);
+      expect(result).toBe("transcript read failed");
+      expect(result.includes("/home")).toBe(false);
+      expect(result.includes("EACCES")).toBe(false);
+      expect(result.includes("push-subscriptions.json")).toBe(false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the real error is logged to console.error with full object", () => {
+    const originalConsoleError = console.error;
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logged.push(args);
+    };
+    const err = new Error("something internal");
+    try {
+      failureText("reply", err);
+      expect(logged.length).toBe(1);
+      expect(logged[0]![0]).toBe("[bridge] reply failed:");
+      expect(logged[0]![1]).toBe(err);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+});
+

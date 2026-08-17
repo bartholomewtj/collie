@@ -38,8 +38,101 @@ if [ "$CONFIG_DIR" != "${HOME}/.config/collie" ] && [ -f "${HOME}/.config/collie
   echo "note: ignoring legacy ${HOME}/.config/collie/.env — config now lives in ${CONFIG_DIR}/.env (move it there)." >&2
 fi
 
-# Source the plugin .env so both this script and the systemd unit share one config source.
-if [ -f "${CONFIG_DIR}/.env" ]; then set -a; . "${CONFIG_DIR}/.env"; set +a; fi
+# GNU and BSD stat take different flags and neither exists everywhere. Empty result = "can't tell",
+# and every caller treats that as "say nothing".
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true; }
+
+harden_config_perms() {
+  [ -d "$CONFIG_DIR" ] || return 0
+  chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+  if [ -f "${CONFIG_DIR}/.env" ]; then
+    local mode; mode="$(file_mode "${CONFIG_DIR}/.env")"
+    if [ -n "$mode" ]; then
+      case "$mode" in
+        600|400|0600|0400) ;;
+        *)
+          echo "warn: ${CONFIG_DIR}/.env was mode ${mode} (tightened to 600); rotate COLLIE_VAPID_PRIVATE if other users have accounts on this host." >&2
+          ;;
+      esac
+    fi
+    chmod 600 "${CONFIG_DIR}/.env" 2>/dev/null || true
+  fi
+}
+
+# Parse the plugin .env as key=value config (no shell execution / eval). Sourcing .env allowed
+# arbitrary code execution as the operator on every command and at login. Sibling implementation:
+# Import-CollieEnv in contrib/windows/collie-ctl.ps1 (which throws on malformed lines; here we warn
+# and skip to avoid bricking start).
+COLLIE_ENV_KEYS=""
+
+load_env() {
+  local env_file="${CONFIG_DIR}/.env"
+  [ -f "$env_file" ] || return 0
+
+  local mode; mode="$(file_mode "$env_file")"
+  if [ -n "$mode" ]; then
+    case "$mode" in
+      600|400|0600|0400) ;;
+      *)
+        echo "warn: ${env_file} is mode ${mode} (expected 600); it may be readable by other users." >&2
+        ;;
+    esac
+  fi
+
+  local line_no=0 raw_line line key val
+  while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+    line_no=$((line_no + 1))
+    line="${raw_line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    case "$line" in
+      '#'*) continue ;;
+      export[[:space:]]*)
+        line="${line#export}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        ;;
+    esac
+    case "$line" in
+      *'='*)
+        key="${line%%=*}"
+        val="${line#*=}"
+        ;;
+      *)
+        echo "warn: ${env_file}:${line_no}: malformed line; skipping" >&2
+        continue
+        ;;
+    esac
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    case "$key" in
+      ''|[0-9]*|*[!A-Za-z0-9_]*)
+        echo "warn: ${env_file}:${line_no}: invalid variable name; skipping" >&2
+        continue
+        ;;
+    esac
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
+    case "$val" in
+      '"'*'"' | "'"*"'")
+        if [ ${#val} -ge 2 ]; then
+          val="${val#?}"
+          val="${val%?}"
+        fi
+        ;;
+    esac
+    printf -v "$key" '%s' "$val"
+    case " $COLLIE_ENV_KEYS " in
+      *" $key "*) ;;
+      *) COLLIE_ENV_KEYS="${COLLIE_ENV_KEYS}${COLLIE_ENV_KEYS:+ }${key}" ;;
+    esac
+  done < "$env_file"
+}
+load_env
+
+# The bridge needs the whole config (COLLIE_VAPID_PRIVATE included); `git`, `tailscale`, `herdr`,
+# `bun install` and `bunx tsc` do not. Export at the launch site, not at load.
+export_bridge_env() { local k; for k in $COLLIE_ENV_KEYS; do export "$k"; done; }
 
 PORT="${COLLIE_PORT:-8787}"
 SOCKET="${HERDR_SOCKET_PATH:-${HOME}/.config/herdr/herdr.sock}"
@@ -83,9 +176,10 @@ BUN="$(resolve_bun)"
 # Put it on PATH too, not just in $BUN: this script shells out to a bare `bun` (the Tailscale
 # ownership probe), and `bun run build` spawns children that expect to find it themselves.
 #
-# ABSOLUTE paths only. `command -v` reports a shell function or alias as a bare word, and the plugin
-# .env is sourced above us — so a `bun()` defined there would resolve to `bun`, whose dirname is `.`,
-# and we'd prepend the CWD to the PATH used for every later `git` / `systemctl` / `tailscale`.
+# ABSOLUTE paths only. `command -v` reports a shell function or alias as a bare word (e.g. if
+# inherited from a caller's shell when this script is sourced) — resolving that would yield `bun`,
+# whose dirname is `.`, and we'd prepend the CWD to the PATH used for every later
+# `git` / `systemctl` / `tailscale`.
 case "$BUN" in
   /*)
     BUN_DIR="$(dirname "$BUN")"
@@ -141,13 +235,14 @@ cmd_build() {
   if [ "${SKIP_VERSION_CHECK:-}" != "1" ]; then
     bash "${PLUGIN_ROOT}/scripts/check-version.sh"
   fi
-  # Install BOTH dependency trees before typechecking. The root typecheck (tsconfig `types: ["bun"]`)
-  # resolves @types/bun from the ROOT node_modules; a fresh Herdr checkout ships neither tree, so
-  # without a root install the very first build dies with TS2688 "Cannot find type definition file
-  # for 'bun'" and Herdr rolls the install back (issue #9). It works on the dev host only because a
-  # manual `bun install` left root node_modules behind.
-  ( cd "${PLUGIN_ROOT}" && "$BUN" install )
-  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install )
+  # Install BOTH dependency trees before typechecking. The lockfile ships in the same commit as
+  # package.json, so on the update path they always agree; a resolution that doesn't match the lockfile
+  # means the tree is not what the release intended, and stops the build. The root typecheck (tsconfig
+  # `types: ["bun"]`) resolves @types/bun from the ROOT node_modules; a fresh Herdr checkout ships
+  # neither tree, so without a root install the very first build dies with TS2688 "Cannot find type
+  # definition file for 'bun'" and Herdr rolls the install back (issue #9).
+  ( cd "${PLUGIN_ROOT}" && "$BUN" install --frozen-lockfile )
+  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install --frozen-lockfile )
   # Typecheck BOTH sides before building — the Vite build itself does not typecheck, so a type
   # error would otherwise ship silently. Skip with SKIP_TYPECHECK=1 (same hatch as the pre-push hook).
   if [ "${SKIP_TYPECHECK:-}" != "1" ]; then
@@ -174,7 +269,8 @@ ensure_build() {
 }
 
 self_dnsname() {
-  tailscale status --json 2>/dev/null | bun -e \
+  [ -n "$BUN" ] || return 0
+  tailscale status --json 2>/dev/null | "$BUN" -e \
     "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).Self.DNSName.replace(/\.\$/,''))}catch{}})"
 }
 
@@ -340,6 +436,7 @@ print_status_banner() {
 write_unit() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   mkdir -p "$(dirname "$UNIT_FILE")" "$CONFIG_DIR"
+  harden_config_perms
   local ts_env=""
   [ -n "${COLLIE_TAILSCALE_HOSTS:-}" ] && ts_env="Environment=COLLIE_TAILSCALE_HOSTS=${COLLIE_TAILSCALE_HOSTS}"
   cat > "$UNIT_FILE" <<EOF
@@ -379,13 +476,15 @@ EOF
 # agent is less confined than the unit. No ProcessType either: Background throttles CPU and I/O, and
 # the bridge answers a phone.
 #
-# Paths only, never config values — .env is mode 600 and may hold COLLIE_VAPID_PRIVATE, so
-# `_exec-bridge` sources it at launch rather than baking it into a readable plist.
+# Paths only, never config values — .env is mode 600 (enforced by harden_config_perms on the start
+# path) and may hold COLLIE_VAPID_PRIVATE, so `_exec-bridge` loads and exports it at launch rather
+# than baking secrets into a readable plist.
 # HERDR_PLUGIN_CONFIG_DIR is passed because resolve_config_dir() must not shell out to `herdr` at
 # login, before the server is up.
 write_agent() {
   [ -n "$BUN" ] || { echo "error: bun not found" >&2; exit 1; }
   mkdir -p "$(dirname "$AGENT_FILE")" "$CONFIG_DIR"
+  harden_config_perms
   local x_root x_ctl x_cfg x_log
   x_root="$(xml_escape "$PLUGIN_ROOT")"
   x_ctl="$(xml_escape "${PLUGIN_ROOT}/scripts/collie-ctl.sh")"
@@ -433,9 +532,10 @@ EOF
 
 # The process launchd supervises. `exec` is load-bearing: launchd watches the pid it spawned, so the
 # bridge must replace this shell — otherwise KeepAlive guards a wrapper and a crashed bridge looks
-# alive. .env is already sourced above; these exports mirror the unit's Environment= lines.
+# alive. Export bridge env here at launch; these exports mirror the unit's Environment= lines.
 cmd_exec_bridge() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
+  export_bridge_env
   if [ "${COLLIE_SKIP_SERVE:-}" != "1" ] && [ -z "${COLLIE_TAILSCALE_HOSTS:-}" ]; then
     COLLIE_TAILSCALE_HOSTS="$(self_hosts)"
   fi
@@ -452,7 +552,12 @@ cmd_exec_bridge() {
 # so it lives here rather than being written twice and drifting.
 start_unsupervised() {
   mkdir -p "$CONFIG_DIR"
+  harden_config_perms
   [ -n "$BUN" ] || { echo "error: bun not found" >&2; exit 1; }
+  ( export_bridge_env
+    HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
+      nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
+    echo $! > "${CONFIG_DIR}/collie.pid" )
   COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}" \
   HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
     nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
@@ -461,6 +566,7 @@ start_unsupervised() {
 }
 
 cmd_start() {
+  harden_config_perms
   ensure_build || true
   COLLIE_TAILSCALE_HOSTS=""
   if [ "${COLLIE_SKIP_SERVE:-}" != "1" ]; then COLLIE_TAILSCALE_HOSTS="$(self_hosts)"; fi
@@ -565,7 +671,25 @@ is_managed_checkout() {
   ! git -C "$PLUGIN_ROOT" symbolic-ref -q HEAD >/dev/null 2>&1
 }
 
-# Advance the checkout to the newest upstream commit, in whichever shape it was installed.
+# The newest vX.Y.Z tag on the remote, or empty. Printed WITHOUT the leading refs/tags/.
+# Matches the bridge's semver tag grammar (^v\d+\.\d+\.\d+$) exactly.
+newest_release_tag() {
+  local out tag
+  if out="$(git -C "$PLUGIN_ROOT" ls-remote --tags --refs --sort=-v:refname origin 'v*' 2>/dev/null)"; then
+    tag="$(echo "$out" | sed 's#^.*/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+    [ -n "$tag" ] && echo "$tag"
+    return 0
+  fi
+  # Fallback for git < 2.18 where --sort is unsupported
+  if out="$(git -C "$PLUGIN_ROOT" ls-remote --tags --refs origin 'v*')"; then
+    tag="$(echo "$out" | sed 's#^.*/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+    [ -n "$tag" ] && echo "v${tag}"
+    return 0
+  fi
+  return 1
+}
+
+# Advance the checkout to the newest release, in whichever shape it was installed.
 # `git pull --ff-only` alone was the bug in #63: with no branch there is nothing to pull into, so
 # every turnkey install failed with "You are not currently on a branch" and could never self-update.
 update_checkout() {
@@ -579,22 +703,38 @@ update_checkout() {
     git -C "$PLUGIN_ROOT" pull --ff-only
     return
   fi
-  # Detached: re-detach onto the default branch tip the same way Herdr got us here. `--depth 1` only
-  # when we are ALREADY shallow, so an update never truncates the history of a full clone someone
-  # happens to have detached. `--force` because cmd_build runs `bun install`, which can rewrite the
-  # TRACKED lockfiles: a plain checkout would then refuse on the dirty tree and re-break the very
-  # update path this fixes. Discarding local edits here matches Herdr's own refresh semantics — its
-  # reinstall replaces the managed checkout wholesale.
-  echo "updating Collie (Herdr-managed checkout: fetch + detach onto origin HEAD)…"
+  # Detached: pin to the newest vX.Y.Z release tag (or COLLIE_UPDATE_REF override).
+  # `--depth 1` only when we are ALREADY shallow, so an update never truncates the history of a full
+  # clone someone happens to have detached. `--force` so a dirty tree cannot wedge the update path.
+  local target="${COLLIE_UPDATE_REF:-}"
+  if [ -z "$target" ]; then
+    if ! target="$(newest_release_tag)"; then
+      echo "error: failed to query release tags from origin" >&2
+      return 1
+    fi
+  fi
+  if [ -z "$target" ]; then
+    echo "error: no vX.Y.Z release tag found on origin; refuse to update to unverified origin HEAD" >&2
+    echo "       (override with COLLIE_UPDATE_REF=<tag-or-ref> if you intended a specific ref)" >&2
+    return 1
+  fi
+
+  echo "updating Collie (Herdr-managed checkout: fetch + detach onto tag ${target})…"
   if [ "$(git -C "$PLUGIN_ROOT" rev-parse --is-shallow-repository)" = true ]; then
-    git -C "$PLUGIN_ROOT" fetch --depth 1 origin HEAD
+    git -C "$PLUGIN_ROOT" fetch --depth 1 origin tag "$target"
   else
-    git -C "$PLUGIN_ROOT" fetch origin HEAD
+    git -C "$PLUGIN_ROOT" fetch origin tag "$target"
   fi
   # -q: without it checkout warns "you are leaving 1 commit behind" on every single update — true,
   # alarming, and useless here, since the commit we leave is the release we just replaced.
-  git -C "$PLUGIN_ROOT" checkout -q --detach --force FETCH_HEAD
-  echo "→ now at $(git -C "$PLUGIN_ROOT" log -1 --format='%h %s')"
+  git -C "$PLUGIN_ROOT" checkout -q --detach --force "refs/tags/${target}"
+  local landed
+  landed="$(git -C "$PLUGIN_ROOT" describe --tags --exact-match 2>/dev/null || true)"
+  if [ "$landed" != "$target" ]; then
+    echo "error: checkout landed at '${landed:-unknown}', expected tag '${target}'" >&2
+    return 1
+  fi
+  echo "→ now at ${target} ($(git -C "$PLUGIN_ROOT" log -1 --format='%h %s'))"
 }
 
 # Update to the latest release. Collie is a link-mode Herdr plugin, so the checkout on disk IS the
@@ -961,10 +1101,10 @@ cmd_version() { collie_version; }
 
 # Fire a one-off Web Push to every subscribed device — verify push end-to-end without waiting for an
 # agent to actually block. Delegates to scripts/push-test.ts, which reuses the bridge's Push class;
-# the plugin .env sourced at the top of this script gives it the VAPID keys. Args: [title] [body] [paneId].
+# export_bridge_env gives it the VAPID keys. Args: [title] [body] [paneId].
 cmd_push_test() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
-  "$BUN" run "${PLUGIN_ROOT}/scripts/push-test.ts" "$@"
+  ( export_bridge_env; "$BUN" run "${PLUGIN_ROOT}/scripts/push-test.ts" "$@" )
 }
 
 # Sourced (by scripts/collie-ctl.test.sh) rather than run: define the functions and stop before the

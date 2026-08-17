@@ -72,4 +72,7 @@ A superseded ADR is never deleted or edited into agreement with the present. Mar
 | [0008](./0008-collie-does-not-run-a-terminal-emulator.md) | Collie does not run a terminal emulator | Accepted |
 | [0009](./0009-a-generic-menu-is-driven-by-the-keys-it-names.md) | A generic menu is driven by the keys it names, never by digits | Accepted |
 | [0010](./0010-long-sends-are-verified-via-the-paste-placeholder.md) | Long sends are verified via the paste placeholder, not by chunking them | Accepted |
-| [0011](./0011-host-validation-is-fail-closed.md) | Host validation is fail-closed | Accepted |
+| [0011](./0011-update-pins-to-the-newest-release-tag.md) | Update pins to the newest release tag | Accepted |
+| [0012](./0012-subscribe-stays-read-level.md) | Subscribe stays read-level | Accepted |
+| [0013](./0013-notification-settings-are-writes.md) | Notification settings are writes | Accepted |
+| [0014](./0014-host-validation-is-fail-closed.md) | Host validation is fail-closed | Accepted |

@@ -1,9 +1,9 @@
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, normalize, sep } from "node:path";
+import { extname, join, normalize, relative, sep } from "node:path";
 import type { ActivityLedger } from "./activity.ts";
 import type { AuditLog } from "./audit.ts";
-import type { Config } from "./config.ts";
+import { isLoopbackBindHost, type Config } from "./config.ts";
 import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
@@ -12,10 +12,12 @@ import {
   verifyExpectedPrompt,
   type PromptBindingResult,
 } from "./prompt-binding.ts";
-import type { Push, PushSubscription } from "./push.ts";
+import type { Push } from "./push.ts";
+import { looksPrivateHost, parsePushSubscription } from "./push-endpoint.ts";
 import { herdTagFor, type SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
 import type { UpdateMonitor } from "./update.ts";
+import { imageExtFromBytes, makeRoomForUpload, SNIFF_BYTES } from "./uploads.ts";
 import type { StateEngine } from "./state-engine.ts";
 import { adapterFor, buildJournalRegistry } from "./journal/registry.ts";
 import { TranscriptStore } from "./journal/store.ts";
@@ -48,12 +50,6 @@ const MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024; // 12 MB
 const MAX_READ_LINES = 10_000;
 const MAX_EXPECTED_PROMPT_CHARS = 8192;
 const PROMPT_BINDING_BLANK_LINE_HEADROOM = 6;
-const IMAGE_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
 
 // The built PWA lives in web/dist (Vite output). If it's missing, the bridge still runs the API
 // — only the static UI 503s with a hint to build.
@@ -89,6 +85,29 @@ const SECURITY_HEADERS: Record<string, string> = {
 // Loopback Host/Origin forms (with an optional port). Loopback is always trusted — only tailscaled
 // (or a co-located proxy) can reach the bridge's port, so a loopback caller is the on-host operator.
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
+/**
+ * Whether a TCP peer address is loopback. Unlike the `Host` header — which the client writes and
+ * `LOOPBACK_HOST` above merely parses — this comes from the kernel and cannot be forged, so it is
+ * the one honest answer to "is this caller on the box".
+ *
+ * Bun gives IPv4 peers as `127.0.0.1` and IPv6 peers as `::1`; a dual-stack listener can also report
+ * an IPv4 peer in v4-mapped form (`::ffff:127.0.0.1`), so all three shapes are matched.
+ *
+ * A null/absent address is treated as loopback, i.e. this check abstains rather than rejecting.
+ * `Server.requestIP` returns null for a request whose socket has already gone, and the bind gate in
+ * config.ts is the primary control — this one is defence in depth. Failing closed on an
+ * unknowable address would trade a real hole for a flaky one.
+ *
+ * Pure + exported so the address table is unit-tested without standing up Bun.serve.
+ */
+export function isLoopbackPeer(address: string | null | undefined): boolean {
+  if (!address) return true;
+  const a = address.trim().toLowerCase();
+  if (a === "::1" || a === "0:0:0:0:0:0:0:1") return true;
+  const v4 = a.startsWith("::ffff:") ? a.slice(7) : a;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v4);
+}
 
 const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|keys|upload|close|rename|history))?$/;
 // Turns per history page. "Show entire history" means the WHOLE conversation, so the client asks for
@@ -162,7 +181,29 @@ export function startServer(opts: {
     // Content-Length is absent or false. The upload handler still does its own precise check.
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
-    async fetch(req) {
+    // Bun's `development` default is `NODE_ENV !== "production"`, and nothing in Collie's launch paths
+    // sets NODE_ENV — so without this the bridge served Bun's HTML error page, stack trace and absolute
+    // source paths included, to anyone who could make a handler throw. Pinned in code rather than via a
+    // unit Environment= line because the three launch paths in collie-ctl.sh plus the hand-maintained
+    // systemd/collie.service copy would all have to agree, and nothing tests that they do.
+    development: false,
+
+    // Last line of defence: anything that escapes `fetch` (or a rejected promise a handler returned)
+    // lands here instead of Bun's default page. `text()` applies the shared hardening headers, which a
+    // raw `new Response` here would skip.
+    error(err: unknown) {
+      return text(failureText("request", err), 500);
+    },
+
+    async fetch(req, srv) {
+      // Peer-address gate, ahead of routing so it covers the static PWA too. Under the loopback bind
+      // that config.ts enforces this can never fire; it exists so a wide bind reached some other way
+      // (a container port-forward, a future bind path, a hand-edited unit) still can't reach a route.
+      // Skipped when the operator explicitly opted into a wide bind — there, remote peers are the point.
+      if (!cfg.allowNonLoopbackBind && !isLoopbackPeer(srv.requestIP(req)?.address)) {
+        return text("non-loopback peer rejected", 403);
+      }
+
       const url = new URL(req.url);
       const { pathname } = url;
 
@@ -237,7 +278,8 @@ export function startServer(opts: {
         if (denied) return denied;
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
-        const tabId = decodeURIComponent(tabMatch[1]!);
+        const tabId = decodePathSegment(tabMatch[1]!);
+        if (tabId === null) return text("bad tab id", 400);
         const action = tabMatch[2];
         const device = deviceAuth(req, cfg).device;
         if (action === "close") return closeTab(rt.herdr, tabId, req, audit, device, rt.name);
@@ -247,7 +289,6 @@ export function startServer(opts: {
       // ── Per-pane read / send ─────────────────────────────────────────────
       const paneMatch = pathname.match(PANE_ROUTE);
       if (paneMatch) {
-        const paneId = decodeURIComponent(paneMatch[1]!);
         const action = paneMatch[2];
         // Reading a pane is allowed for any access-gated client; every action (reply/keys/upload/
         // close) types into or restructures a terminal, so it additionally needs an authorised device.
@@ -255,6 +296,8 @@ export function startServer(opts: {
         const isRead = !action || action === "history";
         const denied = guard(req, cfg, isRead ? "read" : "write");
         if (denied) return denied;
+        const paneId = decodePathSegment(paneMatch[1]!);
+        if (paneId === null) return text("bad pane id", 400);
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
         const { herdr, name: session } = rt;
@@ -301,9 +344,11 @@ export function startServer(opts: {
         } satisfies BridgeConfig, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/subscribe" && req.method === "POST") {
-        // Read-level: registering for push isn't terminal-driving, so a read-only device may still
-        // subscribe to notifications.
-        const denied = guard(req, cfg, "read");
+        // Write-level: a subscription is a standing grant to receive every alert this bridge sends,
+        // so an unallowlisted device must not be able to create one for itself (issue #8). It isn't
+        // terminal-driving, but "read-only" has never meant "may register for the operator's push
+        // stream" — see .adr/0012.
+        const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const bad = requireJsonBody(req);
         if (bad) return bad;
@@ -313,16 +358,22 @@ export function startServer(opts: {
         } catch {
           return text("bad subscription", 400);
         }
-        if (!isPushSubscription(body)) return text("bad subscription", 400);
-        await push.addSubscription(body, {
+        // Validate endpoint against allowed push hosts, validate key lengths, and strip unknown
+        // properties before passing to storage (issue #7).
+        const parsed = parsePushSubscription(body, cfg.pushAllowedHosts);
+        if (parsed === null) return text("bad subscription", 400);
+        const result = await push.addSubscription(parsed, {
           replaces: supersededEndpoint(body),
           userAgent: req.headers.get("user-agent") ?? undefined,
         });
+        if (result === "full") return text("too many subscriptions", 429);
         return secure(new Response(null, { status: 204 }));
       }
       if (pathname === "/api/notifications/snooze" && req.method === "POST") {
-        // Managing your own notification quiet-hours isn't terminal-driving — read-level, like subscribe.
-        const denied = guard(req, cfg, "read");
+        // Write-level: snooze is BRIDGE-WIDE (.adr/0003), so one read-only device muting itself
+        // mutes the operator's phone too. Silencing every alert is damage, which is exactly what the
+        // device gate bounds (issue #8).
+        const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const bad = requireJsonBody(req);
         if (bad) return bad;
@@ -333,7 +384,9 @@ export function startServer(opts: {
           return text("bad request", 400);
         }
         const until = (body as { snoozedUntil?: unknown }).snoozedUntil;
-        if (until !== null && typeof until !== "number") return text("bad snoozedUntil", 400);
+        // Reject NaN/Infinity here so a nonsense deadline is a 400, not a silent clamp.
+        if (until !== null && (typeof until !== "number" || !Number.isFinite(until)))
+          return text("bad snoozedUntil", 400);
         await snooze.set(until);
         // Snoozing should also clear whatever's already on the lock screen — across every session,
         // since snooze is bridge-wide. Each session owns its own notification slot (tag).
@@ -345,15 +398,16 @@ export function startServer(opts: {
         return json({ snoozedUntil: snooze.until() }, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/notifications/prefs") {
-        // Which agent statuses push (bridge-wide). Read-level like snooze — managing your own
-        // notification preferences isn't terminal-driving.
+        // Which agent statuses push, bridge-wide. Reading them discloses nothing and changes
+        // nothing, so GET stays read-level; POST is a write, like snooze — {"blocked":false,
+        // "done":false,"updates":false} silences every alert for every device (issue #8).
         if (req.method === "GET") {
           const denied = guard(req, cfg, "read");
           if (denied) return denied;
           return json(notifyPrefs.current(), req.headers.get("accept-encoding"));
         }
         if (req.method === "POST") {
-          const denied = guard(req, cfg, "read");
+          const denied = guard(req, cfg, "write");
           if (denied) return denied;
           const bad = requireJsonBody(req);
           if (bad) return bad;
@@ -374,9 +428,12 @@ export function startServer(opts: {
         return text("method not allowed", 405);
       }
       if (pathname === "/api/update/check" && req.method === "POST") {
-        // Force an immediate upstream check (the "check for updates" button), instead of waiting for
-        // the periodic timer. Read-level — checking a version isn't terminal-driving — and idempotent
-        // (the monitor de-dupes concurrent checks). Returns the fresh status the client revalidates on.
+        // Force an immediate upstream check (the "check for updates" button) instead of waiting for
+        // the periodic timer. Still read-level — a version check isn't operator-visible state — but
+        // the monitor now enforces a minimum interval between upstream fetches (update.ts), because
+        // the in-flight guard only coalesces CONCURRENT calls: a sequential loop was one anonymous
+        // GitHub request each, against a 60/hr limit (issue #8). A throttled call is a no-op that
+        // returns the last known status.
         const denied = guard(req, cfg, "read");
         if (denied) return denied;
         await updateMonitor.checkRelease();
@@ -392,7 +449,7 @@ export function startServer(opts: {
       if (isReservedAuthPath(pathname)) return reservedAuthPlaceholder();
 
       // ── Static PWA (with SPA fallback) ───────────────────────────────────
-      return serveStatic(pathname);
+      return serveStatic(pathname, req.headers.get("host") ?? "", cfg);
     },
   });
 
@@ -418,9 +475,9 @@ export function startServer(opts: {
  */
 export function startupWarnings(cfg: Config): string[] {
   const warnings: string[] = [];
-  if (cfg.host !== "127.0.0.1" && cfg.host !== "localhost") {
+  if (!isLoopbackBindHost(cfg.host)) {
     warnings.push(
-      `[bridge] WARNING: bound to ${cfg.host}, not loopback — identity checks may be bypassable`,
+      `[bridge] WARNING: bound to ${cfg.host} via COLLIE_ALLOW_NON_LOOPBACK_BIND — the identity, device and same-origin gates are all client-settable on a wide bind, and the peer-address check is off. Whatever fronts this port is now the only control.`,
     );
   }
   if (cfg.deviceHeader && cfg.deviceAllowlist.length === 0) {
@@ -456,6 +513,12 @@ export function startupWarnings(cfg: Config): string[] {
   ) {
     warnings.push(
       `[bridge] WARNING: no non-loopback Host is allowed — every request except one addressed to localhost/127.0.0.1 will be rejected with "host not allowed". Set COLLIE_PUBLIC_HOSTS to the exact host(s) you serve on (required behind your own reverse proxy, see README → Variant C/E).`,
+    );
+  }
+  const risky = cfg.pushAllowedHosts.filter(looksPrivateHost);
+  if (risky.length) {
+    warnings.push(
+      `[bridge] WARNING: COLLIE_PUSH_ALLOWED_HOSTS contains private/loopback host(s) (${risky.join(", ")}) — any read-level client can now make the bridge POST to them (issue #7)`,
     );
   }
   return warnings;
@@ -506,7 +569,7 @@ async function readPane(
       build,
     );
   } catch (err) {
-    return text(`herdr read failed: ${(err as Error).message}`, 502);
+    return text(failureText("herdr read", err), 502);
   }
 }
 
@@ -570,7 +633,7 @@ async function paneHistory(
     if (page === null) return unavailable("no-log");
     return json({ paneId, available: true, ...page } satisfies PaneHistoryResponse, accept);
   } catch (err) {
-    return text(`transcript read failed: ${(err as Error).message}`, 502);
+    return text(failureText("transcript read", err), 502);
   }
 }
 
@@ -626,7 +689,7 @@ export async function sendReplySteps(
         error: "typed into the pane but not submitted — check the pane before resending",
       };
     }
-    return { ok: false, textDelivered, error: (err as Error).message };
+    return { ok: false, textDelivered, error: failureText("reply", err) };
   }
 }
 
@@ -748,7 +811,7 @@ export async function keysPane(
         detail: { keys, sent: false, promptBinding: binding.audit },
       });
     }
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("key send", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -814,7 +877,7 @@ async function checkPromptBinding(
   } catch (err) {
     return {
       ok: false,
-      error: `herdr read failed: ${(err as Error).message}`,
+      error: failureText("herdr read", err),
       status: 502,
       audit: { checked: true, passed: false, expected, reason: "read_failed" },
     };
@@ -871,7 +934,7 @@ async function closePane(
     audit.record({ action: "pane.close", paneId, session, device, detail: {} });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("close pane", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -904,7 +967,7 @@ async function renamePane(
     audit.record({ action: "pane.rename", paneId, session, device, detail: { label } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("rename pane", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -951,7 +1014,7 @@ async function renameTab(
     audit.record({ action: "tab.rename", session, device, detail: { tabId, label: parsed.label } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("rename tab", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -973,7 +1036,7 @@ async function closeTab(
     audit.record({ action: "tab.close", session, device, detail: { tabId } });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies ActionResponse, ae);
+    return json({ ok: false, error: failureText("close tab", err) } satisfies ActionResponse, ae);
   }
 }
 
@@ -1016,7 +1079,7 @@ async function createTab(
       pane: { ...created, workspaceLabel: label },
     } satisfies CreateResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies CreateResponse, ae);
+    return json({ ok: false, error: failureText("create tab", err) } satisfies CreateResponse, ae);
   }
 }
 
@@ -1060,13 +1123,14 @@ async function createWorkspace(
       },
     } satisfies CreateResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies CreateResponse, ae);
+    return json({ ok: false, error: failureText("create space", err) } satisfies CreateResponse, ae);
   }
 }
 
 // Save an uploaded image to a host file and return its absolute path. The client then references
 // that path in a message; Claude Code / Codex read images by path (the terminal can't take a
-// pasted image over the socket). Validated by MIME and size; the filename is server-generated.
+// pasted image over the socket). Validated by SIZE and by its MAGIC BYTES — never by the declared
+// Content-Type, which the client writes (issue #9). The filename is server-generated.
 async function uploadPane(
   cfg: Config,
   paneId: string,
@@ -1101,22 +1165,43 @@ async function uploadPane(
   if (!(file instanceof File)) {
     return json({ ok: false, error: "no file" } satisfies UploadResponse, ae);
   }
-  const ext = IMAGE_EXT[file.type];
-  if (!ext) {
-    return json({ ok: false, error: `unsupported type: ${file.type || "unknown"}` } satisfies UploadResponse, ae);
-  }
   if (file.size > MAX_UPLOAD_BYTES) {
     return json({ ok: false, error: "image too large (max 10 MB)" } satisfies UploadResponse, ae);
   }
   try {
+    // formData() has already buffered the body, so this is a copy, not a second read. Take it once
+    // and use it for both the sniff and the write.
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ext = imageExtFromBytes(bytes.subarray(0, SNIFF_BYTES));
+    if (!ext) {
+      // Deliberately does not echo file.type back: it is client-controlled and, now that the bytes
+      // decide, it is not the reason for the refusal either.
+      return json(
+        { ok: false, error: "unsupported image type (expected PNG, JPEG, GIF or WebP)" } satisfies UploadResponse,
+        ae,
+      );
+    }
     const dir = join(cfg.stateDir, "uploads");
     // 0700 — uploads (and the state dir they live under) may hold sensitive images; keep them
     // owner-only. recursive:true applies the mode to any intermediate dirs it creates too.
     await mkdir(dir, { recursive: true, mode: 0o700 });
+    // ...but mkdir applies `mode` only to dirs it CREATES, so a dir left over from an earlier build
+    // (or from a COLLIE_STATE_DIR pointing at something shared) keeps its old perms. Re-assert it.
+    // Best-effort: if we don't own the dir we still write the file at 0600 below, which is the
+    // protection that actually matters. cfg.stateDir itself is left alone on purpose — the operator
+    // chose that path and may share it deliberately.
+    await chmod(dir, 0o700).catch(() => {});
+    // Bound the directory's total size, evicting oldest-first (issue #9).
+    if (!(await makeRoomForUpload(dir, file.size))) {
+      return json({ ok: false, error: "upload storage full" } satisfies UploadResponse, ae);
+    }
     const safePane = paneId.replace(/[^A-Za-z0-9_-]/g, "_");
     const filename = `${safePane}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const fullPath = join(dir, filename);
-    await Bun.write(fullPath, file);
+    // node:fs write (not Bun.write, which has no mode option) so the file is owner-only from the
+    // moment it exists — a chmod after the fact leaves a window where it is world-readable at the
+    // process umask. The name is a fresh UUID, so O_CREAT always applies the mode.
+    await writeFile(fullPath, bytes, { mode: 0o600 });
     audit.record({
       action: "upload",
       paneId,
@@ -1126,8 +1211,25 @@ async function uploadPane(
     });
     return json({ ok: true, path: fullPath } satisfies UploadResponse, ae);
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message } satisfies UploadResponse, ae);
+    return json({ ok: false, error: failureText("upload", err) } satisfies UploadResponse, ae);
   }
+}
+
+/**
+ * Whether this request's method can change state — anything that is not a safe read.
+ *
+ * The Origin requirement keys off this as well as the access level, because the two are different
+ * questions: `level` is what the caller is permitted to do, while the method is whether this
+ * particular call mutates. A read-level POST (issue #8 — snooze, prefs, subscribe, update/check)
+ * was accepted with no Origin at all from a remote Host, which is exactly the non-browser /
+ * Origin-stripped shape the write rule exists to refuse. Browsers always send Origin on a POST.
+ *
+ * `req.method` is read defensively: the gate unit tests hand `checkAccess` a headers-only stub, so
+ * an absent method reads as GET.
+ */
+export function isStateChangingMethod(req: Request): boolean {
+  const method = (req.method ?? "GET").toUpperCase();
+  return method !== "GET" && method !== "HEAD";
 }
 
 /**
@@ -1142,9 +1244,10 @@ async function uploadPane(
  *    http://localhost:<any port> is a different origin from a remote Collie, and treating it as
  *    trusted handed any local page a CSRF write against the bridge. Browsers omit Origin on
  *    same-origin GETs (so the snapshot poll passes); they send it on POSTs.
- *  - Origin required for writes: a state-changing (`level === "write"`) request with no Origin is
- *    trusted only from loopback (curl on the host). Browsers always send Origin on fetch/SW POSTs,
- *    so a missing Origin on a remote write is a non-browser or Origin-stripped request — reject it.
+ *  - Origin required for anything state-changing: a request with no Origin is trusted only from
+ *    loopback (curl on the host) if it is a write OR its method is not GET/HEAD. Browsers always
+ *    send Origin on fetch/SW POSTs, so a missing Origin on a remote POST is a non-browser or
+ *    Origin-stripped request — reject it whatever access level the route asks for (issue #8).
  *  - Optional Tailscale identity: when a trusted user is configured under `tailscale serve`, the
  *    request must carry a matching `Tailscale-User-Login`. A missing header is rejected too —
  *    serve injects none for tagged nodes, so tolerating it let any tagged node write. Under
@@ -1177,8 +1280,9 @@ export function checkAccess(
     // Local dev through the vite proxy re-permits itself via COLLIE_ALLOWED_ORIGINS.
     const allowed = originHost === host || cfg.allowedOrigins.includes(origin);
     if (!allowed) return { ok: false, reason: "cross-origin rejected" };
-  } else if (level === "write" && !LOOPBACK_HOST.test(host)) {
-    // A write with no Origin header from a non-loopback Host isn't a real browser request — refuse.
+  } else if ((level === "write" || isStateChangingMethod(req)) && !LOOPBACK_HOST.test(host)) {
+    // A state-changing request with no Origin header from a non-loopback Host isn't a real browser
+    // request — refuse. Loopback (curl on the host) is still exempt.
     return { ok: false, reason: "origin required" };
   }
 
@@ -1306,6 +1410,34 @@ function text(body: string, status: number): Response {
 }
 
 /**
+ * Decode one path segment, or null if the client sent a malformed percent-escape.
+ *
+ * `decodeURIComponent` throws `URIError` on input like `%ff` or `%E0%A4%A`. Every such throw used to
+ * escape the fetch handler. Pure + exported so the malformed-input table is unit-tested without
+ * standing up Bun.serve.
+ */
+export function decodePathSegment(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The single place an exception becomes a client-visible string.
+ *
+ * The real error — which routinely carries absolute journal, state-dir and Herdr-socket paths, and
+ * for a socket failure the whole raw reply line — goes to the log, where the operator reads it with
+ * `journalctl --user -u collie -f`. The client gets a fixed phrase naming only what was being
+ * attempted. Never interpolate `err` into the return value.
+ */
+export function failureText(context: string, err: unknown): string {
+  console.error(`[bridge] ${context} failed:`, err);
+  return `${context} failed`;
+}
+
+/**
  * Whether a request body declares JSON. The gate on every JSON route: a cross-site POST can only
  * set text/plain, form-urlencoded or multipart without a CORS preflight, so demanding
  * application/json forces a preflight the bridge never answers. Pure + exported for tests.
@@ -1337,21 +1469,6 @@ export function parseNotifyPrefsPatch(v: unknown): Partial<NotifyPrefs> | null {
     patch[key] = o[key] as boolean;
   }
   return patch;
-}
-
-// Shape-check an untrusted /api/subscribe body before persisting it (a malformed sub would be
-// stored keyed on `undefined` and silently never fire).
-function isPushSubscription(v: unknown): v is PushSubscription {
-  if (typeof v !== "object" || v === null) return false;
-  const o = v as Record<string, unknown>;
-  const keys = o.keys as Record<string, unknown> | undefined;
-  return (
-    typeof o.endpoint === "string" &&
-    typeof keys === "object" &&
-    keys !== null &&
-    typeof keys.p256dh === "string" &&
-    typeof keys.auth === "string"
-  );
 }
 
 /**
@@ -1413,10 +1530,16 @@ export function resolveStaticPath(
   pathname: string,
   webDir: string = WEB_DIR,
 ): { rel: string; full: string } | null {
-  const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const full = normalize(join(webDir, rel));
+  const raw = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const full = normalize(join(webDir, raw));
   if (full !== webDir && !full.startsWith(webDir + sep)) return null;
-  return { rel, full };
+  // `rel` is derived from the NORMALISED path, never from the request string. Otherwise a dot
+  // segment presents one path to the containment check above and a different one to the three
+  // checks keyed on `rel` below: "/./build-info.json" would dodge the private-file denial
+  // (issue #11), "/./sw.js" would lose its Service-Worker-Allowed header, and "/./assets/x.js"
+  // would be served no-cache instead of immutable. Forward slashes so `rel` reads the same on
+  // Windows as on the deployment host.
+  return { rel: relative(webDir, full).split(sep).join("/"), full };
 }
 
 /**
@@ -1468,10 +1591,22 @@ behind your own reverse proxy</em> in the README.</p>
   );
 }
 
-async function serveStatic(pathname: string): Promise<Response> {
+async function serveStatic(pathname: string, host: string, cfg: Config): Promise<Response> {
+  // The Host allowlist, which every /api/* route gets via guard() → checkAccess. The static route
+  // was the last one that skipped it, so with COLLIE_PUBLIC_HOSTS set a rebound DNS name was still
+  // served the app shell, build-info.json, and the X-Collie-Build header on every asset — the same
+  // hole that was closed for /api/config in #32 (issue #11). Deliberately ONLY the host check and
+  // not guard(): a top-level navigation carries no Origin, and the identity gate would 403 the whole
+  // PWA rather than one endpoint. Rebinding is a Host problem. First, before any path handling, so a
+  // rebound host cannot tell 403/404/503 apart by probing paths.
+  if (cfg.publicHosts.length > 0 && !isHostAllowed(host, cfg)) return text("host not allowed", 403);
+
   const resolved = resolveStaticPath(pathname);
   if (!resolved) return text("forbidden", 403);
   let { rel, full } = resolved;
+
+  // 404, not 403: a refusal that differs from "no such file" confirms the file is there.
+  if (isPrivateStaticFile(rel)) return text("not found", 404);
 
   let file = Bun.file(full);
   if (!(await file.exists())) {
@@ -1502,7 +1637,7 @@ async function serveStatic(pathname: string): Promise<Response> {
 /**
  * Cache-Control for a served dist file, keyed by its path relative to web/dist. Hashed assets under
  * `assets/` are content-addressed, so cache them hard + immutable. EVERYTHING else — index.html,
- * sw.js, manifest.webmanifest, build-info.json, the favicons — is MUTABLE across a rebuild and must
+ * sw.js, manifest.webmanifest, the favicons — is MUTABLE across a rebuild and must
  * always be revalidated (`no-cache`), so neither the browser NOR an intermediary reverse proxy can
  * pin a stale copy. This matters most for sw.js: a proxy that heuristically caches it (it shipped
  * with no Cache-Control before) starves `registration.update()` and wedges the whole SW update
@@ -1511,4 +1646,17 @@ async function serveStatic(pathname: string): Promise<Response> {
  */
 export function cacheControlFor(rel: string): string {
   return rel.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+}
+
+/**
+ * Dist files that exist on disk but must never be answered over HTTP.
+ *
+ * `build-info.json` is the build id in a file. Nothing fetches it: the bridge reads it off DISK for
+ * the X-Collie-Build header and /api/config (see `buildId`), collie-ctl reads it off disk, and the
+ * frontend learns the server build from that header and from /api/config — it has no fetch for this
+ * path. Serving it was purely an artefact of the whole dist tree being public, and it put the build
+ * id behind no gate at all (issue #11). Pure + exported for unit tests.
+ */
+export function isPrivateStaticFile(rel: string): boolean {
+  return rel === "build-info.json";
 }

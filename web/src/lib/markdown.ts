@@ -61,9 +61,14 @@ const SAFE_SCHEME = /^(https?:|mailto:)/i;
 export function safeHref(raw: string): string | null {
   const href = raw.trim();
   if (href === "") return null;
-  // Scheme-relative ("//evil.com") inherits the page scheme and is a real navigation — allow it, it
-  // can only ever be http(s) here. A rooted or relative path stays same-origin, which is harmless.
-  if (href.startsWith("/") || href.startsWith("#")) return href;
+  if (href.startsWith("#")) return href;
+  // A rooted path stays same-origin and is harmless — but "//evil.tld/login" is not one. It is a
+  // scheme-relative NAVIGATION to another host wearing a rooted path's clothes, and the href here
+  // comes from agent output, which the renderer opens with target="_blank" (issue #11). "/\evil.tld"
+  // is the same attack: for special schemes the URL parser treats a backslash as a slash, so
+  // browsers resolve it identically. Refusing beats resolving against the origin — it keeps this
+  // function pure, and an unsafe href already renders as its literal Markdown rather than vanishing.
+  if (href.startsWith("/")) return /^\/[/\\]/.test(href) ? null : href;
   return SAFE_SCHEME.test(href) ? href : null;
 }
 

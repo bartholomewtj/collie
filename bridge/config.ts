@@ -100,10 +100,20 @@ export interface Config {
   /** TCP port the bridge listens on (loopback only). `tailscale serve` proxies to it. */
   port: number;
   /**
-   * Bind host. ALWAYS loopback by default — binding 0.0.0.0 would make the Tailscale identity
-   * check meaningless (see ARCHITECTURE.md §6). Override only if you know exactly why.
+   * Bind host. Loopback is REQUIRED, not merely the default — `loadConfig` refuses a non-loopback
+   * value unless {@link allowNonLoopbackBind} is set, because binding wide makes the Tailscale
+   * identity check, the device header and the same-origin gate all client-forgeable
+   * (see ARCHITECTURE.md §6).
    */
   host: string;
+  /**
+   * Escape hatch for {@link host}: permit a bind that is not loopback (`COLLIE_ALLOW_NON_LOOPBACK_BIND=1`).
+   * Without it the bridge refuses to start on a wide bind rather than warning and carrying on — a
+   * warning in a log nobody reads is not a control, and the bind is what every write gate rests on
+   * (issue #4). Setting it also disables the peer-address check in server.ts, because a deliberate
+   * wide bind means non-loopback peers are the point; one switch, not two.
+   */
+  allowNonLoopbackBind: boolean;
   /** Poll cadence for the state engine, ms. Also the fast fallback cadence when the event stream is down. */
   pollMs: number;
   /**
@@ -180,6 +190,12 @@ export interface Config {
    */
   publicHosts: string[];
   /**
+   * Additional push-service hosts allowed for Web Push endpoints (extends {@link DEFAULT_PUSH_HOSTS}).
+   * Entries are matched as an exact hostname or dot-suffix (e.g. `push.example.com` covers
+   * `a.push.example.com`). Only needed when running a self-hosted push service.
+   */
+  pushAllowedHosts: string[];
+  /**
    * Hosts this bridge is actually published on, discovered by `collie-ctl.sh` from
    * `tailscale status --json` (Self.DNSName + Self.TailscaleIPs) and injected as
    * COLLIE_TAILSCALE_HOSTS. Operators don't set this — it exists so the Host allowlist can be
@@ -190,7 +206,7 @@ export interface Config {
   tailscaleHosts: string[];
   /**
    * Escape hatch that turns Host validation OFF entirely (COLLIE_ALLOW_ANY_HOST=1), restoring the
-   * pre-1.0 behaviour where any Host passed as long as Origin matched it. That is the DNS-rebinding
+   * pre-0.31 behaviour where any Host passed as long as Origin matched it. That is the DNS-rebinding
    * hole (issue #3) — a hostile page rebinds to 127.0.0.1 and sends Host==Origin==evil.example.
    * Only for a deployment whose real Host genuinely can't be enumerated. Warned about at startup.
    */
@@ -220,6 +236,25 @@ export interface Config {
 }
 
 /**
+ * Whether a bind host keeps the listener on loopback. Loopback is the trust basis for every write
+ * gate in the bridge — the Tailscale identity header, the device header and the same-origin check
+ * are all client-settable values that only mean anything because `tailscale serve` (or a local
+ * reverse proxy) is the only thing that can reach the port. Bound wide, all three are decoration.
+ *
+ * Accepts every spelling of loopback, not just the two the old startup warning knew about: the
+ * whole 127.0.0.0/8 block, `localhost`, and IPv6 `::1` in bare, bracketed and expanded form.
+ * Rejects the wildcards (`0.0.0.0`, `::`), LAN addresses, and any hostname.
+ *
+ * Pure + exported so the table of accepted/rejected spellings is unit-tested.
+ */
+export function isLoopbackBindHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost") return true;
+  if (h === "::1" || h === "0:0:0:0:0:0:0:1") return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
  * herdr's default socket location: `~/.config/herdr/herdr.sock` on Unix, `%APPDATA%\herdr\herdr.sock`
  * on Windows (the Windows beta keeps its config root under AppData\Roaming). Pure so both branches
  * are unit-testable on any platform.
@@ -244,11 +279,28 @@ export function loadConfig(): Config {
 
   const submitKeys = envList("COLLIE_SUBMIT_KEYS");
 
+  const host = process.env.COLLIE_HOST ?? "127.0.0.1";
+  const allowNonLoopbackBind = envBool("COLLIE_ALLOW_NON_LOOPBACK_BIND", false);
+  // Fail at boot, not with a warning. A bridge bound off-loopback has no working write gate at all
+  // (issue #4), so starting it is worse than not starting it — the operator sees a stopped service
+  // and a one-line reason, instead of an open one and a line in journalctl.
+  if (!isLoopbackBindHost(host) && !allowNonLoopbackBind) {
+    throw new Error(
+      `COLLIE_HOST=${host} is not a loopback address. Collie binds loopback only: the ` +
+        `Tailscale-User-Login header, COLLIE_DEVICE_HEADER and the same-origin gate are all ` +
+        `client-settable and mean nothing on a wide bind, so binding here would hand write access ` +
+        `to anything that can reach the port. Use 127.0.0.1 (the default) and put your ingress in ` +
+        `front of it — see README → Variants. If you truly mean to bind wide and have another ` +
+        `control in front, set COLLIE_ALLOW_NON_LOOPBACK_BIND=1.`,
+    );
+  }
+
   return {
     socketPath: process.env.HERDR_SOCKET_PATH ?? defaultSocketPath(),
     dialMode: envEnum("COLLIE_HERDR_DIAL", ["auto", "net", "bun"] as const, "auto"),
     port: envInt("COLLIE_PORT", 8787, { min: 1, max: 65535 }),
-    host: process.env.COLLIE_HOST ?? "127.0.0.1",
+    host,
+    allowNonLoopbackBind,
     pollMs: envInt("COLLIE_POLL_MS", 1500, { min: 250 }),
     pollIdleMs: envInt("COLLIE_POLL_IDLE_MS", 12_000, { min: 1000 }),
     notifyDelayMs: envInt("COLLIE_NOTIFY_DELAY_MS", 30_000, { min: 0 }),
@@ -284,6 +336,7 @@ export function loadConfig(): Config {
     deviceAllowlist: envList("COLLIE_DEVICE_ALLOWLIST"),
     allowedOrigins: envList("COLLIE_ALLOWED_ORIGINS"),
     publicHosts: envList("COLLIE_PUBLIC_HOSTS"),
+    pushAllowedHosts: envList("COLLIE_PUSH_ALLOWED_HOSTS"),
     tailscaleHosts: envList("COLLIE_TAILSCALE_HOSTS"),
     allowAnyHost: envBool("COLLIE_ALLOW_ANY_HOST", false),
     vapidPublic: process.env.COLLIE_VAPID_PUBLIC ?? "",

@@ -16,7 +16,7 @@ const ROWS: ReadonlyArray<{ key: keyof NotifyPrefs; label: string; hint: string 
   { key: "updates", label: "App updates", hint: "a new Collie version is available" },
 ];
 
-export function NotifyPrefsControl() {
+export function NotifyPrefsControl({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { prefs, busy, toggle } = useNotifyPrefs();
 
   return (
@@ -26,7 +26,11 @@ export function NotifyPrefsControl() {
           <BellRing className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
             <div className="font-medium">Notify when</div>
-            <p className="text-sm text-muted-foreground">Applies to all devices.</p>
+            <p className="text-sm text-muted-foreground">
+              {readOnly
+                ? "Read-only — this device isn't authorised to change notification settings."
+                : "Applies to all devices."}
+            </p>
           </div>
         </div>
         {!prefs && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
@@ -48,7 +52,7 @@ export function NotifyPrefsControl() {
             </div>
             <Switch
               checked={prefs?.[row.key] ?? false}
-              disabled={busy || !prefs}
+              disabled={busy || !prefs || readOnly}
               onCheckedChange={(next) => void toggle(row.key, next)}
               aria-label={row.label}
             />

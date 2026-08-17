@@ -197,13 +197,20 @@ default). These four are genuine RCE vectors and are **load-bearing — do not r
   `127.0.0.1:$COLLIE_PORT` and drive any pane in the herd. Installing Collie removes that uid
   boundary; if it is the containment you were relying on, the device gate below makes that port
   **read-only** — the one write gate that doesn't rest on "local means trusted". Note its scope: it
-  gates writes and only writes, so that uid keeps reading snapshots, pane output and transcript
-  history. It bounds damage, not disclosure. Closing the read side is outside what the bridge does —
-  it needs the port not to be shared in the first place (its own network namespace, or a uid
-  owner-match filter such as nftables `meta skuid`); a plain port firewall rule won't stop a
+  gates writes and only writes (since issue #8 the write set includes the bridge-wide notification
+  settings — snooze, push subscriptions, and alert prefs — because a read-only device muting the herd
+  was damage the gate was supposed to bound), so that uid keeps reading snapshots, pane output,
+  transcript history, and notification preferences. It bounds damage, not disclosure. (Additionally,
+  snooze deadlines are capped at 7 days to prevent permanent muting, and on-demand update checks are
+  floored at one fetch per 60 s to protect upstream API limits). Closing the read side is outside what
+  the bridge does — it needs the port not to be shared in the first place (its own network namespace,
+  or a uid owner-match filter such as nftables `meta skuid`); a plain port firewall rule won't stop a
   same-host peer (raised in [#33](https://github.com/AltanS/collie/issues/33)).
   Under `tailscale serve`, the `Tailscale-User-Login` header is the person gate — trusted because the
-  bridge binds loopback and only the front door can reach it. `COLLIE_TRUSTED_USER` rejects a
+  bridge binds loopback and only the front door can reach it. This loopback bind is enforced:
+  `loadConfig()` refuses to start on a non-loopback `COLLIE_HOST` (unless `COLLIE_ALLOW_NON_LOOPBACK_BIND=1`
+  is set), and the request path checks the TCP peer address as defence in depth before routing.
+  `COLLIE_TRUSTED_USER` rejects a
   *mismatching* login and **an absent one** (failing closed): `tailscale serve` injects no identity for
   tagged nodes, so tolerating a missing header handed every tagged tailnet node full write access.
   Set `COLLIE_TRUSTED_USER_OPTIONAL=1` to restore the old tolerance for host-local callers, at the cost of
@@ -212,9 +219,9 @@ default). These four are genuine RCE vectors and are **load-bearing — do not r
   there is none, and the equivalent write gate is **per-device auth** (`COLLIE_DEVICE_HEADER`) with
   the proxy contract (README Variant B/C requirements) as the load-bearing piece. That gate **fails
   closed since 0.15.0**: with `COLLIE_DEVICE_HEADER` set, a request arriving without the header is
-  read-only, so reaching the port is no longer sufficient to write. Device ids are names your proxy
-  asserts, not secrets — treat them as guessable and keep the front door and its ACL as the real
-  containment.
+  read-only (terminal driving and notification setting mutations are blocked), so reaching the port
+  is no longer sufficient to write. Device ids are names your proxy asserts, not secrets — treat them
+  as guessable and keep the front door and its ACL as the real containment.
 - **`pane.read` output renders safely** — it's attacker-influenceable (filenames, agent output,
   fetched web content). Never `innerHTML`; it renders as React text nodes under a **strict CSP**
   (`default-src 'self'`), so an escaping miss can't run injected script that calls back into the

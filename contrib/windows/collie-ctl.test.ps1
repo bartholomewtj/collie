@@ -202,17 +202,19 @@ COLLIE_HOST="127.0.0.1"
   "lock-v1" | Set-Content -LiteralPath (Join-Path $origin "bun.lock") -NoNewline
   Invoke-TestGit $origin @("add", "-A")
   Invoke-TestGit $origin @("commit", "-qm", "first")
+  Invoke-TestGit $origin @("tag", "-a", "v0.29.0", "-m", "v0.29.0")
   $originUri = ([Uri]::new($origin)).AbsoluteUri
 
   $managed = Join-Path $temp "managed"
   New-Item -ItemType Directory -Path $managed | Out-Null
   Invoke-TestGit $managed @("init", "-q")
   Invoke-TestGit $managed @("remote", "add", "origin", $originUri)
-  Invoke-TestGit $managed @("fetch", "-q", "--depth", "1", "origin", "HEAD")
-  Invoke-TestGit $managed @("checkout", "-q", "--detach", "FETCH_HEAD")
+  Invoke-TestGit $managed @("fetch", "-q", "--depth", "1", "origin", "tag", "v0.29.0")
+  Invoke-TestGit $managed @("checkout", "-q", "--detach", "refs/tags/v0.29.0")
   "v2" | Set-Content -LiteralPath (Join-Path $origin "VERSION") -NoNewline
   Invoke-TestGit $origin @("add", "-A")
   Invoke-TestGit $origin @("commit", "-qm", "second")
+  Invoke-TestGit $origin @("tag", "-a", "v0.30.0", "-m", "v0.30.0")
   "rewritten-by-build" | Set-Content -LiteralPath (Join-Path $managed "bun.lock") -NoNewline
 
   $script:PluginRoot = $managed
@@ -223,13 +225,52 @@ COLLIE_HOST="127.0.0.1"
   Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $managed "bun.lock")) "lock-v1" "managed update discards build dirt"
   Assert-Equal ((& git -C $managed rev-parse --is-shallow-repository | Out-String).Trim()) "true" "managed checkout stays shallow"
   Assert-Equal (Test-CollieManagedCheckout) $true "managed checkout stays detached"
+  Assert-Equal ((& git -C $managed describe --tags --exact-match | Out-String).Trim()) "v0.30.0" "managed checkout lands on tag"
   $registryOutput = Refresh-CollieRegistry | Out-String
   Assert-Contains $registryOutput "registry left alone" "managed update does not re-link"
+
+  # Test 1: Managed checkout pins to newest tag and ignores untagged origin tip
+  "v3" | Set-Content -LiteralPath (Join-Path $origin "VERSION") -NoNewline
+  Invoke-TestGit $origin @("add", "-A")
+  Invoke-TestGit $origin @("commit", "-qm", "third-untagged")
+  $pinOutput = Update-CollieCheckout | Out-String
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $managed "VERSION")) "v2" "managed update ignores untagged tip"
+  Assert-Equal ((& git -C $managed describe --tags --exact-match | Out-String).Trim()) "v0.30.0" "managed update stays on tag"
+
+  # Test 4: Managed checkout without tags refuses update and leaves HEAD unmoved
+  $notagsOrigin = Join-Path $temp "notags-origin"
+  New-Item -ItemType Directory -Path $notagsOrigin | Out-Null
+  Invoke-TestGit $notagsOrigin @("init", "-q", "-b", "main")
+  "v1" | Set-Content -LiteralPath (Join-Path $notagsOrigin "VERSION") -NoNewline
+  Invoke-TestGit $notagsOrigin @("add", "-A")
+  Invoke-TestGit $notagsOrigin @("commit", "-qm", "first")
+  $notagsUri = ([Uri]::new($notagsOrigin)).AbsoluteUri
+
+  $notagsManaged = Join-Path $temp "notags-managed"
+  New-Item -ItemType Directory -Path $notagsManaged | Out-Null
+  Invoke-TestGit $notagsManaged @("init", "-q")
+  Invoke-TestGit $notagsManaged @("remote", "add", "origin", $notagsUri)
+  Invoke-TestGit $notagsManaged @("fetch", "-q", "--depth", "1", "origin", "HEAD")
+  Invoke-TestGit $notagsManaged @("checkout", "-q", "--detach", "FETCH_HEAD")
+  "v2" | Set-Content -LiteralPath (Join-Path $notagsOrigin "VERSION") -NoNewline
+  Invoke-TestGit $notagsOrigin @("add", "-A")
+  Invoke-TestGit $notagsOrigin @("commit", "-qm", "second")
+
+  $headBefore = (& git -C $notagsManaged rev-parse HEAD | Out-String).Trim()
+  $script:PluginRoot = $notagsManaged
+  try {
+    Update-CollieCheckout | Out-Null
+    throw "update without tags was accepted"
+  } catch {
+    Assert-Contains $_.Exception.Message "COLLIE_UPDATE_REF" "refusal names override variable"
+  }
+  $headAfter = (& git -C $notagsManaged rev-parse HEAD | Out-String).Trim()
+  Assert-Equal $headAfter $headBefore "refusal leaves HEAD unmoved"
 
   $linked = Join-Path $temp "linked"
   & git clone -q $originUri $linked
   Assert-LastExit "test git clone"
-  Invoke-TestGit $origin @("commit", "-q", "--allow-empty", "-m", "third")
+  Invoke-TestGit $origin @("commit", "-q", "--allow-empty", "-m", "fourth")
   $script:PluginRoot = $linked
   Assert-Equal (Test-CollieManagedCheckout) $false "linked checkout detection"
   $linkedOutput = Update-CollieCheckout | Out-String

@@ -26,6 +26,10 @@ export type PushAvailability =
   | "denied" // notifications blocked at the OS/browser level
   | "ready"; // available to toggle
 
+/** Why enabling push failed. "refused" is the bridge saying no — a device that isn't allow-listed
+ *  can't register for the operator's push stream (issue #8). */
+export type EnableFailure = Exclude<PushAvailability, "ready"> | "refused";
+
 export interface PushState {
   availability: PushAvailability;
   /** A live PushManager subscription currently exists on this device. */
@@ -36,7 +40,7 @@ export interface PushState {
 
 export interface EnableResult {
   ok: boolean;
-  reason?: Exclude<PushAvailability, "ready">;
+  reason?: EnableFailure;
 }
 
 export function isPushDisabledByUser(): boolean {
@@ -150,9 +154,8 @@ export async function enablePush(): Promise<EnableResult> {
     headers: { "content-type": "application/json", [XHR_HEADER]: XHR_HEADER_VALUE },
     body: JSON.stringify(body),
   });
-  // Only a registration the bridge actually took supersedes the one we remembered — otherwise the
-  // next attempt must still be able to name the endpoint that is on the server.
-  if (res.ok) rememberEndpoint(body.endpoint);
+  if (!res.ok) return { ok: false, reason: res.status === 403 ? "refused" : "server-off" };
+  rememberEndpoint(body.endpoint);
   setUserDisabled(false);
   return { ok: true };
 }

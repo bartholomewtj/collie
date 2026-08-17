@@ -83,11 +83,12 @@ the unit name; the Herdr action runs from anywhere.
 ## Build / run (operational facts that are easy to forget)
 
 - **There are two checkout shapes, and `update` handles both.** `herdr plugin install` does not clone
-  — it leaves a **detached, shallow** checkout, so `git pull` cannot run there; a linked clone sits on
-  a branch. One predicate (`git symbolic-ref -q HEAD`) picks the strategy, and the same predicate
-  stops `update` re-linking a managed checkout — a re-link re-registers the plugin as local and Herdr
-  then refuses `herdr plugin install`, the operator's only other way to refresh
-  ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md)).
+  — it leaves a **detached, shallow** checkout that `update` pins to the newest `v*` tag
+  ([ADR 0011](./.adr/0011-update-pins-to-the-newest-release-tag.md)), so `git pull` cannot run there;
+  a linked clone sits on a branch and fast-forwards it. One predicate (`git symbolic-ref -q HEAD`)
+  picks the strategy, and the same predicate stops `update` re-linking a managed checkout — a re-link
+  re-registers the plugin as local and Herdr then refuses `herdr plugin install`, the operator's only
+  other way to refresh ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md)).
 - **Frontend changes** (`web/`): rebuild with `bun run build` (root) or `cd web && bun run build`.
   The bridge serves `web/dist` **from disk at request time**, so on the deployment host
   a rebuild is **immediately live — no restart**.
@@ -209,6 +210,8 @@ Every other tunnel (NetBird, ZeroTier, Cloudflare Tunnel) is `COLLIE_SKIP_SERVE=
 E: the operator owns the ingress, Collie publishes nothing. **Don't add a second managed front
 door** — [ADR 0001](./.adr/0001-one-managed-front-door.md).
 
+**Push subscribe stays read-level** — closed by endpoint validation and caps, not by gating notifications away from read-only devices ([ADR 0012](./.adr/0012-subscribe-stays-read-level.md)).
+
 **Host validation is fail-closed** — a non-loopback Host must be loopback, a `COLLIE_PUBLIC_HOSTS`
 entry, a ctl-discovered Tailscale host, or an allowed origin's host
-([ADR 0011](./.adr/0011-host-validation-is-fail-closed.md)).
+([ADR 0014](./.adr/0014-host-validation-is-fail-closed.md)).

@@ -53,4 +53,22 @@ describe("SnoozeControl", () => {
     expect(lastBody!.snoozedUntil).toBeNull();
     expect(revalidate).toHaveBeenCalled();
   });
+
+  test("with readOnly, the preset buttons are disabled and read-only note renders", () => {
+    render(<SnoozeControl snoozedUntil={null} readOnly={true} />);
+    expect(
+      screen.getByText(/read-only — this device isn't authorised to change notification settings/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "30m" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "1h" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "4h" })).toBeDisabled();
+  });
+
+  test("with readOnly when snoozed, the resume button is disabled and read-only note renders", () => {
+    render(<SnoozeControl snoozedUntil={Date.now() + 60 * 60_000} readOnly={true} />);
+    expect(
+      screen.getByText(/read-only — this device isn't authorised to change notification settings/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resume now/i })).toBeDisabled();
+  });
 });

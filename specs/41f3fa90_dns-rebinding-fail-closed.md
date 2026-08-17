@@ -212,7 +212,7 @@ Add near the top of `cmd_start()` (line 446), before the `have_systemd` branch:
   Put it with the other `export`s (lines 426-428). The `-z` guard means an explicit `.env` value (already
   sourced at line 42) is never overwritten.
 
-### 6. `.adr/0011-host-validation-is-fail-closed.md`
+### 6. `.adr/0014-host-validation-is-fail-closed.md`
 
 This decision closes off an option someone will reasonably re-propose — "leave the Host allowlist
 opt-in so nobody's deployment breaks" — which is exactly the ADR shape described in `CLAUDE.md`.
@@ -225,7 +225,7 @@ state is typed, not defaulted into.
 Add a line to `CLAUDE.md` → *Security posture* pointing at it, in the same short-normative style the
 other ADR references use — something like: "**Host validation is fail-closed** — a non-loopback Host
 must be loopback, a `COLLIE_PUBLIC_HOSTS` entry, a ctl-discovered Tailscale host, or an allowed
-origin's host ([ADR 0011](./.adr/0011-host-validation-is-fail-closed.md))."
+origin's host ([ADR 0014](./.adr/0014-host-validation-is-fail-closed.md))."
 
 ## Tests
 
@@ -367,7 +367,7 @@ before/after failure count is comparable.
   omits it under `COLLIE_SKIP_SERVE=1`.
 - `bridge/server.test.ts:234-241` asserts rejection, not the legacy pass.
 - Version is `1.0.0` in all three files with a matching CHANGELOG entry; `check-version.sh` prints `✓`.
-- `.adr/0011-host-validation-is-fail-closed.md` exists and `CLAUDE.md` links it.
+- `.adr/0014-host-validation-is-fail-closed.md` exists and `CLAUDE.md` links it.
 
 ## Out of scope
 

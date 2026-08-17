@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  CHECK_MIN_INTERVAL_MS,
   compareSemver,
   githubReleaseUrl,
   latestReleaseTag,
@@ -175,7 +176,7 @@ describe("UpdateMonitor", () => {
     const gate = new Promise<string[]>((r) => {
       release = r;
     });
-    const { monitor } = makeMonitor({
+    const { monitor, tick } = makeMonitor({
       fetchTags: () => {
         calls++;
         return gate;
@@ -188,7 +189,60 @@ describe("UpdateMonitor", () => {
     expect(calls).toBe(1); // NOT two hits on the API
     expect(monitor.status().latest).toBe("0.12.0");
 
-    await monitor.checkRelease(); // guard cleared → a later check fetches afresh
+    tick(CHECK_MIN_INTERVAL_MS);
+    await monitor.checkRelease(); // in-flight guard cleared AND the cooldown elapsed → fetches afresh
+    expect(calls).toBe(2);
+  });
+
+  it("a second check inside the minimum interval does not hit upstream (issue #8)", async () => {
+    let calls = 0;
+    const { monitor, tick } = makeMonitor({
+      fetchTags: async () => {
+        calls++;
+        return ["v0.12.0"];
+      },
+    });
+    await monitor.checkRelease();
+    expect(calls).toBe(1);
+
+    tick(CHECK_MIN_INTERVAL_MS - 1);
+    await monitor.checkRelease();
+    expect(calls).toBe(1);
+  });
+
+  it("a check after the minimum interval hits upstream again", async () => {
+    let calls = 0;
+    const { monitor, tick } = makeMonitor({
+      fetchTags: async () => {
+        calls++;
+        return ["v0.12.0"];
+      },
+    });
+    await monitor.checkRelease();
+    expect(calls).toBe(1);
+
+    tick(CHECK_MIN_INTERVAL_MS);
+    await monitor.checkRelease();
+    expect(calls).toBe(2);
+  });
+
+  it("a failed check still counts as an attempt and consumes the cooldown (issue #8)", async () => {
+    let calls = 0;
+    const { monitor, tick } = makeMonitor({
+      fetchTags: async () => {
+        calls++;
+        throw new Error("upstream failed");
+      },
+    });
+    await monitor.checkRelease();
+    expect(calls).toBe(1);
+
+    // Immediate retry inside interval does not fetch again
+    await monitor.checkRelease();
+    expect(calls).toBe(1);
+
+    tick(CHECK_MIN_INTERVAL_MS);
+    await monitor.checkRelease();
     expect(calls).toBe(2);
   });
 

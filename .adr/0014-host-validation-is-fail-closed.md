@@ -1,4 +1,4 @@
-# 0011 — Host validation is fail-closed
+# 0014 — Host validation is fail-closed
 
 Status: **Accepted** (2026-08-17)
 
