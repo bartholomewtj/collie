@@ -6,6 +6,19 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.30.1] - 2026-08-17
+
+### Changed
+
+- **CI runs with `contents: read` and SHA-pinned actions** — a moved tag can no longer change what CI executes (#12, 8e04bea)
+- **The systemd unit is confined** — kernel/cgroup/SUID/realtime restrictions, `SystemCallArchitectures=native`, an address-family allow-list and `UMask=0077`; `MemoryDenyWriteExecute` stays off (Bun's JIT) (#12, c595a26)
+- **Generated unit values are quoted** — a checkout or config path containing a space no longer truncates `Environment=` / `ExecStart=` (#12, c595a26)
+
+### Fixed
+
+- **The pidfile kill matches this checkout's absolute path** — a recycled pid running another checkout's `bridge/index.ts` is no longer killed on `start` (#12, 021d58a)
+- **Windows launchers quote each argument** — a path with a space or a quote no longer re-splits into the wrong arguments (#12, 2476930)
+
 ## [0.30.0] - 2026-08-17
 
 ### Added
