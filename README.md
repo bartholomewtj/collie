@@ -51,8 +51,10 @@ public access, Collie isn't built for it. Read the
 
 ## Demo
 
-A run through the herd from a phone: the dashboard floats the agent that **needs you** to the top,
-you drill into a space's tabs and panes (long-press a pane pill or a tab chip to rename or close it —
+A run through the herd from a phone: a bottom bar holds the four places you go — **Herd** (who
+needs you, on top), **Spaces**, **Traces**, **Settings** — and every screen below one of those has a
+**‹ back** in the top-left that goes up one level (pane → space → Spaces). From Spaces you drill
+into a space's tabs and panes (long-press a pane pill or a tab chip to rename or close it —
 and a Claude pane shows the name you gave it with `/rename`), answer an `AskUserQuestion` prompt with
 a tap, switch between herds, and pick up a push notification the moment an agent is waiting on input.
 
@@ -303,9 +305,10 @@ comma-separated.
 ### SSSF traces tab
 
 If you run [Super Simple Software Factory](https://github.com/disler/super-simple-software-factory)
-ADWs in a repo, Collie can show that repo's trace UI as an extra **Traces** tab in the workspace —
-the SSSF three-lanes icon instead of a tab number, so it can't be mistaken for a Herdr tab. Point
-Collie at the visualiser's source folder (the sssf skill's app) and restart:
+ADWs in a repo, Collie can show that repo's trace UI under a **Traces** tab in the bottom bar: a
+list of every SSSF repo found near your spaces' panes (a dot on the one with a run going), each
+opening the visualiser full-screen with **‹ back** to the list. Point Collie at the visualiser's
+source folder (the sssf skill's app) and restart:
 
 ```bash
 # in your .env
@@ -316,13 +319,9 @@ Collie builds the visualiser once into its own state dir (`sssf-viz/`, ~2 s on f
 whenever the source is newer) and serves it under `/sssf/`; **nothing is copied into the Collie
 checkout**. Which repo: for each workspace Collie looks near its panes' working directories — up to
 the enclosing git worktree root, **and up to two levels down** (a pane parked in a folder of repos
-counts) — for roots holding `adws/adw_data/sssf.db`. The tab opens on the repo with the newest run,
-a running one first, and straight on that run's lanes while it is live; when several repos have
-traces, a row of repo chips above the frame switches between them (a dot marks the one with a run
-going). A repo with an `adws/` folder but no traces yet shows a greyed chip; nothing SSSF-shaped
-nearby shows nothing. The same Traces chip sits at the end of a pane's own tab bar, so you can
-jump to traces from the terminal view; the space then shows a **← Back to terminal** button that
-returns you to that pane.
+counts) — for roots holding `adws/adw_data/sssf.db`. The list puts a running repo first; opening
+one with a live run lands straight on that run's lanes. A repo with an `adws/` folder but no traces
+yet shows greyed; nothing SSSF-shaped near any space hides the Traces tab altogether.
 
 The tab is Collie-only — Herdr never sees it — and the visualiser runs in a sandboxed frame that
 cannot reach Collie's own API. Archiving a run is off inside the tab; use the visualiser standalone

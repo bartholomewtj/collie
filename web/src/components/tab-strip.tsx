@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Plus } from "lucide-react";
 
 import { Chip } from "@/components/ui/chip";
@@ -25,12 +25,9 @@ interface TabStripProps {
   onRenamed?: () => void;
   /** Refresh/fall back after a close. Enables long-press together with onRenamed. */
   onClosed?: (tabId: string) => void;
-  /** Extra chips after the Herdr tabs (e.g. the SSSF traces tab) — Collie-only, no pane behind them. */
-  trailing?: ReactNode;
 }
 
-// The selected space's tabs as a horizontal strip — the second header row under SpaceStrip, mirroring
-// it one level down. "All" shows every tab's panes; tapping a tab filters the space to it; the
+// The selected space's tabs as a horizontal strip under the space header. "All" shows every tab's panes; tapping a tab filters the space to it; the
 // trailing + creates a new tab (and opens its fresh shell). The desktop-focused tab gets a ring;
 // each tab carries a status dot for the most urgent thing inside it. A long-press on a chip opens
 // its actions sheet
@@ -48,7 +45,6 @@ export function TabStrip({
   readOnly,
   onRenamed,
   onClosed,
-  trailing,
 }: TabStripProps) {
   const [sheetTab, setSheetTab] = useState<TabView | null>(null);
   // Actions need both callbacks wired (revalidate on rename, fall back on close); without them the
@@ -56,11 +52,11 @@ export function TabStrip({
   const actionsEnabled = !!onRenamed && !!onClosed;
 
   const wsTabs = tabs.filter((t) => t.workspaceId === workspaceId);
-  if (wsTabs.length === 0 && !trailing) return null;
+  if (wsTabs.length === 0) return null;
 
   return (
     <>
-      {/* shrink-0 for the same reason as SpaceStrip — see the note there. */}
+      {/* shrink-0: inside the space route's flex-col scroller the strip would otherwise shrink under its chips. */}
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-t border-border/40 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <SectionLabel>Tabs</SectionLabel>
         {allowAll && <Chip label="All" active={selected === null} onClick={() => onSelect(null)} />}
@@ -80,7 +76,6 @@ export function TabStrip({
             onTapActive={actionsEnabled ? () => setSheetTab(t) : undefined}
           />
         ))}
-        {trailing}
         <button
           type="button"
           onClick={() => onNewTab(workspaceId)}

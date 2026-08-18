@@ -1,10 +1,8 @@
-import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { ArrowUpToLine, Loader2, ScrollText, Search, TerminalSquare } from "lucide-react";
 import { useSwipeUp } from "@/hooks/use-swipe";
-import { useSpaceActions } from "@/hooks/use-spaces";
 import { useDashPrefs, openForCount } from "@/hooks/use-dash-prefs";
 import { useDisplayPrefs } from "@/hooks/use-display-prefs";
 import { useStableTerminalDraft } from "@/hooks/use-terminal-draft";
@@ -23,7 +21,6 @@ import { FindBar } from "@/components/find-bar";
 import { Composer, type ComposerHandle } from "@/components/composer";
 import { ThreadSidebar } from "@/components/agent-sidebar";
 import { AgentIcon } from "@/components/agent-icon";
-import { TabStrip } from "@/components/tab-strip";
 import { PaneStrip } from "@/components/pane-strip";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
 import { StatusArea } from "@/components/status-area";
@@ -42,7 +39,7 @@ import { TranscriptView } from "@/components/transcript-view";
 import { shortCwd } from "@/lib/format";
 import { historyPath, spacePath } from "@/lib/nav";
 import { isReadOnly } from "@/lib/types";
-import type { AgentView, BridgeStatus, DeviceAuth, TabView } from "@/lib/types";
+import type { AgentView, BridgeStatus, DeviceAuth } from "@/lib/types";
 import type {
   MenuModel,
   MultiSelectModel,
@@ -58,7 +55,6 @@ interface AgentChatProps {
   agent: AgentView | undefined;
   agents: AgentView[];
   shellPanes: AgentView[];
-  tabs: TabView[];
   /** Label of the pane's tab, shown in the header as "space › tab". */
   tabLabel?: string;
   /** Pane output from the route loader (refreshed by polling/revalidation). */
@@ -75,10 +71,9 @@ interface AgentChatProps {
   bridge?: BridgeStatus | undefined;
   error?: boolean;
   stalled?: boolean;
+  /** Up one level: the header's "‹" (to the pane's space), and where a closed pane/tab lands. */
   onBack: () => void;
   onSelect: (paneId: string) => void;
-  /** Extra chip(s) after the in-pane tab bar — the pane view puts the Traces chip here. */
-  tabTrailing?: ReactNode;
 }
 
 // At most one drawer/sheet is open at a time; null = none. (The composer's own Keys/Quick/Agent
@@ -101,7 +96,6 @@ export function AgentChat({
   agent,
   agents,
   shellPanes,
-  tabs,
   tabLabel,
   text,
   requestedLines = 0,
@@ -111,7 +105,6 @@ export function AgentChat({
   error = false,
   stalled = false,
   onBack,
-  tabTrailing,
   onSelect,
 }: AgentChatProps) {
   const revalidator = useRevalidator();
@@ -120,7 +113,6 @@ export function AgentChat({
   // the Collie mark + pill; here we use it to dim the StatusBadge, so the badge stops presenting the
   // last snapshot's status as current while we're reconnecting/lost, and restores instantly on recovery.
   const connecting = isConnecting({ bridge, error, stalled });
-  const { newTab } = useSpaceActions();
   // Single display-prefs instance: the View controls (in <Composer>) write it, the mirror reads it.
   const { prefs, setWrap, stepFontSize, setRawTerminal, setTapToFocus } = useDisplayPrefs();
   // Raw-terminal escape hatch: when on, every Claude grammar is bypassed and the plain mirror shows,
@@ -562,13 +554,6 @@ export function AgentChat({
     if (id !== paneId) onSelect(id);
   }
 
-  // Jump to another tab in this space by opening one of its panes (the in-pane tab bar).
-  function goToTab(tabId: string) {
-    if (!agent || tabId === agent.tabId) return;
-    const target = [...agents, ...shellPanes].find((p) => p.tabId === tabId);
-    if (target) switchTo(target.paneId);
-  }
-
   // Open a space from the nav hub — go to its detail route (its tabs + panes, incl. shells). A step
   // back up out of the pane, so it slides backward.
   function openSpace(workspaceId: string) {
@@ -611,7 +596,7 @@ export function AgentChat({
         bridge={bridge}
         error={error}
         stalled={stalled}
-        onHome={onBack}
+        onBack={onBack}
         override={
           findOpen ? (
             <FindBar
@@ -724,27 +709,6 @@ export function AgentChat({
 
         {/* Read-only notice when this device isn't allowlisted (the composer below is disabled too). */}
         <ReadOnlyBanner device={device} />
-
-        {/* In-pane tab bar: the current space's tabs above the mirror — switch tab without leaving the
-            pane, or create one with +. No "All" here (you're always in a specific tab). */}
-        {agent && (
-          <TabStrip
-            workspaceId={agent.workspaceId}
-            tabs={tabs}
-            agents={agents}
-            selected={agent.tabId}
-            onSelect={(id) => id && goToTab(id)}
-            onNewTab={newTab}
-            allowAll={false}
-            session={session}
-            readOnly={readOnly}
-            onRenamed={() => revalidator.revalidate()}
-            // Closing the tab this pane lives in kills the pane too — leave for Home the same way a
-            // pane-close does (onBack); closing any other tab just revalidates so it drops out.
-            onClosed={(tabId) => (agent?.tabId === tabId ? onBack() : revalidator.revalidate())}
-            trailing={tabTrailing}
-          />
-        )}
 
         {/* Pane switcher: the panes that share this tab (space › tab › pane). Mobile shows them as a
             tabbed row rather than tiling the panes; only appears when the tab holds more than one. */}

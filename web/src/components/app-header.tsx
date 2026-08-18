@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Settings } from "lucide-react";
+import { ChevronLeft, Settings } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { isConnecting } from "@/lib/connection";
@@ -21,6 +21,10 @@ interface AppHeaderProps {
   /** Tapping the Collie mark returns to the dashboard. A callback, not a `<Link to="/">`: the
    *  dashboard and the drilled-in space view share the "/" route, so a same-route link would no-op. */
   onHome?: () => void;
+  /** A pushed screen (space, pane, trace, history): a "‹" back button leads the row INSTEAD of the
+   *  Collie mark, and goes up exactly one level. Native nav-stack rule — the same control, in the
+   *  same corner, on every screen below the bottom bar's destinations. */
+  onBack?: () => void;
   /** Show the "Collie" wordmark beside the mark (dashboard + space). Omit inside a pane — the
    *  breadcrumb in `children` carries the context there, and the mark stands alone to save width. */
   wordmark?: boolean;
@@ -51,6 +55,7 @@ export function AppHeader({
   error,
   stalled,
   onHome,
+  onBack,
   wordmark,
   children,
   rightLead,
@@ -66,7 +71,18 @@ export function AppHeader({
     <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-muted pl-4 pr-2 py-2 [padding-top:calc(env(safe-area-inset-top)_+_0.5rem)]">
       {override ?? (
         <>
-          <CollieHome onHome={onHome} trouble={trouble} lost={lost} wordmark={wordmark} />
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back"
+              className="-ml-2 grid size-11 shrink-0 place-items-center rounded-lg text-foreground transition-colors active:bg-muted/60"
+            >
+              <ChevronLeft className="size-6" />
+            </button>
+          ) : (
+            <CollieHome onHome={onHome} trouble={trouble} lost={lost} wordmark={wordmark} />
+          )}
           {/* Center region: the breadcrumb (or, on the dashboard/space, an empty flex-1 spacer that
               pushes the right cluster to the edge). min-w-0 so the breadcrumb truncates when tight. */}
           <div className="flex min-w-0 flex-1 items-center">{children}</div>

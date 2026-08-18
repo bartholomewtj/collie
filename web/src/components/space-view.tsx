@@ -22,14 +22,7 @@ export function SpaceView({ workspace, tabs, agents, shellPanes, selectedTab, on
 
   return (
     <div className="flex flex-col gap-5 px-3 py-4">
-      <div className="px-1">
-        <h2 className="truncate text-sm font-semibold">{workspace.label}</h2>
-        <p className="text-xs text-muted-foreground">
-          {workspace.tabCount} {workspace.tabCount === 1 ? "tab" : "tabs"} ·{" "}
-          {workspace.paneCount} {workspace.paneCount === 1 ? "pane" : "panes"}
-        </p>
-      </div>
-
+      {/* No space heading here — the route header names the space and carries its counts. */}
       {groups.map((g) => (
         <section key={g.tabId} className="flex flex-col gap-2">
           {selectedTab === null && (

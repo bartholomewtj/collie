@@ -2,10 +2,9 @@ import { useEffect, useRef } from "react";
 import { useLoaderData, useLocation, useNavigate, useParams, useRouteLoaderData } from "react-router";
 
 import { AgentChat } from "@/components/agent-chat";
-import { SssfChip } from "@/components/sssf-frame";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
-import { homePath, panePath, spaceTracesPath } from "@/lib/nav";
+import { homePath, panePath, spacePath } from "@/lib/nav";
 import { setStatus } from "@/lib/status";
 import type { AgentView } from "@/lib/types";
 
@@ -47,17 +46,25 @@ export function DetailRoute() {
     root.shellPanes.find((p) => p.paneId === paneId) ??
     (fresh && fresh.paneId === paneId && !seen ? fresh : undefined);
   const tabLabel = root.tabs.find((t) => t.tabId === agent?.tabId)?.label;
-  // Bridge-advertised SSSF traces for this pane's workspace (undefined when the repo has none).
-  const sssf = root.workspaces.find((w) => w.workspaceId === agent?.workspaceId)?.sssf;
   const gone = !agent;
 
-  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce Home instead of
-  // leaving you on a dead "agent gone" view. Guarded on a connected, non-stale snapshot so a
-  // transient poll failure or reconnect doesn't evict a still-valid pane.
+  // "Up" from a pane is its space — the native stack shape (Spaces › space › pane). Remember the
+  // last workspace we saw so a pane that has just closed still lands on its space, not Home.
+  const lastWorkspace = useRef<string | undefined>(undefined);
+  if (agent) lastWorkspace.current = agent.workspaceId;
+  const up = () =>
+    navigate(lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session));
+
+  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up to its space
+  // instead of leaving you on a dead "agent gone" view. Guarded on a connected, non-stale snapshot
+  // so a transient poll failure or reconnect doesn't evict a still-valid pane.
   useEffect(() => {
     if (gone && root.bridge === "connected" && !root.error) {
       setStatus("Pane closed", "info");
-      navigate(homePath(session), { replace: true });
+      navigate(
+        lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session),
+        { replace: true },
+      );
     }
   }, [gone, root.bridge, root.error, navigate, session]);
 
@@ -69,7 +76,6 @@ export function DetailRoute() {
       agent={agent}
       agents={root.agents}
       shellPanes={root.shellPanes}
-      tabs={root.tabs}
       tabLabel={tabLabel}
       text={pane.text}
       requestedLines={pane.requestedLines}
@@ -78,15 +84,8 @@ export function DetailRoute() {
       bridge={root.bridge}
       error={root.error}
       stalled={stalled}
-      onBack={() => navigate(homePath(session))}
+      onBack={up}
       onSelect={(id) => navigate(panePath(id, session))}
-      // The workspace's Traces chip, same as on the space screen; tapping it opens the space on
-      // its Traces tab (traces are per workspace, so the space route owns the frame).
-      tabTrailing={
-        agent && sssf ? (
-          <SssfChip sssf={sssf} active={false} onSelect={() => navigate(spaceTracesPath(agent.workspaceId, session, paneId))} />
-        ) : undefined
-      }
     />
   );
 }

@@ -3,6 +3,8 @@ import { createBrowserRouter } from "react-router";
 import { BootSplash, RootError, RootLayout } from "@/routes/root";
 import { HomeRoute } from "@/routes/home";
 import { SpaceRoute } from "@/routes/space";
+import { SpacesRoute } from "@/routes/spaces";
+import { TraceRoute, TracesRoute } from "@/routes/traces";
 import { DetailRoute } from "@/routes/detail";
 import { HistoryRoute } from "@/routes/history";
 import { SettingsRoute } from "@/routes/settings";
@@ -35,7 +37,10 @@ export const router = createBrowserRouter([
     HydrateFallback: BootSplash,
     children: [
       { index: true, element: <HomeRoute /> },
+      { path: "spaces", element: <SpacesRoute /> },
       { path: "space/:spaceId", element: <SpaceRoute /> },
+      { path: "traces", element: <TracesRoute /> },
+      { path: "traces/:spaceId/:repo", element: <TraceRoute /> },
       { path: "settings", element: <SettingsRoute /> },
       { path: "pane/:paneId", loader: paneLoader, element: <DetailRoute /> },
       {
