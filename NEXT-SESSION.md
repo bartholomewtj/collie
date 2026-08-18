@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-18 (late) — main at 0.33.0 (`5db9bfd`), tag `v0.33.0` pushed; **PR #39 open** (0.34.0, the down-scan + attach-to-newest-run)_
+_Last handoff: 2026-08-18 (late) — main at 0.34.0 (`0edfb01`), tag `v0.34.0` pushed, **live on this box**_
 
 ## Where this stopped
 
@@ -16,16 +16,15 @@ agents through a Herdr socket, served via `tailscale serve`).
   The visualiser's own phone/embed edits are in the sssf skill folder
   (`C:\claudeOS\config\skills\sssfppsisualizer`), NOT in any repo — a skill re-install would
   drop them and Collie would log `[sssf] disabled: … lacks BASE_URL` (by design).
-- **The real-workflow gap is fixed in PR #39 (0.34.0), awaiting merge.** Discovery now scans ≤2
+- **The real-workflow gap is fixed — PR #39 merged as 0.34.0, rebuilt and restarted here.** Discovery now scans ≤2
   levels DOWN from a pane cwd as well as up; a pane at `C:\claudeOS` finds all 8 SSSF repos under
   `Projects\` (8 ms). The workspace attaches to the repo with the newest run (running first), the
   frame opens on that run's lanes, and a repo-chip row above the frame switches repos. `?repo=<name>`
   is a bridge-assigned name, Map lookup only. Spec `specs/7c31e2a4` marked built. Tests: 15/15 bridge
-  (integration half on), new `web/src/components/sssf-frame.test.tsx`.
-- **After merging #39:** tag `v0.34.0` (`git tag -a v0.34.0 -m "Collie 0.34.0" && git push origin
-  v0.34.0`), update the live plugin (`herdr plugin action invoke update --plugin herdr.collie`, or
-  `powershell -File contrib\windows\collie-ctl.ps1 restart` if the checkout is linked), then
-  **phone-check**: Traces chip in a workspace parked at `C:\claudeOS` → repo row (8 chips — if that's
+  (integration half on), new `web/src/components/sssf-frame.test.tsx`. Verified live after the
+  restart: `/api/snapshot` stamps the `C:\claudeOS` workspace with all 8 repos, attached to
+  `articlegenerator` (its newest finished run).
+- **Not yet done — phone-check**: Traces chip in a workspace parked at `C:\claudeOS` → repo row (8 chips — if that's
   too many, consider hiding repos with no run in the last N days) → lanes of the latest run → tap a
   phase block (if the panel doesn't open, swap the block's `navigate()` for an `<a href>` in the
   visualiser's `SessionTrace.vue`).
@@ -71,8 +70,7 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Merge PR #39, tag v0.34.0, update the plugin, phone-check, then the small live ADW test**
-   (see above). Optional polish the
+1. **Phone-check the 0.34.0 Traces tab, then the small live ADW test** (see above). Optional polish the
    council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
 2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
@@ -91,7 +89,11 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 ## Watch out for
 
 - **Restarting Collie on Windows:** the Herdr `restart` action says `platform_unsupported`; use
-  `powershell -File contrib\windows\collie-ctl.ps1 restart`. `taskkill /IM bun.exe` kills the live
+  `powershell -File contrib\windows\collie-ctl.ps1 build` (the restart alone won't rebuild an
+  existing `web/dist`) then `… restart`. Its "cannot reach Herdr" warning afterwards is a false
+  alarm: the ctl probes `/api/snapshot` without the identity header and gets the 403 from
+  `COLLIE_TRUSTED_USER`. Check for real with
+  `curl -H "Tailscale-User-Login: <trusted user>" http://127.0.0.1:8787/api/snapshot`. `taskkill /IM bun.exe` kills the live
   bridge too (I did this once by accident on 2026-08-18; Herdr restarted it).
 - **`bun test bridge/sssf-viz.test.ts` has an integration half** that runs only with
   `SSSF_VIZ_DIR` and `SSSF_TEST_REPO=C:/ClaudeOS/Projects/claudeSSSF` set — run it after any sssf
