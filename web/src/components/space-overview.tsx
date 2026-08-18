@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { FolderPlus, LayoutGrid, Search } from "lucide-react";
 
@@ -6,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/section-header";
 import { StatusDot } from "@/components/status-badge";
 import { LanesIcon } from "@/components/sssf-frame";
+import { SpaceActionsSheet } from "@/components/space-actions-sheet";
+import { useLongPress } from "@/hooks/use-long-press";
 import { filterSpaces, sortSpacesByRecency, spaceLastSeenMap, spaceTriageMap } from "@/lib/spaces";
 import { TRIAGE_STATUS } from "@/lib/triage";
 import { timeAgo } from "@/lib/format";
@@ -26,6 +29,35 @@ interface SpaceOverviewProps {
   onOpenChange?: (open: boolean) => void;
   /** Herdr session scope of the snapshot (undefined = primary), so a traces link stays in-session. */
   session?: string;
+  /** Drop the long-press rename when the device isn't authorised (the sheet shows a note). */
+  readOnly?: boolean;
+  /** Revalidate after a rename. The long-press space actions turn on only when this is set. */
+  onRenamed?: () => void;
+}
+
+function SpaceRowButton({
+  onOpen,
+  onLongPress,
+  children,
+}: {
+  onOpen: () => void;
+  onLongPress?: () => void;
+  children: ReactNode;
+}) {
+  const longPress = useLongPress(onLongPress);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      {...longPress}
+      // select-none + -webkit-touch-callout:none stop iOS Safari's selection loupe, whose native
+      // long-press gesture otherwise fires pointercancel and kills the hold timer. Deliberately NO
+      // touch-action:none — the spaces list must keep scrolling; a scroll cancels the hold instead.
+      className="flex min-w-0 flex-1 select-none flex-row items-center gap-3 text-left transition-transform [-webkit-touch-callout:none] active:scale-[0.99]"
+    >
+      {children}
+    </button>
+  );
 }
 
 // The dashboard's navigator, and the LAST section on the page: everything you might act on comes
@@ -40,6 +72,8 @@ export function SpaceOverview({
   open: openProp,
   onOpenChange,
   session,
+  readOnly,
+  onRenamed,
 }: SpaceOverviewProps) {
   const navigate = useNavigate();
   const foldable = openProp !== undefined && !!onOpenChange;
@@ -47,6 +81,9 @@ export function SpaceOverview({
   // Ephemeral view state, like SpaceRoute's tab selection — a filter you typed yesterday should not
   // greet you today with most of your spaces missing.
   const [query, setQuery] = useState("");
+  const [sheetSpace, setSheetSpace] = useState<WorkspaceView | null>(null);
+  // Inert without the callback — same pattern as TabStrip.actionsEnabled.
+  const actionsEnabled = !!onRenamed;
 
   const panes = [...agents, ...shellPanes];
   // One pass over the panes, then map lookups — this component re-renders on every poll.
@@ -153,10 +190,9 @@ export function SpaceOverview({
                     )}
                   >
                     {/* The row's own tap target: everything but the lanes mark opens the space. */}
-                    <button
-                      type="button"
-                      onClick={() => onOpen(w.workspaceId)}
-                      className="flex min-w-0 flex-1 flex-row items-center gap-3 text-left transition-transform active:scale-[0.99]"
+                    <SpaceRowButton
+                      onOpen={() => onOpen(w.workspaceId)}
+                      onLongPress={actionsEnabled ? () => setSheetSpace(w) : undefined}
                     >
                       {status ? (
                         <>
@@ -182,7 +218,7 @@ export function SpaceOverview({
                           {timeAgo(seen)}
                         </span>
                       )}
-                    </button>
+                    </SpaceRowButton>
 
                     {sssf && traceRepo && (
                       <button
@@ -211,6 +247,17 @@ export function SpaceOverview({
             })
           )}
         </div>
+      )}
+
+      {actionsEnabled && (
+        <SpaceActionsSheet
+          open={sheetSpace !== null}
+          onClose={() => setSheetSpace(null)}
+          workspace={sheetSpace}
+          session={session}
+          readOnly={readOnly}
+          onRenamed={onRenamed}
+        />
       )}
     </section>
   );

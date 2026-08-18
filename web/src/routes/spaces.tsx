@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useRouteLoaderData } from "react-router";
+import { useNavigate, useRevalidator, useRouteLoaderData } from "react-router";
 
 import { AppHeader } from "@/components/app-header";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
@@ -12,6 +12,7 @@ import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
 import { spacePath } from "@/lib/nav";
+import { isReadOnly } from "@/lib/types";
 
 // Spaces — the bottom bar's second destination: every Herdr workspace, recency-ordered and
 // filterable, each drilling into /space/:id. It used to be the last, foldable section of the
@@ -20,6 +21,7 @@ export function SpacesRoute() {
   const data = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData;
   const stalled = useLoadingStalled();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
   const { newSpace } = useSpaceActions();
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
 
@@ -37,6 +39,8 @@ export function SpacesRoute() {
             onOpen={(id) => navigate(spacePath(id, data.session))}
             onNewSpace={() => setNewSpaceOpen(true)}
             session={data.session}
+            readOnly={isReadOnly(data.device)}
+            onRenamed={() => revalidator.revalidate()}
           />
         </main>
         <UpdateBanner className="px-3 pt-3" />

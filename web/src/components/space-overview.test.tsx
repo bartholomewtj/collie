@@ -1,5 +1,5 @@
 import { MemoryRouter, useLocation } from "react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SpaceOverview } from "./space-overview";
@@ -295,5 +295,44 @@ describe("SpaceOverview — traces mark", () => {
     );
     await user.click(screen.getByRole("button", { name: /collie/ }));
     expect(onOpen).toHaveBeenCalledExactlyOnceWith("w1");
+  });
+});
+
+describe("SpaceOverview — long-press rename", () => {
+  it("opens the space actions sheet on a long-press when onRenamed is wired", () => {
+    render(
+      view({
+        workspaces: [ws("w1", "anchorgenius", 2, 3)],
+        onRenamed: vi.fn(),
+      }),
+    );
+    fireEvent.contextMenu(screen.getByRole("button", { name: /anchorgenius/ }));
+    expect(screen.getByRole("button", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveTextContent("Space anchorgenius");
+  });
+
+  it("stays inert on contextmenu when onRenamed is not wired", () => {
+    render(
+      view({
+        workspaces: [ws("w1", "anchorgenius", 2, 3)],
+      }),
+    );
+    fireEvent.contextMenu(screen.getByRole("button", { name: /anchorgenius/ }));
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  });
+
+  it("still opens the space on a plain tap, without opening the sheet", async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(
+      view({
+        workspaces: [ws("w1", "anchorgenius", 2, 3)],
+        onOpen,
+        onRenamed: vi.fn(),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: /anchorgenius/ }));
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith("w1");
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
   });
 });
