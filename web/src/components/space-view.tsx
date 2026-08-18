@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { PaneActionsSheet } from "@/components/pane-actions-sheet";
 import { TabActionsSheet } from "@/components/tab-actions-sheet";
 import { useLongPress } from "@/hooks/use-long-press";
 import { groupPanesByTab } from "@/lib/spaces";
@@ -53,13 +54,18 @@ interface SpaceViewProps {
   onRenamed?: () => void;
   /** Refresh/fall back after a close. Enables long-press together with onRenamed. */
   onClosed?: (tabId: string) => void;
+  /** Refresh after a pane is closed from a row's hold sheet — the pane drops out of the list.
+   *  Wiring this AND onRenamed is what turns the pane rows' long-press on. */
+  onPaneClosed?: () => void;
 }
 
 // One space's panes, grouped by tab (agents AND bare shells). Tab selection + creation live in the
 // TabStrip header row above; here we render either the selected tab's panes, or every tab as a
 // labelled section when "All" is active. A long-press on a tab section heading opens the tab
-// actions sheet (rename / close) when the parent wires both onRenamed and onClosed. A
-// freshly-created tab's shell shows up here so you can open it and launch your own agent.
+// actions sheet (rename / close) when the parent wires both onRenamed and onClosed. A long-press on
+// a pane row opens the pane actions sheet when the parent wires onRenamed and onPaneClosed (heading
+// and card are separate targets, so the tab-heading hold is unaffected). A freshly-created tab's
+// shell shows up here so you can open it and launch your own agent.
 export function SpaceView({
   workspace,
   tabs,
@@ -71,9 +77,12 @@ export function SpaceView({
   readOnly,
   onRenamed,
   onClosed,
+  onPaneClosed,
 }: SpaceViewProps) {
   const [sheetTab, setSheetTab] = useState<TabView | null>(null);
+  const [sheetPane, setSheetPane] = useState<AgentView | null>(null);
   const actionsEnabled = !!onRenamed && !!onClosed;
+  const paneActionsEnabled = !!onRenamed && !!onPaneClosed;
   const tabById = new Map(tabs.map((t) => [t.tabId, t]));
 
   const allGroups = groupPanesByTab(workspace.workspaceId, tabs, agents, shellPanes);
@@ -107,6 +116,7 @@ export function SpaceView({
                       agent={p}
                       onClick={() => onOpen(p.paneId)}
                       scope="tab"
+                      onLongPress={paneActionsEnabled ? () => setSheetPane(p) : undefined}
                     />
                   ))}
                 </div>
@@ -131,6 +141,18 @@ export function SpaceView({
           readOnly={readOnly}
           onRenamed={onRenamed}
           onClosed={onClosed}
+        />
+      )}
+
+      {paneActionsEnabled && onRenamed && onPaneClosed && (
+        <PaneActionsSheet
+          open={sheetPane !== null}
+          onClose={() => setSheetPane(null)}
+          pane={sheetPane}
+          session={session}
+          readOnly={readOnly}
+          onRenamed={onRenamed}
+          onClosed={() => onPaneClosed()}
         />
       )}
     </>

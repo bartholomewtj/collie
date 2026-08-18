@@ -266,3 +266,183 @@ describe("SpaceView — long-press tab actions", () => {
     expect(url).toContain("/api/tab/w1%3At2/close");
   });
 });
+
+const labelled: AgentView = { ...pane("w1:t1", "w1:t1:p1"), paneLabel: "alpha" };
+const shell: AgentView = { ...pane("w1:t2", "w1:t2:s1"), kind: "shell", paneLabel: "shell one" };
+
+describe("SpaceView — long-press pane actions", () => {
+  it("opens the pane actions sheet on a long-press (contextmenu) when pane actions are wired", () => {
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[labelled]}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={vi.fn()}
+        onRenamed={vi.fn()}
+        onClosed={vi.fn()}
+        onPaneClosed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog", { name: "alpha" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
+
+    const row = screen.getByText("alpha").closest("button")!;
+    fireEvent.contextMenu(row);
+
+    expect(screen.getByRole("dialog", { name: "alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
+  });
+
+  it("opens the pane actions sheet via pointerdown timer hold", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <SpaceView
+          workspace={workspace}
+          tabs={tabs}
+          agents={[labelled]}
+          shellPanes={[]}
+          selectedTab={null}
+          onOpen={vi.fn()}
+          onRenamed={vi.fn()}
+          onClosed={vi.fn()}
+          onPaneClosed={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByRole("dialog", { name: "alpha" })).toBeNull();
+      const row = screen.getByText("alpha").closest("button")!;
+      fireEvent.pointerDown(row, {
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+      });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(screen.getByRole("dialog", { name: "alpha" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Rename" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens the pane on a plain tap and does not open the actions sheet", async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[labelled]}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={onOpen}
+        onRenamed={vi.fn()}
+        onClosed={vi.fn()}
+        onPaneClosed={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByText("alpha").closest("button")!;
+    await user.click(row);
+
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith("w1:t1:p1");
+    expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "alpha" })).toBeNull();
+  });
+
+  it("stays inert without the required action props", async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const { unmount } = render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[labelled]}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={onOpen}
+      />,
+    );
+
+    const row1 = screen.getByText("alpha").closest("button")!;
+    fireEvent.contextMenu(row1);
+    expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
+    await user.click(row1);
+    expect(onOpen).toHaveBeenCalledWith("w1:t1:p1");
+
+    unmount();
+
+    const onOpen2 = vi.fn();
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[labelled]}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={onOpen2}
+        onRenamed={vi.fn()}
+        onClosed={vi.fn()}
+      />,
+    );
+
+    const row2 = screen.getByText("alpha").closest("button")!;
+    fireEvent.contextMenu(row2);
+    expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
+    await user.click(row2);
+    expect(onOpen2).toHaveBeenCalledWith("w1:t1:p1");
+  });
+
+  it("opens the pane actions sheet for a shell pane row", () => {
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[]}
+        shellPanes={[shell]}
+        selectedTab={null}
+        onOpen={vi.fn()}
+        onRenamed={vi.fn()}
+        onClosed={vi.fn()}
+        onPaneClosed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog", { name: "shell one" })).toBeNull();
+    const row = screen.getByText("shell one").closest("button")!;
+    fireEvent.contextMenu(row);
+
+    expect(screen.getByRole("dialog", { name: "shell one" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
+  });
+
+  it("allows tab heading hold and pane row hold to work alongside without collision", () => {
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={[labelled]}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={vi.fn()}
+        onRenamed={vi.fn()}
+        onClosed={vi.fn()}
+        onPaneClosed={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Tab code actions" }));
+    expect(screen.getByRole("dialog", { name: "Tab code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close tab" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
+  });
+});
