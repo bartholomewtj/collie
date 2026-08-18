@@ -6,6 +6,11 @@ on:
     branches: [main]
 
 # A new push to a PR supersedes the old run — don't burn a runner on the stale one.
+# The job only reads the repo — no releases, no comments, no packages. Naming the scope here stops
+# the workflow inheriting whatever the repository default happens to be.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,8 +20,8 @@ jobs:
     name: typecheck + tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
 
       # The MANDATORY invariant: the three version files + the newest CHANGELOG heading must agree.
       - name: Version consistency

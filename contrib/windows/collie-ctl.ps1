@@ -126,6 +126,15 @@ function Assert-LastExit([string]$What) {
   if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
 }
 
+# Windows passes one command line, not an argv, so each value must survive CommandLineToArgvW's
+# re-split. Quote it, escape embedded quotes, and double only the backslashes that precede a quote.
+function Format-CommandArgument([string]$Value) {
+  if ($Value -notmatch '[\s"]') { return $Value }
+  $escaped = [regex]::Replace($Value, '(\\*)"', '$1$1\"')
+  $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+  return '"' + $escaped + '"'
+}
+
 function Write-CollieActionLauncher {
   $launcherDir = Join-Path $script:PluginRoot "build"
   $launcher = Join-Path $launcherDir "collie-action-v1.exe"
@@ -220,7 +229,11 @@ function Register-CollieTask {
   [void](Resolve-Bun)
   $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
   $ctl = Join-Path $PSScriptRoot "collie-ctl.ps1"
-  $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -TaskConfigDir "{1}" -TaskSocketPath "{2}" _exec-bridge' -f $ctl, $script:ConfigDir, $script:SocketPath
+  $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0} -TaskConfigDir {1} -TaskSocketPath {2} _exec-bridge' -f @(
+    (Format-CommandArgument $ctl),
+    (Format-CommandArgument $script:ConfigDir),
+    (Format-CommandArgument $script:SocketPath)
+  )
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
   $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $script:PluginRoot

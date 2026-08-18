@@ -212,7 +212,7 @@ stop_pidfile_process() {
         # The pidfile outlives its process (SIGKILL, a panic, a reboot) and pids get recycled, so
         # confirm it is still ours — this also runs on `start`, where a wrong guess kills a bystander.
         case "$(ps -p "$pid" -o command= 2>/dev/null)" in
-          *bridge/index.ts*) kill -- "$pid" 2>/dev/null || true ;;
+          *"${PLUGIN_ROOT}/bridge/index.ts"*) kill -- "$pid" 2>/dev/null || true ;;
         esac
       fi
       ;;
@@ -454,20 +454,41 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=${PLUGIN_ROOT}
-ExecStart=${BUN} run ${PLUGIN_ROOT}/bridge/index.ts
+WorkingDirectory="${PLUGIN_ROOT}"
+ExecStart="${BUN}" run "${PLUGIN_ROOT}/bridge/index.ts"
 Restart=on-failure
 RestartSec=5
-# Hardening: the bridge is remote shell access, so deny privilege escalation and give it a private
-# /tmp. ProtectSystem is intentionally NOT set — the only write path is the env-driven state dir,
-# which Herdr may inject to an arbitrary location, so it can't be enumerated in a static ReadWritePaths.
+# Hardening: the bridge is remote shell access, so deny privilege escalation, lock down kernel /
+# cgroup / SUID / realtime access, restrict system calls to native, clamp umask to 0077, and give
+# it a private /tmp.
+#
+# Three directives are deliberately absent:
+# - MemoryDenyWriteExecute is deliberately absent — Bun's JIT needs W^X-capable mappings and the
+#   bridge will not start with it set.
+# - ProtectHome is deliberately absent — bridge/journal/ reads the agent's own session logs from
+#   under $HOME, and the config dir lives there too.
+# - ProtectSystem is intentionally NOT set — the only write path is the env-driven state dir,
+#   which Herdr may inject to an arbitrary location, so it can't be enumerated in a static ReadWritePaths.
 NoNewPrivileges=yes
 PrivateTmp=yes
-Environment=HERDR_SOCKET_PATH=${SOCKET}
-Environment=COLLIE_PORT=${PORT}
-Environment=HERDR_PLUGIN_CONFIG_DIR=${CONFIG_DIR}
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+# Address families the bridge actually uses: AF_UNIX for Herdr's socket, AF_INET/AF_INET6 for the
+# loopback listener and outbound HTTPS (the update check hits api.github.com, web push hits the
+# provider endpoints), AF_NETLINK because glibc's resolver enumerates interfaces over netlink —
+# omit it and DNS fails in ways that look like the network is down.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+Environment="HERDR_SOCKET_PATH=${SOCKET}"
+Environment="COLLIE_PORT=${PORT}"
+Environment="HERDR_PLUGIN_CONFIG_DIR=${CONFIG_DIR}"
 ${ts_env}
-EnvironmentFile=-${CONFIG_DIR}/.env
+EnvironmentFile=-"${CONFIG_DIR}/.env"
 
 [Install]
 WantedBy=default.target
@@ -478,9 +499,9 @@ EOF
 # The launchd counterpart to write_unit(), kept parallel so both describe one service:
 #   WantedBy=default.target -> RunAtLoad          Restart=on-failure -> KeepAlive/SuccessfulExit
 #   RestartSec=5            -> ThrottleInterval   WorkingDirectory   -> WorkingDirectory
-# No analogue: StartLimitIntervalSec (launchd has no start limit), NoNewPrivileges / PrivateTmp — the
-# agent is less confined than the unit. No ProcessType either: Background throttles CPU and I/O, and
-# the bridge answers a phone.
+# No analogue: StartLimitIntervalSec (launchd has no start limit), and the systemd hardening block
+# as a whole has no launchd analogue — the agent is the less confined of the two. No ProcessType
+# either: Background throttles CPU and I/O, and the bridge answers a phone.
 #
 # Paths only, never config values — .env is mode 600 (enforced by harden_config_perms on the start
 # path) and may hold COLLIE_VAPID_PRIVATE, so `_exec-bridge` loads and exports it at launch rather
