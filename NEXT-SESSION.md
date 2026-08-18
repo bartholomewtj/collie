@@ -1,9 +1,15 @@
 # Next session
 
-_Last handoff: 2026-08-18 (late) — main at **0.37.0** (`1a85eb2`), tag `v0.37.0`, **live on this box**, not phone-checked_
+_Last handoff: 2026-08-18 (late) — main at **0.38.0** (`d8715f9`), tag `v0.38.0`, **live on this box**, not phone-checked_
 
 ## Where this stopped
 
+- **0.38.0 shipped — PR #49 merged, tagged, `web/dist` rebuilt here (frontend-only, no bridge restart;
+  serves `0.38.0+d8715f9`).** Run `9131ebc6`: **hold a pane row in a space's list** (agent or shell) →
+  the existing `PaneActionsSheet` (rename / close). `AgentCard.onLongPress` is optional — the home
+  herd list passes nothing and renders as before; `SpaceView` owns the sheet, `space.tsx` wires
+  `onPaneClosed` → revalidate. Every hold target now shares one hook + three sheets (pane / tab /
+  space). Not phone-checked.
 - **0.37.0 shipped — PR #47 merged, tagged, bridge restarted here (pid 22504, one listener on :8787,
   serves `0.37.0+1a85eb2`). Three features, each its own `adw_simple_sdlc` run on one stacked branch:**
   1. `4396573c` — **tap-and-hold a tab heading** in a space's "All" list → the same Rename / Close
@@ -127,7 +133,7 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Phone-check 0.37.0** (it's live): tab-heading hold in a space's All list; Spaces row hold →
+1. **Phone-check 0.37.0 + 0.38.0** (both live): pane-row hold and tab-heading hold in a space's list; Spaces row hold →
    rename; lanes icon + green dot on a space with a running ADW; then the still-unchecked 0.36.0
    pane-header Traces button and 0.35.0 nav. Fix-ups are patch bumps.
 2. **Fix claudeSSSF #57**, restamp `adws/` here, and watch the next run's review pass first time.

@@ -54,7 +54,7 @@ public access, Collie isn't built for it. Read the
 A run through the herd from a phone: a bottom bar holds the four places you go — **Herd** (who
 needs you, on top), **Spaces**, **Traces**, **Settings** — and every screen below one of those has a
 **‹ back** in the top-left that goes up one level (pane → space → Spaces). From Spaces you drill
-into a space's tabs and panes (long-press a pane pill or a tab chip to rename or close it, or a
+into a space's tabs and panes (long-press a pane pill or pane row, or a tab chip or tab heading, to rename or close it, or a
 space row to rename the space — and a Claude pane shows the name you gave it with `/rename`), answer an `AskUserQuestion` prompt with
 a tap, switch between herds, and pick up a push notification the moment an agent is waiting on input.
 
