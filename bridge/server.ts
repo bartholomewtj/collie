@@ -259,7 +259,10 @@ export function startServer(opts: {
             // and the two timestamps then ride through its rest-spread onto the wire shape.
             agents: agents.map((p) => toPaneWire(withActivity(p), offerHistory)),
             shellPanes: shellPanes.map((p) => toPaneWire(withActivity(p), offerHistory)),
-            workspaces: sssfViz.decorate(workspaces, [...agents, ...shellPanes], rt.name),
+            // Keyed by the REQUEST's session param (undefined on the primary session), not rt.name:
+            // the Traces frame sends the same param back on /sssf/api/*, and the two must match or
+            // the primary session's db is never found (404 "no traces", found live 2026-08-18).
+            workspaces: sssfViz.decorate(workspaces, [...agents, ...shellPanes], sessionName),
             tabs,
             sessions: registry.list(),
             notifications: { snoozedUntil: snooze.until() },

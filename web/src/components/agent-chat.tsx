@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
@@ -76,6 +77,8 @@ interface AgentChatProps {
   stalled?: boolean;
   onBack: () => void;
   onSelect: (paneId: string) => void;
+  /** Extra chip(s) after the in-pane tab bar — the pane view puts the Traces chip here. */
+  tabTrailing?: ReactNode;
 }
 
 // At most one drawer/sheet is open at a time; null = none. (The composer's own Keys/Quick/Agent
@@ -108,6 +111,7 @@ export function AgentChat({
   error = false,
   stalled = false,
   onBack,
+  tabTrailing,
   onSelect,
 }: AgentChatProps) {
   const revalidator = useRevalidator();
@@ -738,6 +742,7 @@ export function AgentChat({
             // Closing the tab this pane lives in kills the pane too — leave for Home the same way a
             // pane-close does (onBack); closing any other tab just revalidates so it drops out.
             onClosed={(tabId) => (agent?.tabId === tabId ? onBack() : revalidator.revalidate())}
+            trailing={tabTrailing}
           />
         )}
 

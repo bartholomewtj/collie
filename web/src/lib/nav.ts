@@ -21,6 +21,19 @@ export function spacePath(spaceId: string, session?: string): string {
   return `/space/${encodeURIComponent(spaceId)}${sessionSearch(session)}`;
 }
 
+/** Query param that opens a space straight on its Traces tab (see spaceTracesPath / routes/space.tsx). */
+export const TRACES_PARAM = "tab";
+export const TRACES_VALUE = "traces";
+/** The pane the Traces tab was opened from — the space shows a "back to terminal" button for it. */
+export const TRACES_FROM_PARAM = "from";
+
+/** The space route with its Traces (SSSF) tab already open — how the pane view jumps to traces. */
+export function spaceTracesPath(spaceId: string, session?: string, fromPaneId?: string): string {
+  const base = spacePath(spaceId, session);
+  const from = fromPaneId ? `&${TRACES_FROM_PARAM}=${encodeURIComponent(fromPaneId)}` : "";
+  return `${base}${base.includes("?") ? "&" : "?"}${TRACES_PARAM}=${TRACES_VALUE}${from}`;
+}
+
 /** The dashboard path, carrying the current session so "go home" doesn't drop you back to primary. */
 export function homePath(session?: string): string {
   return `/${sessionSearch(session)}`;

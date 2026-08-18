@@ -6,6 +6,16 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.34.1] - 2026-08-18
+
+### Added
+
+- The pane (terminal) view shows the workspace's **Traces** chip after its tab bar; tapping it opens the space on the Traces tab (`?tab=traces&from=<pane>`), which shows a **← Back to terminal** button for that pane.
+
+### Fixed
+
+- SSSF Traces frame returned `api unreachable … 404` on the primary session: the bridge stamped discovery under the session name (`default`) while the frame, by convention, sends no `session` param for the primary session. Both now key on the request's `session` param.
+
 ## [0.34.0] - 2026-08-18
 
 ### Added
