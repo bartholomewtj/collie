@@ -14,7 +14,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { TRACES_PARAM, TRACES_VALUE, homePath, panePath, spacePath } from "@/lib/nav";
+import { TRACES_FROM_PARAM, TRACES_PARAM, TRACES_VALUE, homePath, panePath, spacePath } from "@/lib/nav";
 import { setStatus } from "@/lib/status";
 import { isReadOnly } from "@/lib/types";
 
@@ -38,6 +38,12 @@ export function SpaceRoute() {
   // Traces chip lands here. Read on entry and on space change only; the tab stays local state after.
   const [searchParams] = useSearchParams();
   const wantTraces = searchParams.get(TRACES_PARAM) === TRACES_VALUE;
+  // The pane the Traces tab was opened from (pane view chip) — offers a one-tap way back to it,
+  // but only while that pane still exists in the snapshot.
+  const fromPane = searchParams.get(TRACES_FROM_PARAM) ?? undefined;
+  const backPane = fromPane
+    ? [...data.agents, ...data.shellPanes].find((p) => p.paneId === fromPane)
+    : undefined;
   const [tab, setTab] = useState<string | null>(wantTraces ? SSSF_TAB : null);
   const [tabSpace, setTabSpace] = useState(spaceId);
   if (tabSpace !== spaceId) {
@@ -154,6 +160,17 @@ export function SpaceRoute() {
                   selectedTab={tab}
                   onOpen={open}
                 />
+              )}
+              {sssfOpen && backPane && (
+                <div className="flex shrink-0 px-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => open(backPane.paneId)}
+                    className="flex select-none items-center gap-1.5 whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 active:scale-95"
+                  >
+                    <span aria-hidden="true">←</span> Back to terminal
+                  </button>
+                </div>
               )}
               {sssf && sssfOpen && sssf.repos.length > 1 && sssfRepo && (
                 <SssfRepoRow

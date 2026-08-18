@@ -84,7 +84,7 @@ export function DetailRoute() {
       // its Traces tab (traces are per workspace, so the space route owns the frame).
       tabTrailing={
         agent && sssf ? (
-          <SssfChip sssf={sssf} active={false} onSelect={() => navigate(spaceTracesPath(agent.workspaceId, session))} />
+          <SssfChip sssf={sssf} active={false} onSelect={() => navigate(spaceTracesPath(agent.workspaceId, session, paneId))} />
         ) : undefined
       }
     />

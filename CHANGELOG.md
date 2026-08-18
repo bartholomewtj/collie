@@ -10,7 +10,7 @@ All notable changes to Collie are recorded here. The format follows
 
 ### Added
 
-- The pane (terminal) view shows the workspace's **Traces** chip after its tab bar; tapping it opens the space on the Traces tab (`?tab=traces`).
+- The pane (terminal) view shows the workspace's **Traces** chip after its tab bar; tapping it opens the space on the Traces tab (`?tab=traces&from=<pane>`), which shows a **← Back to terminal** button for that pane.
 
 ### Fixed
 
