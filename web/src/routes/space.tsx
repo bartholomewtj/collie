@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useRevalidator, useRouteLoaderData } from "react-router";
+import { useNavigate, useParams, useRevalidator, useRouteLoaderData, useSearchParams } from "react-router";
 
 import { AppHeader, SettingsGear } from "@/components/app-header";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
@@ -14,7 +14,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { homePath, panePath, spacePath } from "@/lib/nav";
+import { TRACES_PARAM, TRACES_VALUE, homePath, panePath, spacePath } from "@/lib/nav";
 import { setStatus } from "@/lib/status";
 import { isReadOnly } from "@/lib/types";
 
@@ -34,11 +34,15 @@ export function SpaceRoute() {
   // navigating /space/a → /space/b does NOT remount this route (same element, new param), so without
   // this the prior space's tab id would leak across. Adjusting during render keeps it in sync with
   // no effect / no extra paint.
-  const [tab, setTab] = useState<string | null>(null);
+  // `?tab=traces` (spaceTracesPath) opens the space straight on its Traces tab — the pane view's
+  // Traces chip lands here. Read on entry and on space change only; the tab stays local state after.
+  const [searchParams] = useSearchParams();
+  const wantTraces = searchParams.get(TRACES_PARAM) === TRACES_VALUE;
+  const [tab, setTab] = useState<string | null>(wantTraces ? SSSF_TAB : null);
   const [tabSpace, setTabSpace] = useState(spaceId);
   if (tabSpace !== spaceId) {
     setTabSpace(spaceId);
-    setTab(null);
+    setTab(wantTraces ? SSSF_TAB : null);
   }
 
   const selectedWs = data.workspaces.find((w) => w.workspaceId === spaceId);
