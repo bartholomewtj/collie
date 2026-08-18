@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-18 (evening) — main at 0.33.0 (`5db9bfd`), tag `v0.33.0` pushed_
+_Last handoff: 2026-08-18 (late) — main at 0.33.0 (`5db9bfd`), tag `v0.33.0` pushed; **PR #39 open** (0.34.0, the down-scan + attach-to-newest-run)_
 
 ## Where this stopped
 
@@ -16,17 +16,19 @@ agents through a Herdr socket, served via `tailscale serve`).
   The visualiser's own phone/embed edits are in the sssf skill folder
   (`C:\claudeOS\config\skills\sssfppsisualizer`), NOT in any repo — a skill re-install would
   drop them and Collie would log `[sssf] disabled: … lacks BASE_URL` (by design).
-- **Known gap — the tab won't appear in Bart's real workflow yet.** Discovery walks UP from a pane's
-  cwd; Bart's panes sit at `C:\claudeOS` (not a git repo) and the agent runs the ADW in
-  `Projects\<repo>` by path, so nothing is found. Planned fix, **not built**:
-  `specs/7c31e2a4_sssf-attach-newest-run.md` — scan ≤2 levels DOWN as well, attach to the repo with
-  the newest (running-first) session, deep-link the frame to that run, repo picker row when several
-  repos have traces. Visualiser untouched. Half a session.
-- **Not yet checked on the phone:** the Traces chip inside the real space view, and tapping a phase
-  block inside the sandboxed frame (the browser extension couldn't drive clicks into the frame; a
-  real DOM click fires the handler fine). If a phase tap doesn't open the panel, swap the block's
-  `navigate()` for an `<a href>` in the visualiser's `SessionTrace.vue`. Easiest to check AFTER the
-  fix above, or by opening a Herdr pane inside `Projects\claudeSSSF` first.
+- **The real-workflow gap is fixed in PR #39 (0.34.0), awaiting merge.** Discovery now scans ≤2
+  levels DOWN from a pane cwd as well as up; a pane at `C:\claudeOS` finds all 8 SSSF repos under
+  `Projects\` (8 ms). The workspace attaches to the repo with the newest run (running first), the
+  frame opens on that run's lanes, and a repo-chip row above the frame switches repos. `?repo=<name>`
+  is a bridge-assigned name, Map lookup only. Spec `specs/7c31e2a4` marked built. Tests: 15/15 bridge
+  (integration half on), new `web/src/components/sssf-frame.test.tsx`.
+- **After merging #39:** tag `v0.34.0` (`git tag -a v0.34.0 -m "Collie 0.34.0" && git push origin
+  v0.34.0`), update the live plugin (`herdr plugin action invoke update --plugin herdr.collie`, or
+  `powershell -File contrib\windows\collie-ctl.ps1 restart` if the checkout is linked), then
+  **phone-check**: Traces chip in a workspace parked at `C:\claudeOS` → repo row (8 chips — if that's
+  too many, consider hiding repos with no run in the last N days) → lanes of the latest run → tap a
+  phase block (if the panel doesn't open, swap the block's `navigate()` for an `<a href>` in the
+  visualiser's `SessionTrace.vue`).
 
 - **Security audit is done.** All 12 issues filed on 2026-08-16 are fixed and merged (#12 landed as
   PR #27, 0.32.2); each has a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default
@@ -59,10 +61,9 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Build `specs/7c31e2a4_sssf-attach-newest-run.md`** (down-scan + attach to newest run + repo
-   picker). Branch → PR → MINOR bump. Then phone-check the Traces tab (see above). Optional polish
-   the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is
-   narrow (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
+1. **Merge PR #39, tag v0.34.0, update the plugin, phone-check** (see above). Optional polish the
+   council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
+   (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
 2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
    concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
    fail-closed defaults; take upstream's docs structure. The SSSF hooks are one-liners in
