@@ -29,6 +29,16 @@ agents through a Herdr socket, served via `tailscale serve`).
   too many, consider hiding repos with no run in the last N days) → lanes of the latest run → tap a
   phase block (if the panel doesn't open, swap the block's `navigate()` for an `<a href>` in the
   visualiser's `SessionTrace.vue`).
+- **Then test the live-run path with a small real ADW.** Nothing so far has exercised "attach to a
+  *running* run + open on its lanes" against a real tracer — only fixtures. Kick off a cheap
+  read-only run in this repo (`just demo` — the `adw_scout` half is the longer of the two — or
+  `just scout "list the top-level directories. change nothing."`), then on the phone open a
+  workspace parked at `C:\claudeOS` and check: (a) the `collie` chip carries the running dot within
+  ~30 s (discovery recheck), (b) opening Traces lands straight on that run's lanes, not the list,
+  (c) the lanes keep updating while it runs (2 s poll in embed mode), (d) when it finishes the chip
+  loses its dot and a fresh open (tap the active Traces chip → list) shows it as `success`. If (a)
+  never happens, note the ADW's `adw_id` from the pane and compare with `sessions(1)` — that is the
+  pane-text-scraping refinement the spec parked. Don't edit `sssf.config.yaml` mid-run.
 
 - **Security audit is done.** All 12 issues filed on 2026-08-16 are fixed and merged (#12 landed as
   PR #27, 0.32.2); each has a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default
@@ -61,7 +71,8 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Merge PR #39, tag v0.34.0, update the plugin, phone-check** (see above). Optional polish the
+1. **Merge PR #39, tag v0.34.0, update the plugin, phone-check, then the small live ADW test**
+   (see above). Optional polish the
    council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
 2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
