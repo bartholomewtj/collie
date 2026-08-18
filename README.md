@@ -323,6 +323,16 @@ counts) — for roots holding `adws/adw_data/sssf.db`. The list puts a running r
 one with a live run lands straight on that run's lanes. A repo with an `adws/` folder but no traces
 yet shows greyed; nothing SSSF-shaped near any space hides the Traces tab altogether.
 
+**From the pane that ran it.** A pane whose runs the tracer attributed to it gets a lanes button in
+its header (a green dot while one is still going). Tap it and the visualiser opens on that pane's
+newest run, with a chip row of every run the pane launched (newest first, across repos) to switch
+between; **‹ back** returns to the pane. Attribution is exact, not guessed from folders: Herdr
+exports `HERDR_PANE_ID` into every pane, and an SSSF tracer from
+[claudeSSSF](https://github.com/bartholomewtj/claudeSSSF) (2026-08-18 on) records it on the run
+(`sessions.pane_id`) — so it covers ADWs run from that pane's shell *and* ones an agent in it launched
+through its own shell tool. Runs from an older tracer, a scheduler, or a plain terminal carry no pane
+and simply don't get the button.
+
 The tab is Collie-only — Herdr never sees it — and the visualiser runs in a sandboxed frame that
 cannot reach Collie's own API. Archiving a run is off inside the tab; use the visualiser standalone
 (`just obs`) for that. If Collie logs `[sssf] disabled: …` at start, the folder is missing, isn't the

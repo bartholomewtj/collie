@@ -98,7 +98,7 @@ async function emptyCwd(): Promise<string> {
 async function fakeRepo(
   parent: string,
   name: string,
-  sessions: Array<{ adw_id: string; status: string; started_at: string }> = [],
+  sessions: Array<{ adw_id: string; status: string; started_at: string; pane_id?: string }> = [],
   pending = false,
 ): Promise<string> {
   const root = join(parent, name);
@@ -109,15 +109,15 @@ async function fakeRepo(
   const db = new Database(join(root, "adws", "adw_data", "sssf.db"));
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(`CREATE TABLE sessions (adw_id TEXT PRIMARY KEY, adw_name TEXT, request TEXT, status TEXT, engineer TEXT,
-    started_at TEXT, ended_at TEXT, total_tokens INTEGER DEFAULT 0, total_cost REAL DEFAULT 0, archived INTEGER DEFAULT 0)`);
+    started_at TEXT, ended_at TEXT, total_tokens INTEGER DEFAULT 0, total_cost REAL DEFAULT 0, archived INTEGER DEFAULT 0, pane_id TEXT)`);
   db.exec(`CREATE TABLE phases (phase_id TEXT PRIMARY KEY, adw_id TEXT, seq INTEGER, name TEXT, kind TEXT, owner TEXT,
     description TEXT, status TEXT, attempt INTEGER DEFAULT 0, retries INTEGER DEFAULT 0, error TEXT, started_at TEXT, ended_at TEXT)`);
   db.exec(`CREATE TABLE agent_sessions (adw_id TEXT, agent TEXT, coding_agent TEXT, model TEXT, color TEXT, session_id TEXT,
     context_tokens INTEGER, context_window INTEGER, created_at TEXT, last_used_at TEXT, PRIMARY KEY (adw_id, agent))`);
   db.exec(`CREATE TABLE events (event_id TEXT PRIMARY KEY, adw_id TEXT, phase_id TEXT, parent_id TEXT, type TEXT, name TEXT,
     payload_json TEXT, tokens INTEGER, started_at TEXT, ended_at TEXT)`);
-  const ins = db.query("INSERT INTO sessions (adw_id, request, status, started_at) VALUES (?, ?, ?, ?)");
-  for (const s of sessions) ins.run(s.adw_id, `run ${s.adw_id}`, s.status, s.started_at);
+  const ins = db.query("INSERT INTO sessions (adw_id, request, status, started_at, pane_id) VALUES (?, ?, ?, ?, ?)");
+  for (const s of sessions) ins.run(s.adw_id, `run ${s.adw_id}`, s.status, s.started_at, s.pane_id ?? null);
   db.close();
   return root;
 }
@@ -334,10 +334,12 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
       const top = await mkdtemp(join(tmpdir(), "sssf-multi-"));
       await fakeRepo(join(top, "Projects"), "old", [{ adw_id: "o1", status: "success", started_at: "2026-08-10T10:00:00+00:00" }]);
       await fakeRepo(join(top, "Projects"), "live", [
-        { adw_id: "l2", status: "running", started_at: "2026-08-17T09:00:00+00:00" },
-        { adw_id: "l1", status: "fail", started_at: "2026-08-16T09:00:00+00:00" },
+        { adw_id: "l2", status: "running", started_at: "2026-08-17T09:00:00+00:00", pane_id: "w1:p1" },
+        { adw_id: "l1", status: "fail", started_at: "2026-08-16T09:00:00+00:00", pane_id: "w1:p2" },
       ]);
-      await fakeRepo(join(top, "Projects"), "fresh", [{ adw_id: "f1", status: "success", started_at: "2026-08-18T08:00:00+00:00" }]);
+      await fakeRepo(join(top, "Projects"), "fresh", [
+        { adw_id: "f1", status: "success", started_at: "2026-08-18T08:00:00+00:00", pane_id: "w1:p1" },
+      ]);
       await fakeRepo(join(top, "Projects"), "soon", [], true);
       const state = await mkdtemp(join(tmpdir(), "sssf-state-"));
       const viz = createSssfViz(cfg({ stateDir: state }), helpers, { vizDir: VIZ, build: false });
@@ -360,6 +362,26 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
       expect(sssf.attached).toEqual({ repo: "live", adwId: "l2" });
       // Names only — no path leaks into the snapshot.
       expect(JSON.stringify(sssf)).not.toContain(tmpdir());
+    });
+
+    test("each pane gets the runs that recorded its id, newest first across repos; others get nothing", async () => {
+      const { viz } = await tree();
+      const panes = [
+        { paneId: "w1:p1", workspaceId: "w1", cwd: "" },
+        { paneId: "w1:p2", workspaceId: "w1", cwd: "" },
+        { paneId: "w1:p3", workspaceId: "w1", cwd: "" },
+        // Same id in another workspace: discovery is per workspace, so it carries nothing.
+        { paneId: "w1:p1", workspaceId: "w9", cwd: "" },
+      ];
+      const [p1, p2, p3, other] = viz.decoratePanes(panes, "primary");
+      expect(p1?.sssf?.runs.map((r) => `${r.repo}/${r.adwId}/${r.status}`)).toEqual(["fresh/f1/success", "live/l2/running"]);
+      expect(p2?.sssf?.runs).toEqual([{ repo: "live", adwId: "l1", status: "fail", startedAt: "2026-08-16T09:00:00+00:00" }]);
+      expect(p3?.sssf).toBeUndefined();
+      expect(other?.sssf).toBeUndefined();
+      // The old repo's run has no pane_id: it attaches to no pane, and the pane stamp names no path.
+      expect(JSON.stringify(viz.decoratePanes(panes, "primary"))).not.toContain(tmpdir());
+      // A session scope that was never discovered stamps nothing.
+      expect(viz.decoratePanes(panes, "elsewhere")[0]?.sssf).toBeUndefined();
     });
 
     test("with nothing running, the most recently started run wins and no adw_id is pinned", async () => {

@@ -257,8 +257,10 @@ export function startServer(opts: {
             // journal for doesn't advertise a History button that can only ever come back empty.
             // withActivity runs FIRST: it returns an AgentView, which is what toPaneWire consumes,
             // and the two timestamps then ride through its rest-spread onto the wire shape.
-            agents: agents.map((p) => toPaneWire(withActivity(p), offerHistory)),
-            shellPanes: shellPanes.map((p) => toPaneWire(withActivity(p), offerHistory)),
+            // decoratePanes hangs each pane's ADW runs on it (bridge/sssf-viz.ts) — a plain stamp
+            // from the last discovery pass, so it costs no I/O here; identity when the feature is off.
+            agents: sssfViz.decoratePanes(agents, sessionName).map((p) => toPaneWire(withActivity(p), offerHistory)),
+            shellPanes: sssfViz.decoratePanes(shellPanes, sessionName).map((p) => toPaneWire(withActivity(p), offerHistory)),
             // Keyed by the REQUEST's session param (undefined on the primary session), not rt.name:
             // the Traces frame sends the same param back on /sssf/api/*, and the two must match or
             // the primary session's db is never found (404 "no traces", found live 2026-08-18).

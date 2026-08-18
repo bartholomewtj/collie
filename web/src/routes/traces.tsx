@@ -1,11 +1,13 @@
-import { useNavigate, useParams, useRouteLoaderData } from "react-router";
+import { useNavigate, useParams, useRouteLoaderData, useSearchParams } from "react-router";
 
 import { AppHeader } from "@/components/app-header";
 import { LanesIcon, SssfFrame } from "@/components/sssf-frame";
 import { StatusArea } from "@/components/status-area";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { tracePath, tracesPath } from "@/lib/nav";
+import { timeAgoShort } from "@/lib/format";
+import { panePath, tracePath, tracesPath } from "@/lib/nav";
+import { paneDisplayName, type AgentView, type PaneSssfRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // Traces — the bottom bar's SSSF destination. Two screens: the LIST (one row per repo the bridge
@@ -112,18 +114,96 @@ export function TracesRoute() {
   );
 }
 
+/** The pane a `?pane=` scope names, from either pane list. Undefined when it has closed. */
+export function scopedPane(data: Pick<HomeData, "agents" | "shellPanes">, paneId: string | undefined): AgentView | undefined {
+  if (!paneId) return undefined;
+  return data.agents.find((p) => p.paneId === paneId) ?? data.shellPanes.find((p) => p.paneId === paneId);
+}
+
+/** Which run the frame opens on: an explicit `?adw=` first; else, scoped to a pane, that pane's
+ *  newest run in THIS repo; else the workspace's live run (the unscoped default). */
+export function openOnRun(
+  adwParam: string | undefined,
+  paneRuns: readonly PaneSssfRun[],
+  repo: string,
+  live: string | undefined,
+): string | undefined {
+  return adwParam ?? paneRuns.find((r) => r.repo === repo)?.adwId ?? live;
+}
+
+/** One pane's runs as a chip row above the frame — tap one to open the frame on it (a `replace`
+ *  navigation, so back still returns to the pane). Runs may live in different repos; a chip from
+ *  another repo re-points the frame at that repo's db. */
+function RunChips({
+  runs,
+  current,
+  onPick,
+}: {
+  runs: readonly PaneSssfRun[];
+  current: string | undefined;
+  onPick: (run: PaneSssfRun) => void;
+}) {
+  return (
+    <div role="list" aria-label="ADW runs from this pane" className="flex gap-1.5 overflow-x-auto px-3 py-2">
+      {runs.map((r) => {
+        const active = r.adwId === current;
+        const running = r.status === "running";
+        const started = Date.parse(r.startedAt);
+        return (
+          <button
+            key={`${r.repo}/${r.adwId}`}
+            type="button"
+            role="listitem"
+            aria-current={active ? "true" : undefined}
+            onClick={() => onPick(r)}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+              active ? "border-foreground/40 bg-muted font-medium" : "border-border/60 text-muted-foreground active:bg-muted/60",
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                running ? "bg-emerald-400" : r.status === "success" ? "bg-sky-400" : r.status === "fail" ? "bg-rose-400" : "bg-muted-foreground/50",
+              )}
+            />
+            <span className="font-mono">{r.adwId}</span>
+            {r.adwName && <span className="max-w-32 truncate">{r.adwName}</span>}
+            <span className="tabular-nums opacity-70">{running ? "running" : Number.isFinite(started) ? timeAgoShort(started) : ""}</span>
+            <span className="opacity-60">· {r.repo}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // One repo's visualiser, full screen. The frame is the sole scroller (the visualiser scrolls inside
 // itself; a pull at its top must not reload the PWA). Header back returns to the Traces list. The
 // run to open on is read once at mount (SssfFrame pins it), so a later snapshot can't yank the view.
+//
+// Scoped to a pane (`?pane=`, from the pane header's Traces button): the header names the pane, a
+// chip row lists the runs that pane launched (newest first, across repos), the frame opens on the
+// newest one in this repo, and back returns to the PANE — this is a screen below the pane then, the
+// same shape as history. `?adw=` pins one run and remounts the frame on it.
 export function TraceRoute() {
   const data = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData;
   const { spaceId = "", repo = "" } = useParams();
+  const [search] = useSearchParams();
+  const paneId = search.get("pane") ?? undefined;
+  const adwParam = search.get("adw") ?? undefined;
   const stalled = useLoadingStalled();
   const navigate = useNavigate();
   const ws = data.workspaces.find((w) => w.workspaceId === spaceId);
   const sssf = ws?.sssf;
-  const back = () => navigate(tracesPath(data.session));
+  const back = () => navigate(paneId ? panePath(paneId, data.session) : tracesPath(data.session));
   const live = sssf?.attached?.repo === repo ? sssf.attached.adwId : undefined;
+  const pane = scopedPane(data, paneId);
+  const paneRuns = pane?.sssf?.runs ?? [];
+  const openOn = openOnRun(adwParam, paneRuns, repo, live);
+  const pick = (r: PaneSssfRun) =>
+    navigate(tracePath(spaceId, r.repo, data.session, { pane: paneId, adw: r.adwId }), { replace: true });
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">
@@ -132,13 +212,29 @@ export function TraceRoute() {
           <LanesIcon className="size-5 shrink-0" />
           <div className="min-w-0">
             <div className="truncate font-semibold leading-tight">{repo}</div>
-            {ws && <div className="truncate text-xs leading-tight text-muted-foreground">{ws.label}</div>}
+            {paneId ? (
+              <div className="truncate text-xs leading-tight text-muted-foreground">
+                runs from {pane ? paneDisplayName(pane) : "a closed pane"}
+              </div>
+            ) : (
+              ws && <div className="truncate text-xs leading-tight text-muted-foreground">{ws.label}</div>
+            )}
           </div>
         </div>
       </AppHeader>
+      {paneId && paneRuns.length > 0 && <RunChips runs={paneRuns} current={openOn} onPick={pick} />}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {ws && sssf ? (
-          <SssfFrame key={`${spaceId}:${repo}`} workspace={ws} sssf={sssf} session={data.session} repo={repo} adwId={live} />
+          // Keyed on the URL-pinned run only: a chip tap remounts on its run; a later snapshot
+          // changing the derived default does not.
+          <SssfFrame
+            key={`${spaceId}:${repo}:${adwParam ?? ""}`}
+            workspace={ws}
+            sssf={sssf}
+            session={data.session}
+            repo={repo}
+            adwId={openOn}
+          />
         ) : (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {data.bridge === "connected" ? "No traces for this repo." : "Connecting…"}

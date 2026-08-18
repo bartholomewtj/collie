@@ -32,9 +32,19 @@ export function tracesPath(session?: string): string {
 }
 
 /** One repo's trace visualiser, full screen. The workspace picks the db on the bridge; the repo is a
- *  name from that workspace's `sssf.repos` (never a path). */
-export function tracePath(spaceId: string, repo: string, session?: string): string {
-  return `/traces/${encodeURIComponent(spaceId)}/${encodeURIComponent(repo)}${sessionSearch(session)}`;
+ *  name from that workspace's `sssf.repos` (never a path). `pane` scopes the screen to the runs that
+ *  pane launched (its Traces button; back then returns to the pane), `adw` opens on one run. */
+export function tracePath(
+  spaceId: string,
+  repo: string,
+  session?: string,
+  scope: { pane?: string; adw?: string } = {},
+): string {
+  const q = new URLSearchParams(sessionSearch(session));
+  if (scope.pane) q.set("pane", scope.pane);
+  if (scope.adw) q.set("adw", scope.adw);
+  const search = q.toString();
+  return `/traces/${encodeURIComponent(spaceId)}/${encodeURIComponent(repo)}${search ? `?${search}` : ""}`;
 }
 
 /** The dashboard path, carrying the current session so "go home" doesn't drop you back to primary. */
