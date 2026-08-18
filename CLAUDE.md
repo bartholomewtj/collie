@@ -197,8 +197,10 @@ the unit name; the Herdr action runs from anywhere.
 ## The journal (scrollback the mirror can't give you)
 
 `bridge/journal/` reads the agent's own session log off disk, per harness (`claude` / `codex` / `pi`,
-registered in `registry.ts`). It is the **only** thing in the bridge that touches the filesystem, so
-the containment rule in [`files.ts`](./bridge/journal/files.ts) is absolute: **every** path an
+registered in `registry.ts`). It and `bridge/sssf-viz.ts` (the SSSF traces tab,
+[ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)) are the **only** things
+in the bridge that touch the filesystem, so the containment rule in
+[`files.ts`](./bridge/journal/files.ts) is absolute: **every** path an
 adapter is about to read goes through `containedRealpath` — after symlink resolution, on the real
 paths, including paths derived from one already checked. The client never supplies a path. Run
 `bun scripts/journal-probe.ts` against real logs after touching an adapter; unit tests pin the

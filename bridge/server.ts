@@ -17,6 +17,7 @@ import type { Push } from "./push.ts";
 import { looksPrivateHost, parsePushSubscription } from "./push-endpoint.ts";
 import { herdTagFor, type SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
+import { createSssfViz } from "./sssf-viz.ts";
 import type { UpdateMonitor } from "./update.ts";
 import { imageExtFromBytes, makeRoomForUpload, SNIFF_BYTES } from "./uploads.ts";
 import type { StateEngine } from "./state-engine.ts";
@@ -176,6 +177,12 @@ export function startServer(opts: {
     const adapter = adapterFor(journals ?? {}, agent);
     return adapter !== undefined && (hasSessionRef || typeof adapter.inferFromCwd === "function");
   };
+  // The SSSF traces tab (bridge/sssf-viz.ts). Inert unless SSSF_VIZ_DIR is set; it borrows the
+  // gate/static helpers below rather than importing this file back.
+  const sssfViz = createSssfViz(cfg, {
+    guard, isHostAllowed, requireJsonBody, failureText, resolveStaticPath, cacheControlFor, secure,
+    csp: CSP, contentTypes: CONTENT_TYPES,
+  });
   // Per-session background notifications live in each session's runtime (built by the factory in
   // index.ts, wired to its StateEngine transitions). The routes here only fan preference changes and
   // snooze-clears across every live session's coordinator.
@@ -212,6 +219,8 @@ export function startServer(opts: {
 
       const url = new URL(req.url);
       const { pathname } = url;
+
+      if (sssfViz.owns(pathname)) return sssfViz.handle(req, url);
 
       // Session-scoped routes accept an optional `?session=<name>`; absent → the primary session
       // (identical to pre-multi-session behaviour). The name is only ever a registry Map lookup — it
@@ -250,7 +259,7 @@ export function startServer(opts: {
             // and the two timestamps then ride through its rest-spread onto the wire shape.
             agents: agents.map((p) => toPaneWire(withActivity(p), offerHistory)),
             shellPanes: shellPanes.map((p) => toPaneWire(withActivity(p), offerHistory)),
-            workspaces,
+            workspaces: sssfViz.decorate(workspaces, [...agents, ...shellPanes], rt.name),
             tabs,
             sessions: registry.list(),
             notifications: { snoozedUntil: snooze.until() },
