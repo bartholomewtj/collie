@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.38.0] - 2026-08-18
+
+### Added
+- Tap-and-hold a pane row in a space's list to rename or close that pane — the same sheet as the pane pill; the home herd list is unchanged (1278a91)
+
 ## [0.37.0] - 2026-08-18
 
 ### Added
