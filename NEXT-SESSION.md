@@ -33,7 +33,7 @@ agents through a Herdr socket, served via `tailscale serve`).
   in), decision `.adr/0024`. **It's live on this box**: `SSSF_VIZ_DIR` is in Collie's real `.env`
   (`%APPDATA%\herdr\plugins\config\herdr.collie\.env`) and the log showed the build + `/sssf/` 200.
   The visualiser's own phone/embed edits are in the sssf skill folder
-  (`C:\claudeOS\config\skills\sssfppsvisualizer`), NOT in any repo — a skill re-install would
+  (`C:\claudeOS\config\skills\sssf\apps\visualizer`), NOT in any repo — a skill re-install would
   drop them and Collie would log `[sssf] disabled: … lacks BASE_URL` (by design).
 - **The real-workflow gap is fixed — PR #39 merged as 0.34.0, rebuilt and restarted here.** Discovery now scans ≤2
   levels DOWN from a pane cwd as well as up; a pane at `C:\claudeOS` finds all 8 SSSF repos under
