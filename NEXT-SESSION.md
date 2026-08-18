@@ -8,7 +8,7 @@ Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that dri
 agents through a Herdr socket, served via `tailscale serve`). The 2026-08-16 security audit filed
 12 issues on this fork; **9 are fixed and merged** (1, 2, 4, 5, 6, 7, 8, 9, 10), each by a
 claudeSSSF `adw_simple_sdlc` run. Every fix has its own spec in `specs/`, write-up in `app_docs/`,
-and ADR where a default changed (`.adr/0011`–`0013`). Nothing has been reported upstream.
+and ADR where a default changed (`.adr/0019`–`0022`). Nothing has been reported upstream.
 
 Left when this session ended: #11 and #12 were still running through the driver, and #3 was
 built + reviewer-approved but sitting unrebased on `fix/3-dns-rebinding-default`.
@@ -31,7 +31,7 @@ To watch or rerun the factory: `PORT=4601 just obs` (4600 is usually geneanalysi
    with "nothing to commit", the work is still on the branch (agy commits it itself); push and
    `gh pr create --base main` by hand — that's what happened for #3, #6, #7, #10.
 2. **#3** — `git checkout fix/3-dns-rebinding-default`, rebase onto main (conflicts in
-   `bridge/server.ts` `checkAccess`, version files, `.adr/README.md` — ADR must become 0014).
+   `bridge/server.ts` `checkAccess`, version files, `.adr/README.md` — ADR became 0023).
    Decide on the `chore(release): 1.0.0` commit (planner's call: fail-closed Host is breaking);
    drop it for a 0.31.0 unless you want the fork to be 1.x. Then PR.
 3. Decide whether to send any of #1–#12 upstream to AltanS/collie (parked, your call).

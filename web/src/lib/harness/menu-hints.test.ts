@@ -20,7 +20,7 @@ describe("menuKeyFor", () => {
     expect(menuKeyFor("→")).toBe("Right");
   });
 
-  // .adr/0013: unlike the footer's other keys, a control key isn't consumed by the modal — it
+  // .adr/0022: unlike the footer's other keys, a control key isn't consumed by the modal — it
   // reaches the harness's signal handling. The label comes from the same agent text as the key, so
   // "ctrl+c to Continue" was a button reading "Continue" that interrupted the run (issue #11).
   it("NEVER maps a control key, even when the footer names one", () => {

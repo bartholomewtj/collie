@@ -9,7 +9,7 @@
 //   * ONLY KEYS THE SCREEN NAMED. A menu is claimed on the strength of the screen naming its own
 //     keys in a `·`-separated "<key> to <verb>" footer. Every emitted action key comes from that
 //     footer; the only keys added are the ARROWS the screen advertised. Nothing is inferred.
-//     A control key is excluded even when the screen names it (.adr/0013).
+//     A control key is excluded even when the screen names it (.adr/0022).
 //   * NO DIGITS, EVER (.adr/0009). Live-probed in Claude's `/model` picker: a digit confirms AND
 //     writes the choice to the user's default for new sessions. A digit is a valid Herdr key, so
 //     nothing downstream would reject one — the ban has to live in `menuKeyFor`.
@@ -52,7 +52,7 @@ export const MENU_RIGHT_KEYS = ["Right"];
  *   enter · esc/escape · tab · shift+tab · a bare lowercase letter · ↑ ↓ ← →
  *
  * NOT digits: see the header and .adr/0009. NOT ctrl+<letter> either, and for a different reason
- * (.adr/0013): every other key here is IN-BAND — the modal consumes it, so the worst case is the
+ * (.adr/0022): every other key here is IN-BAND — the modal consumes it, so the worst case is the
  * wrong answer to the question on screen. A control key is not. ctrl+c/d/z reach the harness's
  * signal handling whatever the screen shows: interrupt, EOF, suspend. Since the label and the key
  * are parsed from the SAME agent-written text, an agent printing "ctrl+c to Continue" got a button

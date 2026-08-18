@@ -278,7 +278,7 @@ full control — that's what the startup WARNING is about. Close it in one line:
 COLLIE_TRUSTED_USER=you@example.com           # your tailnet login — the bridge rejects anyone else
 ```
 
-Host-header validation is already on and fails closed (this fork, ADR 0014): `collie-ctl.sh`
+Host-header validation is already on and fails closed (this fork, ADR 0023): `collie-ctl.sh`
 discovers your Tailscale name/IPs and injects them, so a normal tailnet install needs nothing more.
 Behind your own reverse proxy (`COLLIE_SKIP_SERVE=1`) you **must** set
 `COLLIE_PUBLIC_HOSTS=collie.example.com` or every request gets `403 host not allowed`.
