@@ -1,58 +1,67 @@
 # Next session
 
-_Last handoff: 2026-08-17 — branch `docs/handoff-2026-08-17` (main at 0.30.1)_
+_Last handoff: 2026-08-18 — main at 0.32.0 (`b099df8`)_
 
 ## Where this stopped
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
-agents through a Herdr socket, served via `tailscale serve`). The 2026-08-16 security audit filed
-12 issues on this fork; **9 are fixed and merged** (1, 2, 4, 5, 6, 7, 8, 9, 10), each by a
-claudeSSSF `adw_simple_sdlc` run. Every fix has its own spec in `specs/`, write-up in `app_docs/`,
-and ADR where a default changed (`.adr/0019`–`0022`). Nothing has been reported upstream.
+agents through a Herdr socket, served via `tailscale serve`).
 
-Left when this session ended: #11 and #12 were still running through the driver, and #3 was
-built + reviewer-approved but sitting unrebased on `fix/3-dns-rebinding-default`.
+- **Security audit is done.** 11 of the 12 issues filed on 2026-08-16 are fixed and merged; each has
+  a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default changed
+  (`.adr/0019`–`0023`). Only #12 (low-priority ops hardening) is open.
+- **Upstream is merged in** (PR #35): AltanS/collie 0.30.0 → 0.31.1 landed as fork **0.32.0**.
+  Both repos had used `0.31.1` for different content, so the fork's version line now runs ahead;
+  `CHANGELOG.md` keeps upstream's entries under their own heading.
+- **ADRs renumbered** (PR #36): the fork's five ADRs moved from 0011–0014 to 0019–0023 so
+  upstream's reserved `v1` block (0011–0016) can't collide.
+- Nothing has been reported upstream.
 
 ## Resume with
 
 ```bash
 cd C:\claudeOS\Projects\collie
 git checkout main && git pull
-gh pr list; gh issue list                        # what #11 / #12 / #3 look like now
-bun install --frozen-lockfile && bun test ./bridge/server.test.ts   # ~2 known Windows path fails
+git fetch upstream && git log --oneline HEAD..upstream/main    # anything new upstream?
+bun install --frozen-lockfile && bun test ./bridge/server.test.ts
 ```
 
-To watch or rerun the factory: `PORT=4601 just obs` (4600 is usually geneanalysis's visualizer),
-`bash adws/drive_issues.sh 11 12` (run detached — see the script header).
+Clean test bar without WSL — run in a container (mount path must be Windows-style):
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -v "C:\claudeOS\Projects\collie:/src:ro" oven/bun:1 bash -c \
+  'cp -r /src /w && cd /w && rm -rf node_modules web/node_modules && bun install --frozen-lockfile >/dev/null; bun test bridge | tail -3'
+```
+
+For `scripts/collie-ctl.test.sh` in that container also `apt-get install -y git` and strip CRLF
+first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **#11 / #12** — check `adws/adw_data/run_rest_summary.txt` and `gh pr list`. If a run failed
-   with "nothing to commit", the work is still on the branch (agy commits it itself); push and
-   `gh pr create --base main` by hand — that's what happened for #3, #6, #7, #10.
-2. **#3** — `git checkout fix/3-dns-rebinding-default`, rebase onto main (conflicts in
-   `bridge/server.ts` `checkAccess`, version files, `.adr/README.md` — ADR became 0023).
-   Decide on the `chore(release): 1.0.0` commit (planner's call: fail-closed Host is breaking);
-   drop it for a 0.31.0 unless you want the fork to be 1.x. Then PR.
-3. Decide whether to send any of #1–#12 upstream to AltanS/collie (parked, your call).
+1. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
+   concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
+   fail-closed defaults; take upstream's docs structure.
+2. **#12** — low-priority ops hardening (CI permissions/pins, systemd directives, pidfile match,
+   Windows arg quoting). Small; could be a hand-written PR rather than a factory run.
+3. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
 
 ## Open
 
-- Issues #3 (branch pushed, needs rebase + PR), #11, #12 (driver was running them)
-- claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits its work;
-  both bit this project repeatedly. Fix belongs in the factory, not here.
+- Issue #12 only.
+- claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits; fix belongs in
+  the factory, not here.
 
 ## Watch out for
 
-- **Merge PRs by retargeting to `main` first**, then merge, then delete the branch. Deleting a
-  branch that another PR is based on auto-closes that PR (that's how #15 died; #18 replaced it).
+- **Stacked PRs: retarget to `main` before merging the base PR**, then merge, then delete branches.
+  Deleting a branch another PR targets auto-closes that PR (how #15 died; #18 replaced it).
 - **Don't edit `adws/adw_sssf_config/sssf.config.yaml` while a run is going** — the builder's
-  permission check sees a changed protected file and rolls it back (a planner-to-grok switch
-  vanished this way and #6's build died with it).
-- `bun test ./bridge` fails ~39 tests on Windows (POSIX paths, chmod, unix sockets). Judge by the
-  tests you touched, or run in WSL for a clean bar.
-- `sssf.db` shows sessions `30d5df7b`, `a45c9a59`, `41f3fa90`, `d14d25f7`, `028c3651`, `b1e8130a`
-  as `running`/`fail` — killed or commit-phase-tripped runs whose work was harvested by hand.
-- Roster (`sssf.config.yaml`): planner opus, builder/scout/documenter agy, reviewer grok-4.5. Each
-  opus plan burns 3–5M tokens (~$2–4 notional); the Claude session limit hit once mid-run.
+  permission check sees a changed protected file and rolls it back.
+- `bun test ./bridge` fails 34 tests on Windows (symlinks, chmod 0600, unix sockets) — same set on
+  every branch. Judge by the tests you touched, or use the container above (752/752 on Linux).
+- The Windows checkout is CRLF (autocrlf). Python `str.replace` scripts need `\r\n`; `sed -n` hides
+  the `\r`. `bash scripts/*.sh` on Linux fails with `set: pipefail: invalid option` until stripped.
+- `sssf.db` shows several old sessions as `running`/`fail` — killed runs whose work was harvested
+  by hand. Not live.
+- Roster (`sssf.config.yaml`): planner opus, builder/scout/documenter agy, reviewer grok-4.5.
 - `gh` default repo is this fork; `origin` = fork, `upstream` = AltanS/collie.
