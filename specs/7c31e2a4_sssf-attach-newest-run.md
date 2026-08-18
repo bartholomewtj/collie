@@ -1,6 +1,9 @@
 # Plan — SSSF traces tab: find repos below the pane cwd and attach to the newest run
 
-Follow-up to `5f2a9c11_sssf-viz-mount.md` (shipped 0.33.0, PR #38). Status: **planned, not built.**
+Follow-up to `5f2a9c11_sssf-viz-mount.md` (shipped 0.33.0, PR #38). Status: **built — 0.34.0.**
+Built as planned, with two small differences: the repo is pinned on the tab's first open (a later
+snapshot re-attaching elsewhere never swaps the frame under the reader), and the run to open on is
+read once at mount for the same reason.
 
 ## What's wrong
 

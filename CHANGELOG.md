@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.34.0] - 2026-08-18
+
+### Added
+
+- **Traces tab finds repos below the pane's directory and opens on the newest run** — discovery scans two levels down as well as up (bounded, no symlinks), attaches to the repo with the newest run (a running one first) and lands on that run's lanes; several repos get a repo-chip row above the frame (e74f3cd)
+
 ## [0.33.0] - 2026-08-18
 
 ### Added

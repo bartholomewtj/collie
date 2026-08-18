@@ -62,3 +62,8 @@ Two shapes were proposed and rejected:
   dist — the serving half of this module needs no change for that.
 - The visualiser's phone/embed patches live in the visualiser, not here. A skill re-install that
   drops them turns the feature off loudly (`[sssf] disabled: …`); re-apply or upstream them.
+- Discovery also scans *down* from a pane's cwd (0.34.0), because in practice panes sit in a folder
+  of repos and the ADW runs by path. That scan stays filesystem-only and bounded — two levels, 200
+  entries per directory, no symlinks or junctions, dot-dirs and dependency folders skipped — and a
+  db is opened only at `<worktree root>/adws/adw_data/sssf.db`. The client still never names a
+  path: `repo` on the frame URL is a name the bridge assigned, looked up in its own map.

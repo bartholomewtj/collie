@@ -94,9 +94,16 @@ export interface WorkspaceView {
   activeTabId: string;
   tabCount: number;
   paneCount: number;
-  /** SSSF traces for this workspace's repo (bridge/sssf-viz.ts). Absent when the feature is off or
-   *  the repo has no `adws/`; "pending" = an `adws/` dir but no trace db yet. */
-  sssf?: { state: "ready" | "pending"; token: string };
+  /** SSSF traces near this workspace's panes (bridge/sssf-viz.ts). Absent when the feature is off or
+   *  no repo has an `adws/`; `state` rolls up ("pending" = an `adws/` dir but no trace db yet).
+   *  `repos` names every SSSF repo found (a name, never a path); `attached` is the one whose newest
+   *  run is most recent — running first — with that run's id while it is live. */
+  sssf?: {
+    state: "ready" | "pending";
+    token: string;
+    repos: Array<{ name: string; state: "ready" | "pending"; running: boolean }>;
+    attached?: { repo: string; adwId?: string };
+  };
 }
 
 /** A tab within a workspace (holds one or more panes). */

@@ -1,7 +1,8 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { Config } from "./config.ts";
 import {
@@ -13,7 +14,7 @@ import {
   requireJsonBody,
   resolveStaticPath,
 } from "./server.ts";
-import { createSssfViz, isSafeSegment, readVizDir, type SssfHelpers } from "./sssf-viz.ts";
+import { createSssfViz, findRepos, isSafeSegment, readVizDir, type SssfHelpers } from "./sssf-viz.ts";
 import type { WorkspaceView } from "./types.ts";
 
 // The pure bits run everywhere. The integration half imports the REAL visualiser db.ts and reads a
@@ -86,6 +87,41 @@ const ws = (id: string): WorkspaceView => ({
   paneCount: 1,
 });
 
+/** A directory that is nothing SSSF-shaped, with nothing SSSF-shaped above or below it. */
+async function emptyCwd(): Promise<string> {
+  const d = await mkdtemp(join(tmpdir(), "sssf-none-"));
+  await mkdir(join(d, "empty"));
+  return join(d, "empty");
+}
+
+/** A fake SSSF repo: a worktree root with adws/, and — unless `pending` — a trace db. */
+async function fakeRepo(
+  parent: string,
+  name: string,
+  sessions: Array<{ adw_id: string; status: string; started_at: string }> = [],
+  pending = false,
+): Promise<string> {
+  const root = join(parent, name);
+  await mkdir(join(root, ".git"), { recursive: true });
+  await mkdir(join(root, "adws", "adw_data"), { recursive: true });
+  if (pending) return root;
+  // The tracer's own tables, as far as the visualiser's sessions() reads them.
+  const db = new Database(join(root, "adws", "adw_data", "sssf.db"));
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec(`CREATE TABLE sessions (adw_id TEXT PRIMARY KEY, adw_name TEXT, request TEXT, status TEXT, engineer TEXT,
+    started_at TEXT, ended_at TEXT, total_tokens INTEGER DEFAULT 0, total_cost REAL DEFAULT 0, archived INTEGER DEFAULT 0)`);
+  db.exec(`CREATE TABLE phases (phase_id TEXT PRIMARY KEY, adw_id TEXT, seq INTEGER, name TEXT, kind TEXT, owner TEXT,
+    description TEXT, status TEXT, attempt INTEGER DEFAULT 0, retries INTEGER DEFAULT 0, error TEXT, started_at TEXT, ended_at TEXT)`);
+  db.exec(`CREATE TABLE agent_sessions (adw_id TEXT, agent TEXT, coding_agent TEXT, model TEXT, color TEXT, session_id TEXT,
+    context_tokens INTEGER, context_window INTEGER, created_at TEXT, last_used_at TEXT, PRIMARY KEY (adw_id, agent))`);
+  db.exec(`CREATE TABLE events (event_id TEXT PRIMARY KEY, adw_id TEXT, phase_id TEXT, parent_id TEXT, type TEXT, name TEXT,
+    payload_json TEXT, tokens INTEGER, started_at TEXT, ended_at TEXT)`);
+  const ins = db.query("INSERT INTO sessions (adw_id, request, status, started_at) VALUES (?, ?, ?, ?)");
+  for (const s of sessions) ins.run(s.adw_id, `run ${s.adw_id}`, s.status, s.started_at);
+  db.close();
+  return root;
+}
+
 describe("sssf-viz — pure bits", () => {
   test("isSafeSegment accepts ids and agent names, refuses traversal and empties", () => {
     expect(isSafeSegment("e7b38c61")).toBe(true);
@@ -134,6 +170,31 @@ describe("sssf-viz — pure bits", () => {
     );
     expect(evil.status).toBe(403);
   });
+
+  test("findRepos: up to the enclosing worktree root, down two levels, bounded and unfollowing", async () => {
+    const top = await mkdtemp(join(tmpdir(), "sssf-tree-"));
+    await fakeRepo(join(top, "Projects"), "alpha", [{ adw_id: "a1", status: "success", started_at: "2026-08-01T00:00:00Z" }]);
+    await fakeRepo(top, "beta", [], true); // depth 1, pending
+    await fakeRepo(join(top, "Projects", "deep"), "gamma"); // depth 3 — beyond the scan
+    await fakeRepo(join(top, "node_modules"), "dep"); // skipped folder
+    await fakeRepo(join(top, ".hidden"), "dot"); // dot-dir
+    // A junction/symlink to a repo elsewhere is never entered.
+    const elsewhere = await mkdtemp(join(tmpdir(), "sssf-else-"));
+    await fakeRepo(elsewhere, "linked");
+    await symlink(join(elsewhere, "linked"), join(top, "Projects", "viaLink"), "junction").catch(() => {});
+
+    const fromTop = await findRepos(top);
+    expect(fromTop.map((c) => c.name).sort()).toEqual(["alpha", "beta"]);
+    expect(fromTop.find((c) => c.name === "alpha")?.dbPath).toEndWith(join("adws", "adw_data", "sssf.db"));
+    expect(fromTop.find((c) => c.name === "beta")?.dbPath).toBeNull();
+
+    // From inside a repo: the up-walk finds it (and nothing else sits below that cwd).
+    const fromInside = await findRepos(join(top, "Projects", "alpha", "adws"));
+    expect(fromInside.map((c) => basename(c.root))).toEqual(["alpha"]);
+
+    // From a folder that is neither in nor over a repo: nothing.
+    expect(await findRepos(await emptyCwd())).toEqual([]);
+  });
 });
 
 const VIZ = readVizDir();
@@ -145,7 +206,7 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
     const viz = createSssfViz(cfg({ stateDir: state }), helpers, { vizDir: VIZ, build: false });
     expect(await viz.ready).toBe(true);
     // Discovery is async and fires from decorate(); poll until the workspace is stamped.
-    const panes = [{ workspaceId: "w1", cwd: join(REPO, "adws") }, { workspaceId: "w2", cwd: tmpdir() }];
+    const panes = [{ workspaceId: "w1", cwd: join(REPO, "adws") }, { workspaceId: "w2", cwd: await emptyCwd() }];
     let stamped: WorkspaceView[] = [];
     for (let i = 0; i < 50; i++) {
       stamped = viz.decorate([ws("w1"), ws("w2")], panes, "primary");
@@ -164,6 +225,8 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
     const { stamped } = await boot();
     expect(stamped[0]?.sssf?.state).toBe("ready");
     expect(stamped[0]?.sssf?.token).toMatch(/^[0-9a-f]{48}$/);
+    expect(stamped[0]?.sssf?.repos.map((r) => r.name)).toEqual([basename(REPO)]);
+    expect(stamped[0]?.sssf?.attached?.repo).toBe(basename(REPO));
     expect(stamped[1]?.sssf).toBeUndefined();
   });
 
@@ -250,15 +313,88 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
     const viz = createSssfViz(cfg({ stateDir: state }), helpers, { vizDir: VIZ, build: false });
     await viz.ready;
     let stamped: WorkspaceView[] = [];
+    const none = await emptyCwd();
     for (let i = 0; i < 50; i++) {
       stamped = viz.decorate([ws("w1"), ws("w2")], [
         { workspaceId: "w1", cwd: join(root, "adws") },
-        { workspaceId: "w2", cwd: tmpdir() },
+        { workspaceId: "w2", cwd: none },
       ]);
       if (stamped[0]?.sssf) break;
       await Bun.sleep(20);
     }
     expect(stamped[0]?.sssf?.state).toBe("pending");
+    expect(stamped[0]?.sssf?.attached).toBeUndefined();
     expect(stamped[1]?.sssf).toBeUndefined();
+  });
+
+  describe("several repos below a pane cwd", () => {
+    // A folder of repos, like a pane parked at the home folder: `old` finished last week, `live` has
+    // a run going that started earlier, `fresh` finished most recently, `soon` has no db yet.
+    async function tree() {
+      const top = await mkdtemp(join(tmpdir(), "sssf-multi-"));
+      await fakeRepo(join(top, "Projects"), "old", [{ adw_id: "o1", status: "success", started_at: "2026-08-10T10:00:00+00:00" }]);
+      await fakeRepo(join(top, "Projects"), "live", [
+        { adw_id: "l2", status: "running", started_at: "2026-08-17T09:00:00+00:00" },
+        { adw_id: "l1", status: "fail", started_at: "2026-08-16T09:00:00+00:00" },
+      ]);
+      await fakeRepo(join(top, "Projects"), "fresh", [{ adw_id: "f1", status: "success", started_at: "2026-08-18T08:00:00+00:00" }]);
+      await fakeRepo(join(top, "Projects"), "soon", [], true);
+      const state = await mkdtemp(join(tmpdir(), "sssf-state-"));
+      const viz = createSssfViz(cfg({ stateDir: state }), helpers, { vizDir: VIZ, build: false });
+      expect(await viz.ready).toBe(true);
+      let stamped: WorkspaceView[] = [];
+      for (let i = 0; i < 50; i++) {
+        stamped = viz.decorate([ws("w1")], [{ workspaceId: "w1", cwd: top }], "primary");
+        if (stamped[0]?.sssf) break;
+        await Bun.sleep(20);
+      }
+      return { viz, sssf: stamped[0]!.sssf! };
+    }
+
+    test("lists every repo by name and attaches to the running one, with its adw_id", async () => {
+      const { sssf } = await tree();
+      expect(sssf.state).toBe("ready");
+      expect(sssf.repos.map((r) => r.name).sort()).toEqual(["fresh", "live", "old", "soon"]);
+      expect(sssf.repos.find((r) => r.name === "soon")).toEqual({ name: "soon", state: "pending", running: false });
+      expect(sssf.repos.find((r) => r.name === "live")).toEqual({ name: "live", state: "ready", running: true });
+      expect(sssf.attached).toEqual({ repo: "live", adwId: "l2" });
+      // Names only — no path leaks into the snapshot.
+      expect(JSON.stringify(sssf)).not.toContain(tmpdir());
+    });
+
+    test("with nothing running, the most recently started run wins and no adw_id is pinned", async () => {
+      const top = await mkdtemp(join(tmpdir(), "sssf-quiet-"));
+      await fakeRepo(top, "old", [{ adw_id: "o1", status: "success", started_at: "2026-08-10T10:00:00+00:00" }]);
+      await fakeRepo(top, "fresh", [{ adw_id: "f1", status: "fail", started_at: "2026-08-18T08:00:00+00:00" }]);
+      const state = await mkdtemp(join(tmpdir(), "sssf-state-"));
+      const viz = createSssfViz(cfg({ stateDir: state }), helpers, { vizDir: VIZ, build: false });
+      await viz.ready;
+      let stamped: WorkspaceView[] = [];
+      for (let i = 0; i < 50; i++) {
+        stamped = viz.decorate([ws("w1")], [{ workspaceId: "w1", cwd: top }]);
+        if (stamped[0]?.sssf) break;
+        await Bun.sleep(20);
+      }
+      expect(stamped[0]?.sssf?.attached).toEqual({ repo: "fresh" });
+    });
+
+    test("?repo= picks the db; absent → attached; unknown, pending, or path-shaped → 404", async () => {
+      const { viz } = await tree();
+      const ids = async (q: string) => {
+        const r = await get(viz, `/sssf/api/sessions?ws=w1&session=primary${q}`);
+        if (r.status !== 200) return r.status;
+        return ((await r.json()) as Array<{ adw_id: string }>).map((s) => s.adw_id);
+      };
+      expect(await ids("")).toEqual(["l2", "l1"]);
+      expect(await ids("&repo=live")).toEqual(["l2", "l1"]);
+      expect(await ids("&repo=old")).toEqual(["o1"]);
+      expect(await ids("&repo=fresh")).toEqual(["f1"]);
+      expect(await ids("&repo=soon")).toBe(404);
+      expect(await ids("&repo=nope")).toBe(404);
+      expect(await ids("&repo=..%2Fold")).toBe(404);
+      expect(await ids(`&repo=${encodeURIComponent(join(tmpdir(), "x"))}`)).toBe(404);
+      const health = (await (await get(viz, "/sssf/api/health?ws=w1&session=primary&repo=old")).json()) as { sessions: number };
+      expect(health.sessions).toBe(1);
+    });
   });
 });

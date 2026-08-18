@@ -13,8 +13,11 @@
  * of the visualiser. Editing the visualiser → restart Collie → it rebuilds.
  *
  * Which db: Herdr's `workspace.list` carries no directory, but every pane reports a `cwd`. For each
- * workspace, walk each pane cwd upward and accept a directory only if it is a git worktree root that
- * holds `adws/adw_data/sssf.db`. The path never leaves the bridge; the client sends a workspace id.
+ * workspace, look near each pane cwd — up to the enclosing git worktree root, and a bounded two
+ * levels down (a pane parked in a folder of repos) — for roots holding `adws/adw_data/sssf.db`. The
+ * workspace attaches to the repo with the newest run (a running one first) and the frame opens on
+ * that run; several repos give the client a name per repo to pick from. Paths never leave the
+ * bridge: the client sends a workspace id and a repo *name*, which is only ever a Map lookup.
  *
  * Trust: the visualiser folder is code Collie executes (its `db.ts` in-process, its Vite config at
  * build time). See .adr/0011. Inside Collie the UI is framed with `sandbox="allow-scripts"` (opaque
@@ -26,7 +29,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Config } from "./config.ts";
 import { containedRealpath, exists } from "./journal/files.ts";
@@ -87,9 +90,21 @@ export type SssfState = "ready" | "pending";
 
 /** What a workspace carries in the snapshot when the feature is on. */
 export interface WorkspaceSssf {
+  /** Roll-up: "ready" when any repo has a db. */
   state: SssfState;
   /** Per-boot token the iframe URL must carry — see the header on `Origin: null`. */
   token: string;
+  /** Every SSSF repo found near the workspace's panes, by name (never a path). */
+  repos: Array<{ name: string; state: SssfState; running: boolean }>;
+  /** The repo whose newest run is the most recent (a running one wins), and that run if it's live. */
+  attached?: { repo: string; adwId?: string };
+}
+
+/** A git worktree root that is (or is about to be) an SSSF repo. `dbPath` null = pending. */
+export interface SssfCandidate {
+  name: string;
+  root: string;
+  dbPath: string | null;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -97,6 +112,11 @@ export interface WorkspaceSssf {
 export const SSSF_PREFIX = "/sssf";
 const DB_REL = join("adws", "adw_data", "sssf.db");
 const MAX_WALK = 8;
+/** Down-scan bounds: how many levels below a pane cwd, how many entries read per directory. */
+const MAX_DOWN = 2;
+const MAX_DIRENTS = 200;
+/** Directory names the down-scan never enters (dot-dirs are skipped too). */
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", "venv", "__pycache__"]);
 const RECHECK_MS = 30_000;
 const PROMPT_CAP_BYTES = 256 * 1024;
 const DEFAULT_LIST_LIMIT = 200;
@@ -174,18 +194,26 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
   let building: Promise<void> | null = null;
   let buildError: string | null = null;
 
-  // Discovery: per workspace (scoped by herdr session), the resolved db path or "pending", plus
-  // the pane-cwd fingerprint and time it was computed against. Open dbs are shared per path.
+  // Discovery: per workspace (scoped by herdr session), the SSSF repos found near its panes and
+  // which one it is attached to, plus the pane-cwd fingerprint and time it was computed against.
+  // Open dbs are shared per path; the filesystem scan is shared per cwd.
+  interface FoundRepo extends SssfCandidate {
+    running: boolean;
+    /** ISO `started_at` of the newest session, "" when the db has none (or is pending). */
+    newest: string;
+  }
   interface Found {
-    /** "none": walked, nothing SSSF-shaped above any pane — decorates as nothing. */
+    /** "none": scanned, nothing SSSF-shaped near any pane — decorates as nothing. */
     state: SssfState | "none";
-    dbPath: string | null;
+    repos: FoundRepo[];
+    attached: { repo: string; adwId?: string } | undefined;
     fingerprint: string;
     at: number;
   }
   const found = new Map<string, Found>();
   const dbs = new Map<string, SssfDbApi>();
   const inflightDiscovery = new Set<string>();
+  const cwdCache = new Map<string, { at: number; repos: SssfCandidate[] }>();
 
   const wsKey = (session: string | undefined, workspaceId: string) => `${session ?? ""}|${workspaceId}`;
 
@@ -326,41 +354,63 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
   // ── Discovery ──────────────────────────────────────────────────────────
 
   /**
-   * Walk up from `cwd`; the first git worktree root with `adws/adw_data/sssf.db` wins. A worktree
-   * root with an `adws/` dir but no db yet is "pending". Anything else: nothing.
+   * The SSSF repos near one pane cwd: walk UP to the nearest git worktree root (a pane opened inside
+   * a repo), and scan DOWN a couple of levels (a pane opened in a folder OF repos — the common shape
+   * here, where the agent runs the ADW in `Projects/<repo>` by path and the pane never moves).
+   * Cached per cwd for RECHECK_MS so several workspaces at the same cwd share one scan.
    */
-  async function locate(cwd: string): Promise<Found | null> {
-    let dir = resolve(cwd);
-    let pending = false;
-    for (let i = 0; i <= MAX_WALK; i++) {
-      // .git may be a directory (a checkout) or a file (a linked worktree) — either marks a root.
-      if (await exists(join(dir, ".git"))) {
-        const db = join(dir, DB_REL);
-        if (await exists(db)) return { state: "ready", dbPath: db, fingerprint: "", at: 0 };
-        if (await exists(join(dir, "adws"))) pending = true;
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
+  async function reposNear(cwd: string): Promise<SssfCandidate[]> {
+    const hit = cwdCache.get(cwd);
+    if (hit && Date.now() - hit.at < RECHECK_MS) return hit.repos;
+    const repos = await findRepos(cwd);
+    cwdCache.set(cwd, { at: Date.now(), repos });
+    return repos;
+  }
+
+  /** The newest session of a repo (the visualiser lists newest-first), through the shared handle. */
+  function newestOf(c: SssfCandidate): { running: boolean; newest: string; adwId?: string } {
+    if (!c.dbPath || !Db) return { running: false, newest: "" };
+    try {
+      const [s] = openDb(c.dbPath).sessions(1) as Array<{ adw_id?: unknown; status?: unknown; started_at?: unknown }>;
+      if (!s) return { running: false, newest: "" };
+      return {
+        running: s.status === "running",
+        newest: typeof s.started_at === "string" ? s.started_at : "",
+        ...(typeof s.adw_id === "string" ? { adwId: s.adw_id } : {}),
+      };
+    } catch (err) {
+      log(`cannot read ${c.name}: ${err instanceof Error ? err.message : String(err)}`);
+      return { running: false, newest: "" };
     }
-    return pending ? { state: "pending", dbPath: null, fingerprint: "", at: 0 } : null;
   }
 
   async function discover(key: string, cwds: string[], fingerprint: string): Promise<void> {
     if (inflightDiscovery.has(key)) return;
     inflightDiscovery.add(key);
     try {
-      let best: Found | null = null;
-      for (const cwd of cwds) {
-        const hit = await locate(cwd);
-        if (hit?.state === "ready") {
-          best = hit;
-          break;
+      // Union across the workspace's pane cwds, deduped by root; names made unique so a name is
+      // always one repo (two worktrees called `app` become `app` and `app-2`).
+      const byRoot = new Map<string, SssfCandidate>();
+      for (const cwd of cwds) for (const c of await reposNear(cwd)) byRoot.set(c.root, c);
+      const names = new Set<string>();
+      const repos: FoundRepo[] = [];
+      let best: { name: string; running: boolean; newest: string; adwId?: string } | null = null;
+      for (const c of [...byRoot.values()].sort((a, b) => a.root.localeCompare(b.root))) {
+        let name = c.name;
+        for (let n = 2; names.has(name); n++) name = `${c.name}-${n}`;
+        names.add(name);
+        const s = newestOf(c);
+        repos.push({ ...c, name, running: s.running, newest: s.newest });
+        if (!c.dbPath) continue;
+        // A running run beats any finished one; otherwise the most recently started wins.
+        if (!best || (s.running && !best.running) || (s.running === best.running && laterThan(s.newest, best.newest))) {
+          best = { name, ...s };
         }
-        if (hit && !best) best = hit;
       }
-      // "none" is remembered too, so a workspace with no traces isn't re-walked every snapshot.
-      found.set(key, best ? { ...best, fingerprint, at: Date.now() } : { state: "none", dbPath: null, fingerprint, at: Date.now() });
+      const attached = best ? { repo: best.name, ...(best.running && best.adwId ? { adwId: best.adwId } : {}) } : undefined;
+      // "none" is remembered too, so a workspace with no traces isn't re-scanned every snapshot.
+      const state: Found["state"] = repos.length === 0 ? "none" : repos.some((r) => r.dbPath) ? "ready" : "pending";
+      found.set(key, { state, repos, attached, fingerprint, at: Date.now() });
     } finally {
       inflightDiscovery.delete(key);
     }
@@ -378,20 +428,34 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
       const due = !cur || cur.fingerprint !== fingerprint || Date.now() - cur.at > RECHECK_MS;
       if (due && cwds.length) void discover(key, cwds, fingerprint);
       if (!cur || cur.state === "none") return w;
-      const sssf: WorkspaceSssf = { state: cur.state, token };
+      const sssf: WorkspaceSssf = {
+        state: cur.state,
+        token,
+        repos: cur.repos.map((r) => ({ name: r.name, state: r.dbPath ? "ready" : "pending", running: r.running })),
+        ...(cur.attached ? { attached: cur.attached } : {}),
+      };
       return { ...w, sssf };
     });
   }
 
-  function dbFor(session: string | undefined, workspaceId: string): SssfDbApi | null {
-    const cur = found.get(wsKey(session, workspaceId));
-    if (!cur?.dbPath || !Db) return null;
-    let db = dbs.get(cur.dbPath);
+  function openDb(dbPath: string): SssfDbApi {
+    let db = dbs.get(dbPath);
     if (!db) {
-      db = new Db(cur.dbPath);
-      dbs.set(cur.dbPath, db);
+      db = new Db!(dbPath);
+      dbs.set(dbPath, db);
     }
     return db;
+  }
+
+  /** The db behind `repo` (a name from the snapshot — only ever a Map lookup, never a path); no
+   *  `repo` means the attached one. Null when the workspace, the name, or the db isn't there. */
+  function dbFor(session: string | undefined, workspaceId: string, repo: string | null): SssfDbApi | null {
+    const cur = found.get(wsKey(session, workspaceId));
+    if (!cur || !Db) return null;
+    const name = repo ?? cur.attached?.repo;
+    const hit = name === undefined ? undefined : cur.repos.find((r) => r.name === name);
+    if (!hit?.dbPath) return null;
+    return openDb(hit.dbPath);
   }
 
   // ── HTTP ───────────────────────────────────────────────────────────────
@@ -464,6 +528,7 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
   async function api(req: Request, url: URL, rest: string): Promise<Response> {
     const session = url.searchParams.get("session") ?? undefined;
     const workspaceId = url.searchParams.get("ws") ?? "";
+    const repo = url.searchParams.get("repo");
     const parts = rest.split("/").filter(Boolean);
     const isWrite = req.method === "POST" && parts[0] === "sessions" && parts[2] === "archive";
 
@@ -476,7 +541,7 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     }
 
     try {
-      const db = workspaceId ? dbFor(session, workspaceId) : null;
+      const db = workspaceId ? dbFor(session, workspaceId, repo) : null;
       if (!db) return withCors(json({ error: "no traces for this workspace" }, 404), g.cors);
 
       // /health
@@ -589,6 +654,68 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
   }
 
   return { ready, owns, handle, decorate, dispose };
+}
+
+/** ISO timestamps: compare as instants; fall back to string order for anything unparseable. */
+function laterThan(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isFinite(ta) && Number.isFinite(tb)) return ta > tb;
+  return a > b;
+}
+
+/** A git worktree root (`.git` file or dir) → candidate, or null when it has nothing SSSF-shaped. */
+async function candidateAt(dir: string): Promise<SssfCandidate | null> {
+  if (!(await exists(join(dir, ".git")))) return null;
+  const db = join(dir, DB_REL);
+  if (await exists(db)) return { name: basename(dir), root: dir, dbPath: db };
+  if (await exists(join(dir, "adws"))) return { name: basename(dir), root: dir, dbPath: null };
+  return null;
+}
+
+/**
+ * Exported for tests. Every SSSF repo near `cwd`: the nearest worktree root at or above it (up to
+ * MAX_WALK levels), plus any worktree root up to MAX_DOWN levels below it. The down-scan reads
+ * directory names only, never follows symlinks or junctions, skips dot-dirs and the usual
+ * dependency/output folders, and reads at most MAX_DIRENTS entries per directory. Roots are
+ * realpath'd so the same repo reached two ways is one candidate.
+ */
+export async function findRepos(cwd: string): Promise<SssfCandidate[]> {
+  const out = new Map<string, SssfCandidate>();
+  const add = async (dir: string) => {
+    const c = await candidateAt(dir);
+    if (!c) return;
+    const real = await realpath(c.root).catch(() => c.root);
+    if (!out.has(real)) out.set(real, { ...c, root: real, dbPath: c.dbPath && join(real, DB_REL) });
+  };
+  // Up: the first worktree root wins (a nested checkout is its own repo).
+  let dir = resolve(cwd);
+  for (let i = 0; i <= MAX_WALK; i++) {
+    if (await exists(join(dir, ".git"))) {
+      await add(dir);
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Down: bounded breadth-first walk from the cwd itself.
+  let level = [resolve(cwd)];
+  for (let depth = 1; depth <= MAX_DOWN && level.length; depth++) {
+    const next: string[] = [];
+    for (const d of level) {
+      const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
+      for (const e of entries.slice(0, MAX_DIRENTS)) {
+        // Dirent.isDirectory() is false for symlinks and junctions — they are never entered.
+        if (!e.isDirectory() || e.name.startsWith(".") || SKIP_DIRS.has(e.name)) continue;
+        const p = join(d, e.name);
+        await add(p);
+        next.push(p);
+      }
+    }
+    level = next;
+  }
+  return [...out.values()];
 }
 
 /** Exported for tests: is this a path segment the API accepts as an adw id / agent name? */
