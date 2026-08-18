@@ -129,6 +129,12 @@ the unit name; the Herdr action runs from anywhere.
   a destination passes `AppHeader onBack` — a "‹" that goes up exactly one level (pane → space →
   Spaces, trace → Traces, history → pane). Don't add a second way back (a Back chip in a strip, the
   Collie mark as home) or a sibling-switcher row on a pushed screen; that's the mess 0.35.0 removed.
+- **Tap-and-hold is the one way to manage a pane, tab or space in place.** Pane pills, tab chips, the
+  tab headings in a space's "All" list, and Spaces rows all open a small actions sheet on a hold
+  (`use-long-press.ts` + `*-actions-sheet.tsx`, rows shared via `action-sheet-rows.tsx`). Rename +
+  close for panes and tabs; **rename only for spaces** — Collie never deletes a space. Don't add a
+  second gesture (swipe-to-delete, an ⋯ button) or a second sheet; extend the existing one, and keep
+  the hold's phone rules from the hook's header (`select-none`, no `touch-action: none`).
 - **The idle lock pauses; it does not gate.** It only appears when Collie is left *open, visible and
   untouched* — a hidden page never locks, and returning to the foreground auto-resumes. It covers a
   still-mounted router (unmounting it ate in-progress composer drafts) and pauses polling through

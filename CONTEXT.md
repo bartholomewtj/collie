@@ -3,7 +3,7 @@
 > **Form**: System Map (ICM Form 6 — Van Clief & McDermott, [arXiv:2603.16021](https://arxiv.org/abs/2603.16021))  
 > **Target**: `AltanS/collie` (forked repo on Windows at `C:\ClaudeOS\Projects\collie`)  
 > **Entry Twins**: [`CLAUDE.md`](file:///C:/ClaudeOS/Projects/collie/CLAUDE.md) · [`AGENTS.md`](file:///C:/ClaudeOS/Projects/collie/AGENTS.md) · [`CONTEXT.md`](file:///C:/ClaudeOS/Projects/collie/CONTEXT.md)  
-> **Current Version**: `0.35.0` (`v0.35.0`) | Herdr Plugin: `herdr.collie`
+> **Current Version**: `0.37.0` (`v0.37.0`) | Herdr Plugin: `herdr.collie`
 
 ---
 
@@ -205,6 +205,7 @@ web/src/routes/history.tsx (renders scrollback turns with find & jump-to-turn)
 | **Investigate / Add Prompt Block Detection** | [`web/src/lib/blocks.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/blocks.ts) · [`web/src/lib/harness/registry.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/registry.ts) · [`web/src/lib/harness/claude/`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/claude/) |
 | **Investigate / Fix Composer & Input Sending** | [`web/src/components/composer.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/composer.tsx) · [`web/src/lib/reply-action.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/reply-action.ts) · [`web/src/lib/dialog-guard.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/dialog-guard.ts) |
 | **Investigate / Fix Session History Logs** | [`bridge/journal/registry.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/registry.ts) · [`bridge/journal/claude.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/claude.ts) · [`bridge/journal/files.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/files.ts) · [`web/src/routes/history.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/routes/history.tsx) |
+| **Investigate / Fix Long-press Actions (rename / close)** | [`web/src/hooks/use-long-press.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/hooks/use-long-press.ts) · [`web/src/components/pane-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/pane-actions-sheet.tsx) · [`web/src/components/tab-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/tab-actions-sheet.tsx) · [`web/src/components/space-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/space-actions-sheet.tsx) · [`web/src/components/action-sheet-rows.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/action-sheet-rows.tsx) |
 | **Investigate / Fix SSSF Traces Tab** | [`bridge/sssf-viz.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts) · [`web/src/components/sssf-frame.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/sssf-frame.tsx) · [`web/src/routes/traces.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/routes/traces.tsx) |
 | **Investigate Auth / Security / Binding** | [`bridge/server.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/server.ts) · [`bridge/config.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts) · [`DEPLOYMENT.md`](file:///C:/ClaudeOS/Projects/collie/DEPLOYMENT.md) |
 | **Investigate CLI / Deployment Scripts** | [`scripts/collie-ctl.sh`](file:///C:/ClaudeOS/Projects/collie/scripts/collie-ctl.sh) · [`justfile`](file:///C:/ClaudeOS/Projects/collie/justfile) · [`herdr-plugin.toml`](file:///C:/ClaudeOS/Projects/collie/herdr-plugin.toml) |

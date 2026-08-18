@@ -114,10 +114,17 @@ Product details that shaped the loop:
   races.
 - **Close the trust loop.** A "Sent" state on the `POST`'s HTTP response, then the visible
   blocked→working transition. Without it, latency makes users double-tap.
-- **Manage a pane in place.** Long-pressing a pane pill in the tab's pane switcher opens a small
-  actions sheet — rename it (the label then leads its cards/headers) or close it. Both are the same
-  `pane.rename` / `pane.close` writes the security posture already covers
-  (`web/src/components/pane-actions-sheet.tsx`).
+- **Manage a pane, tab or space in place.** One gesture everywhere: tap-and-hold opens a small
+  actions sheet. A pane pill → rename / close (`pane-actions-sheet.tsx`); a tab chip *or* a tab
+  heading in the space's "All" list → rename / close, with the blast radius named
+  (`tab-actions-sheet.tsx`); a space row on the Spaces screen → rename only
+  (`space-actions-sheet.tsx`). All are structural writes (`pane.rename` / `pane.close` /
+  `tab.rename` / `tab.close` / `workspace.rename`) behind the same write guard the security posture
+  already covers; the hold itself is `web/src/hooks/use-long-press.ts`, whose header carries the
+  phone rules (`select-none`, no `touch-action: none`, `contextmenu` as the fallback trigger).
+- **See the herd's runs from the list.** A Spaces row whose repo has SSSF traces carries the lanes
+  icon (green dot while a run is live) and taps straight into that space's Traces; the pane header
+  does the same for the runs that pane launched.
 
 **Known gap — the notification body doesn't carry the question.** The design called for putting the
 agent's question *in* the notification, so a tap is actionable even before the app loads (§7 explains
