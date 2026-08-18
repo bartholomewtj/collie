@@ -19,7 +19,7 @@ import {
   isReservedAuthPath,
   isStateChangingMethod,
   keysPane,
-  normalizeTabLabel,
+  normalizeLabel,
   paneReadResponse,
   replyPane,
   resolveStaticPath,
@@ -1101,23 +1101,25 @@ describe("isLoopbackPeer", () => {
   });
 });
 
-// A tab's label is a non-null, non-empty string (herdr rejects null and stores "" literally — no
-// "clear" for a tab, unlike a pane). normalizeTabLabel is the gate that enforces that before the RPC.
-describe("normalizeTabLabel", () => {
+// A tab or space label is a non-null, non-empty string (herdr rejects null and stores "" literally — no
+// "clear" for a tab or workspace, unlike a pane). normalizeLabel is the gate that enforces that before the RPC.
+describe("normalizeLabel", () => {
   test("accepts a non-empty string, trimming surrounding whitespace", () => {
-    expect(normalizeTabLabel("deploy")).toEqual({ ok: true, label: "deploy" });
-    expect(normalizeTabLabel("  deploy  ")).toEqual({ ok: true, label: "deploy" });
+    expect(normalizeLabel("deploy")).toEqual({ ok: true, label: "deploy" });
+    expect(normalizeLabel("  deploy  ")).toEqual({ ok: true, label: "deploy" });
+    // Same rule for both tab and workspace renames
+    expect(normalizeLabel("  my space  ")).toEqual({ ok: true, label: "my space" });
   });
 
-  test("rejects a blank label (empty or whitespace-only) — a tab has no clear", () => {
-    expect(normalizeTabLabel("")).toEqual({ ok: false, error: "label required" });
-    expect(normalizeTabLabel("   ")).toEqual({ ok: false, error: "label required" });
+  test("rejects a blank label (empty or whitespace-only) — a tab or space has no clear", () => {
+    expect(normalizeLabel("")).toEqual({ ok: false, error: "label required" });
+    expect(normalizeLabel("   ")).toEqual({ ok: false, error: "label required" });
   });
 
   test("rejects a non-string label (null / number / missing)", () => {
-    expect(normalizeTabLabel(null)).toEqual({ ok: false, error: "bad label" });
-    expect(normalizeTabLabel(42)).toEqual({ ok: false, error: "bad label" });
-    expect(normalizeTabLabel(undefined)).toEqual({ ok: false, error: "bad label" });
+    expect(normalizeLabel(null)).toEqual({ ok: false, error: "bad label" });
+    expect(normalizeLabel(42)).toEqual({ ok: false, error: "bad label" });
+    expect(normalizeLabel(undefined)).toEqual({ ok: false, error: "bad label" });
   });
 });
 

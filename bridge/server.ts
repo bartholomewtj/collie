@@ -121,6 +121,9 @@ const MAX_HISTORY_LIMIT = 5000;
 // A tab supports rename + close — an action group like the pane route. The `/api/tab` POST above
 // (create) is an exact match on `/api/tab`, so it never collides with this `/api/tab/<id>/<action>`.
 const TAB_ACTION_ROUTE = /^\/api\/tab\/([^/]+)\/(rename|close)$/;
+// A workspace supports rename — like the tab route. The `/api/workspace` POST above (create) is an
+// exact match on `/api/workspace`, so it never collides with `/api/workspace/<id>/rename`.
+const WORKSPACE_ACTION_ROUTE = /^\/api\/workspace\/([^/]+)\/(rename)$/;
 
 /**
  * Header the web app sets on its own pane reads, and the ONLY thing that lets a read mark a pane
@@ -304,6 +307,18 @@ export function startServer(opts: {
         const device = deviceAuth(req, cfg).device;
         if (action === "close") return closeTab(rt.herdr, tabId, req, audit, device, rt.name);
         return renameTab(rt.herdr, tabId, req, audit, device, rt.name);
+      }
+
+      // ── Space (workspace) actions: rename (set its label). No close — Collie doesn't delete spaces. ──
+      const wsMatch = pathname.match(WORKSPACE_ACTION_ROUTE);
+      if (wsMatch && req.method === "POST") {
+        const denied = guard(req, cfg, "write");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        const workspaceId = decodePathSegment(wsMatch[1]!);
+        if (workspaceId === null) return text("bad workspace id", 400);
+        return renameWorkspace(rt.herdr, workspaceId, req, audit, deviceAuth(req, cfg).device, rt.name);
       }
 
       // ── Per-pane read / send ─────────────────────────────────────────────
@@ -1005,13 +1020,12 @@ async function renamePane(
 }
 
 /**
- * Validate an untrusted tab-rename body's `label`. A tab label is a NON-null, NON-empty string:
- * herdr's `tab.rename` rejects `null`, and an empty string is stored literally (a blank tab chip)
- * rather than clearing to the default number — both live-verified 2026-07-19. So, unlike a pane label
- * (where a blank field clears to `null`), Collie has no "clear" for a tab and rejects a blank label.
+ * Validate an untrusted tab or workspace rename body's `label`. Both tab and workspace labels are
+ * NON-null, NON-empty strings (only pane.rename has a clear, via null). Collie has no "clear" for a
+ * tab or workspace and rejects a blank label.
  * Pure + exported so the rule is unit-testable without standing up Bun.serve.
  */
-export function normalizeTabLabel(
+export function normalizeLabel(
   v: unknown,
 ): { ok: true; label: string } | { ok: false; error: string } {
   if (typeof v !== "string") return { ok: false, error: "bad label" };
@@ -1022,7 +1036,7 @@ export function normalizeTabLabel(
 
 // Set a tab's label. Structural metadata op — strictly less powerful than the text/keys injection the
 // bridge already allows, so it stays within the existing remote-shell threat model. A tab has no
-// "clear" (see normalizeTabLabel): a blank label is a 400, not a reset to the tab number.
+// "clear" (see normalizeLabel): a blank label is a 400, not a reset to the tab number.
 async function renameTab(
   herdr: HerdrClient,
   tabId: string,
@@ -1040,7 +1054,7 @@ async function renameTab(
   } catch {
     return text("bad body", 400);
   }
-  const parsed = normalizeTabLabel(body.label);
+  const parsed = normalizeLabel(body.label);
   if (!parsed.ok) return text(parsed.error, 400);
   try {
     await herdr.renameTab(tabId, parsed.label);
@@ -1048,6 +1062,41 @@ async function renameTab(
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
     return json({ ok: false, error: failureText("rename tab", err) } satisfies ActionResponse, ae);
+  }
+}
+
+// Set a workspace's label. Structural metadata op — same threat model as tab.rename, so the same
+// write guard. A workspace has no "clear" (see normalizeLabel): a blank label is a 400.
+async function renameWorkspace(
+  herdr: HerdrClient,
+  workspaceId: string,
+  req: Request,
+  audit: AuditLog,
+  device: string | null,
+  session: string,
+): Promise<Response> {
+  const bad = requireJsonBody(req);
+  if (bad) return bad;
+  const ae = req.headers.get("accept-encoding");
+  let body: { label?: unknown };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return text("bad body", 400);
+  }
+  const parsed = normalizeLabel(body.label);
+  if (!parsed.ok) return text(parsed.error, 400);
+  try {
+    await herdr.renameWorkspace(workspaceId, parsed.label);
+    audit.record({
+      action: "workspace.rename",
+      session,
+      device,
+      detail: { workspaceId, label: parsed.label },
+    });
+    return json({ ok: true } satisfies ActionResponse, ae);
+  } catch (err) {
+    return json({ ok: false, error: failureText("rename space", err) } satisfies ActionResponse, ae);
   }
 }
 

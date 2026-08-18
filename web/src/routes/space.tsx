@@ -102,6 +102,13 @@ export function SpaceRoute() {
                 shellPanes={data.shellPanes}
                 selectedTab={tab}
                 onOpen={open}
+                session={data.session}
+                readOnly={isReadOnly(data.device)}
+                onRenamed={() => revalidator.revalidate()}
+                onClosed={(tabId) => {
+                  if (tab === tabId) setTab(null);
+                  revalidator.revalidate();
+                }}
               />
             </main>
           </>

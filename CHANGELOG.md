@@ -6,6 +6,13 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.37.0] - 2026-08-18
+
+### Added
+- Long-press a tab heading in the space's "All" list to rename or close that tab — same sheet as the tab chips (b84c057)
+- Spaces rows show the traces lanes icon when a space has SSSF repos, green dot while a run is live; tap opens that space's traces (c525ec1)
+- Tap-and-hold a space row to rename the space — `POST /api/workspace/:id/rename` on the bridge, `workspace.rename` upstream, rename only (98265d1)
+
 ## [0.36.0] - 2026-08-18
 
 ### Added

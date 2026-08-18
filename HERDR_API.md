@@ -185,7 +185,7 @@ Three sibling RPCs set a display label on a workspace, tab, or pane. Live-verifi
   confirming tabs/workspaces have **no "clear"** (only `pane.rename` clears, via `null`). Collie makes
   its own opposite choices per object: a blank pane "Save" clears (blank → `null`), while a blank tab
   "Save" is refused client- and bridge-side, since a literal-empty tab chip is useless. See
-  `bridge/server.ts` (`normalizeTabLabel`).
+  `bridge/server.ts` (`normalizeLabel`).
 - **Undocumented field:** once set, a pane's label rides along as **`label?: string`** in `pane.list`,
   `pane.get`, `pane.current`, and `session.snapshot` panes (omitted when unset — so it's absent from
   the base pane shape below). Workspaces already expose `label`; tabs likewise.

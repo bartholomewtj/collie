@@ -473,6 +473,17 @@ export class HerdrClient {
   }
 
   /**
+   * Set a workspace's label. Like {@link renameTab} and unlike {@link renamePane}, `label` is a
+   * NON-null, non-empty string — herdr has no "clear" for a workspace (HERDR_API.md "Rename methods").
+   * Resolves on herdr's `workspace_info` reply; the new label surfaces on the next snapshot poll
+   * (workspace.rename also emits `workspace_renamed`, which event-poker already subscribes to, so a
+   * rename pokes an immediate re-poll). Bad id → `workspace_not_found`.
+   */
+  renameWorkspace(workspaceId: string, label: string): Promise<void> {
+    return this.request<void>("workspace.rename", { workspace_id: workspaceId, label });
+  }
+
+  /**
    * Close a tab, terminating EVERY pane inside it (live-verified 2026-07-19: the tab's shell/agent
    * panes all disappear with it — closing a tab is a bulk pane-close). Resolves on herdr's
    * `{type:"ok"}` reply; the closure surfaces on the next `session.snapshot` poll (tab.close also
