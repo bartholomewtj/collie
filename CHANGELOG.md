@@ -6,6 +6,13 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.36.0] - 2026-08-18
+
+### Added
+
+- **ADW runs attach to the pane that launched them.** The SSSF tracer records the pane's `HERDR_PANE_ID` on each run (claudeSSSF PR #56); the bridge indexes runs by it and stamps every pane with `sssf.runs` (ac45648)
+- **A Traces button in the pane header** (lanes mark, green dot while a run is live) opens the visualiser scoped to that pane: a chip row of its runs — newest first, across repos — the frame open on the newest, and ‹ back to the pane (ac45648)
+
 ## [0.35.0] - 2026-08-18
 
 ### Changed
