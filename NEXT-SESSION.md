@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-18 (late) — main at 0.34.0 (`0edfb01`), tag `v0.34.0` pushed, **live on this box**_
+_Last handoff: 2026-08-18 (later) — main at 0.34.1 (`7e04f48`), tag `v0.34.1`, **live on this box**_
 
 ## Where this stopped
 
@@ -24,20 +24,15 @@ agents through a Herdr socket, served via `tailscale serve`).
   (integration half on), new `web/src/components/sssf-frame.test.tsx`. Verified live after the
   restart: `/api/snapshot` stamps the `C:\claudeOS` workspace with all 8 repos, attached to
   `articlegenerator` (its newest finished run).
-- **Not yet done — phone-check**: Traces chip in a workspace parked at `C:\claudeOS` → repo row (8 chips — if that's
-  too many, consider hiding repos with no run in the last N days) → lanes of the latest run → tap a
-  phase block (if the panel doesn't open, swap the block's `navigate()` for an `<a href>` in the
-  visualiser's `SessionTrace.vue`).
-- **Then test the live-run path with a small real ADW.** Nothing so far has exercised "attach to a
-  *running* run + open on its lanes" against a real tracer — only fixtures. Kick off a cheap
-  read-only run in this repo (`just demo` — the `adw_scout` half is the longer of the two — or
-  `just scout "list the top-level directories. change nothing."`), then on the phone open a
-  workspace parked at `C:\claudeOS` and check: (a) the `collie` chip carries the running dot within
-  ~30 s (discovery recheck), (b) opening Traces lands straight on that run's lanes, not the list,
-  (c) the lanes keep updating while it runs (2 s poll in embed mode), (d) when it finishes the chip
-  loses its dot and a fresh open (tap the active Traces chip → list) shows it as `success`. If (a)
-  never happens, note the ADW's `adw_id` from the pane and compare with `sessions(1)` — that is the
-  pane-text-scraping refinement the spec parked. Don't edit `sssf.config.yaml` mid-run.
+- **Phone-checked against a real running ADW (paperfetch slice 7, PR #40 → 0.34.1).** The chip
+  carried the running dot, Traces opened on the run's lanes, lanes updated live. Two things it
+  found, both fixed and merged: (1) the frame 404'd on the primary session — `server.ts` keyed
+  discovery by `rt.name` (`default`) while the frame sends no `session` param on primary; now
+  keyed on the request's `sessionName`. (2) No way to reach Traces from the pane (terminal) view —
+  `AgentChat` got a `tabTrailing` slot, `detail.tsx` puts the `SssfChip` there, tapping goes to
+  `spaceTracesPath()` = `/space/<id>?tab=traces&from=<paneId>`, and `space.tsx` shows a
+  "← Back to terminal" button for that pane. Not done: the pane-text `adw_id` scrape the spec
+  parked; still no need seen.
 
 - **Security audit is done.** All 12 issues filed on 2026-08-16 are fixed and merged (#12 landed as
   PR #27, 0.32.2); each has a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default
@@ -70,8 +65,7 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Phone-check the 0.34.0 Traces tab, then the small live ADW test** (see above). Optional polish the
-   council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
+1. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
 2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
    concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
@@ -82,7 +76,9 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Open
 
-- No open issues.
+- Issue #41 — Windows: `collie-ctl.sh stop/restart` doesn't kill `bun.exe`, and each `start` binds
+  another listener on :8787 next to the old ones (five were answering on 18 Aug). Kill by pid with
+  `taskkill //PID <pid> //F` after `netstat -ano | findstr :8787`, then one `start`.
 - claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits; fix belongs in
   the factory, not here.
 
@@ -94,7 +90,7 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
   alarm: the ctl probes `/api/snapshot` without the identity header and gets the 403 from
   `COLLIE_TRUSTED_USER`. Check for real with
   `curl -H "Tailscale-User-Login: <trusted user>" http://127.0.0.1:8787/api/snapshot`. `taskkill /IM bun.exe` kills the live
-  bridge too (I did this once by accident on 2026-08-18; Herdr restarted it).
+  bridge too (I did this once by accident on 2026-08-18; Herdr restarted it). **`bash scripts/collie-ctl.sh restart` does not stop the old bridge on Windows** — see issue #41; check `netstat -ano | findstr :8787` shows one pid tree before trusting a restart.
 - **`bun test bridge/sssf-viz.test.ts` has an integration half** that runs only with
   `SSSF_VIZ_DIR` and `SSSF_TEST_REPO=C:/ClaudeOS/Projects/claudeSSSF` set — run it after any sssf
   skill update; it imports the real `db.ts` and is the drift tripwire.
