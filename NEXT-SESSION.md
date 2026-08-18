@@ -1,12 +1,31 @@
 # Next session
 
-_Last handoff: 2026-08-18 (later) — main at 0.34.1 (`7e04f48`), tag `v0.34.1`, **live on this box**_
+_Last handoff: 2026-08-18 (night) — main at 0.34.1 (`ee0d71d`); **PR #43 `nav-restructure` (0.35.0) open, unmerged, and it is what the live bridge is serving**_
 
 ## Where this stopped
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
 agents through a Herdr socket, served via `tailscale serve`).
 
+- **Nav rebuilt on phone-app lines — PR #43 (`nav-restructure`, bumps to 0.35.0), awaiting your
+  review.** Bottom tab bar Herd / Spaces / Traces / Settings (`web/src/components/bottom-nav.tsx`,
+  mounted in `routes/root.tsx`, shown on `/`, `/spaces`, `/space/*`, `/traces`, `/settings`); every
+  pushed screen gets `AppHeader onBack` (a "‹" that goes up one level: pane → space → Spaces, trace →
+  Traces, history → pane). New routes `routes/spaces.tsx`, `routes/traces.tsx` (`/traces` list,
+  `/traces/:spaceId/:repo` full-screen frame). Removed: `SpaceStrip`, `SssfChip`, `SssfRepoRow`,
+  `TabStrip.trailing`, `spaceTracesPath`/`?tab=traces&from=`, the Settings gear, the in-pane tab
+  strip, the space heading in `SpaceView`. Typecheck clean, 2617 web tests pass, clicked through on
+  the tailnet URL. **The bridge on this box is serving the branch build** (`web/dist` was rebuilt
+  from it) — open the PWA to try it; to go back: `git checkout main`, `collie-ctl.ps1 build`.
+  Judgment call to confirm with Bart: the in-pane tab strip is gone (swipe-up switcher and back →
+  space cover it); offer a compact one back if missed.
+- **Visualiser phone fix (in the sssf skill folder, not this repo):** `SessionTrace.vue` ≤640px now
+  keeps the waterfall at desktop width (`min-width: 900px`), scrolls it sideways, and pins the
+  lane-name column (`position: sticky`). Collie rebuilt it on restart. Same caveat as the other
+  skill-folder edits: a skill re-install drops it.
+- **Issue #41 bit again today:** three bridges were listening on :8787 (two strays from 8:52 PM,
+  one Task Scheduler). Requests round-robin, so the phone got stale CSS 2 in 3 loads. Killed the
+  strays by pid; one listener now. Check `netstat -ano | findstr :8787` before trusting a restart.
 - **SSSF traces tab shipped (PR #38, 0.33.0).** Set `SSSF_VIZ_DIR` and any workspace whose repo has
   `adws/adw_data/sssf.db` gets a Collie-only "Traces" tab showing the SSSF visualiser for that repo,
   in a sandboxed iframe. Everything lives in `bridge/sssf-viz.ts` + `web/src/components/sssf-frame.tsx`
@@ -65,14 +84,17 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
+1. **Review PR #43 on the phone** (it's live). Merge, tag `v0.35.0`, or say what to change. If the
+   PR is dropped, rebuild main so the live UI matches (`collie-ctl.ps1 build` then `restart`).
+2. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
-2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
+3. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
    concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
    fail-closed defaults; take upstream's docs structure. The SSSF hooks are one-liners in
-   `server.ts` (fetch top + snapshot), `types.ts`, `tab-strip.tsx` (`trailing` prop), `space.tsx`,
-   `sw-routes.ts` — expect them to conflict trivially.
-3. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
+   `server.ts` (fetch top + snapshot), `types.ts`, `routes/traces.tsx` — expect them to conflict
+   trivially. After #43 the nav files (`root.tsx`, `home.tsx`, `space.tsx`, `agent-chat.tsx`,
+   `app-header.tsx`) diverge from upstream more; expect real conflicts there.
+4. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
 
 ## Open
 
