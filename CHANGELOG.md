@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.33.0] - 2026-08-18
+
+### Added
+
+- **SSSF traces tab** — set `SSSF_VIZ_DIR` to the sssf skill's visualiser folder and any workspace whose repo has ADW traces gets a Collie-only "Traces" tab (three-lanes icon) showing that repo's trace UI, phone-laid-out, in a sandboxed frame; nothing is copied into this repo (411786f)
+
 ## [0.32.2] - 2026-08-18
 
 ### Changed
