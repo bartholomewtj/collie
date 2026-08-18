@@ -68,6 +68,25 @@ export interface AgentView {
    * `lastActiveAt > lastSeenAt`, so opening the pane clears it by construction.
    */
   lastSeenAt?: number;
+  /**
+   * The ADW runs this pane launched — the SSSF tracer recorded this pane's `HERDR_PANE_ID` on them
+   * (bridge/sssf-viz.ts). Newest first, capped. Absent when the feature is off or no run names this
+   * pane; drives the header's Traces button.
+   */
+  sssf?: PaneSssf;
+}
+
+/** One ADW run a pane launched. `repo` is a name from the pane's workspace `sssf.repos` (never a
+ *  path); `status` is the tracer's own word (`running` | `success` | `fail`). */
+export interface PaneSssfRun {
+  repo: string;
+  adwId: string;
+  adwName?: string;
+  status: string;
+  startedAt: string;
+}
+export interface PaneSssf {
+  runs: PaneSssfRun[];
 }
 
 /**

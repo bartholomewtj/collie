@@ -12,6 +12,7 @@ import { ChatMessageList, type ChatMessageListHandle } from "@/components/ui/cha
 import { BottomSheet } from "@/components/ui/sheet";
 import { AppHeader } from "@/components/app-header";
 import { AnsiOutput } from "@/components/ansi-output";
+import { LanesIcon } from "@/components/sssf-frame";
 import { MIRROR_SPACE, MIRROR_INVERT, styleFor } from "@/components/mirror-space";
 import { cn } from "@/lib/utils";
 import { parseAnsi } from "@/lib/ansi";
@@ -37,7 +38,7 @@ import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
 import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
 import { TranscriptView } from "@/components/transcript-view";
 import { shortCwd } from "@/lib/format";
-import { historyPath, spacePath } from "@/lib/nav";
+import { historyPath, spacePath, tracePath } from "@/lib/nav";
 import { isReadOnly } from "@/lib/types";
 import type { AgentView, BridgeStatus, DeviceAuth } from "@/lib/types";
 import type {
@@ -119,6 +120,11 @@ export function AgentChat({
   // so a mis-detected/mis-rendered dialog can always be driven by hand with the keys pad.
   const grammarsOn = !prefs.rawTerminal;
   const isShell = agent?.kind === "shell";
+  // The ADW runs this pane launched (bridge-stamped from the tracer's pane_id). The header offers a
+  // Traces button only when there is at least one, and dots it while any of them is still running.
+  const paneRuns = agent?.sssf?.runs ?? [];
+  const latestRun = paneRuns[0];
+  const runLive = paneRuns.some((r) => r.status === "running");
   // This device isn't allowlisted to type into agents: the backend rejects every write, so the
   // composer drops to read-only (and shows a banner). The mirror still polls (reading is fine).
   const readOnly = isReadOnly(device);
@@ -625,6 +631,11 @@ export function AgentChat({
         // the pane. Offered only when the pane reported an agent session id, so the button never
         // leads to an empty screen.
         //
+        // Traces (the lanes mark) opens the SSSF visualiser scoped to the ADW runs THIS pane
+        // launched — the tracer wrote the pane's HERDR_PANE_ID on each run, so this is attribution,
+        // not a guess from cwd. Offered only when the pane has at least one such run; a green dot
+        // means one is still going. Back from there returns here.
+        //
         // The status pill is dimmed while the connection isn't live, so a frozen "working"/"idle"
         // from the last snapshot doesn't masquerade as current. A bare shell shows a muted "shell" tag.
         rightLead={
@@ -638,6 +649,24 @@ export function AgentChat({
                   className="-mr-1 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-muted/60"
                 >
                   <Search className="size-4" />
+                </button>
+              )}
+              {latestRun && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(tracePath(agent.workspaceId, latestRun.repo, session, { pane: paneId }))
+                  }
+                  aria-label={runLive ? "ADW runs from this pane (one running)" : "ADW runs from this pane"}
+                  className="relative -mr-1 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-muted/60"
+                >
+                  <LanesIcon className="size-4" />
+                  {runLive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute right-1 top-1 size-1.5 rounded-full bg-emerald-400 ring-2 ring-background"
+                    />
+                  )}
                 </button>
               )}
               {agent.hasSession && (

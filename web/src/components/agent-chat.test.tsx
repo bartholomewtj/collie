@@ -507,6 +507,30 @@ describe("AgentChat — history affordance", () => {
   });
 });
 
+// The Traces affordance opens the SSSF visualiser scoped to the ADW runs THIS pane launched — the
+// bridge stamps `sssf.runs` from the tracer's recorded pane id, so the button is attribution, not a
+// cwd guess. Gated on at least one run; dotted while one is still going.
+describe("AgentChat — traces affordance", () => {
+  const runs = [
+    { repo: "collie", adwId: "ab12cd34", status: "running", startedAt: "2026-08-18T08:00:00+00:00" },
+    { repo: "gene", adwId: "9f9f9f9f", status: "success", startedAt: "2026-08-17T08:00:00+00:00" },
+  ];
+
+  it("is offered when the pane launched an ADW run, and says so when one is running", () => {
+    const agent = { ...fixtureAgents[0]!, sssf: { runs } };
+    renderChat({ agent, agents: [agent] });
+    expect(screen.getByRole("button", { name: /adw runs from this pane \(one running\)/i })).toBeInTheDocument();
+  });
+
+  it("is hidden when no run recorded this pane", () => {
+    renderChat();
+    expect(screen.queryByRole("button", { name: /adw runs from this pane/i })).not.toBeInTheDocument();
+    const agent = { ...fixtureAgents[0]!, sssf: { runs: [] } };
+    renderChat({ agent, agents: [agent] });
+    expect(screen.queryByRole("button", { name: /adw runs from this pane/i })).not.toBeInTheDocument();
+  });
+});
+
 // The top-of-mirror affordance. Agent panes prefetch the transcript above the live tail (a swipe
 // up reads the conversation). Shells still page Herdr scrollback with Load older. The two are
 // never simultaneously possible — a transcript wins, because alt-screen panes have no ring.

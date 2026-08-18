@@ -1,4 +1,4 @@
-import { homePath, panePath } from "./nav";
+import { homePath, panePath, tracePath } from "./nav";
 
 describe("panePath", () => {
   it("URL-encodes the colon in a pane id", () => {
@@ -35,5 +35,19 @@ describe("homePath", () => {
 
   it("carries a named session as ?s=", () => {
     expect(homePath("collie-demo")).toBe("/?s=collie-demo");
+  });
+});
+
+describe("tracePath", () => {
+  it("is space + repo, encoded, with no query on primary and no scope", () => {
+    expect(tracePath("w1", "collie")).toBe("/traces/w1/collie");
+    expect(tracePath("w1", "my repo", "lab")).toBe("/traces/w1/my%20repo?s=lab");
+  });
+
+  it("carries a pane scope and a pinned run alongside the session, encoded", () => {
+    expect(tracePath("w1", "collie", undefined, { pane: "w1:p2" })).toBe("/traces/w1/collie?pane=w1%3Ap2");
+    expect(tracePath("w1", "collie", "lab", { pane: "w1:p2", adw: "ab12" })).toBe(
+      "/traces/w1/collie?s=lab&pane=w1%3Ap2&adw=ab12",
+    );
   });
 });

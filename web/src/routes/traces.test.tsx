@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { WorkspaceView } from "@/lib/types";
-import { traceRows } from "./traces";
+import type { AgentView, PaneSssfRun, WorkspaceView } from "@/lib/types";
+import { openOnRun, scopedPane, traceRows } from "./traces";
 
 const ws = (id: string, label: string, sssf?: WorkspaceView["sssf"]): WorkspaceView => ({
   workspaceId: id,
@@ -43,5 +43,33 @@ describe("traceRows — the Traces list is one row per repo across every space",
       ["collie", "home", false, undefined],
       ["soon", "home", false, undefined],
     ]);
+  });
+});
+
+const run = (repo: string, adwId: string, status = "success"): PaneSssfRun => ({
+  repo,
+  adwId,
+  status,
+  startedAt: "2026-08-18T08:00:00+00:00",
+});
+const pane = (paneId: string, runs?: PaneSssfRun[]): AgentView =>
+  ({ paneId, workspaceId: "w1", workspaceLabel: "home", workspaceNumber: 1, tabId: "t1", agent: "claude", status: "idle", cwd: "/x", focused: false, ...(runs ? { sssf: { runs } } : {}) }) as AgentView;
+
+describe("a trace screen scoped to a pane", () => {
+  it("finds the pane in either list, and nothing for a closed pane or no scope", () => {
+    const data = { agents: [pane("w1:p1", [run("collie", "a1")])], shellPanes: [pane("w1:p2")] };
+    expect(scopedPane(data, "w1:p1")?.sssf?.runs.map((r) => r.adwId)).toEqual(["a1"]);
+    expect(scopedPane(data, "w1:p2")?.paneId).toBe("w1:p2");
+    expect(scopedPane(data, "w1:p9")).toBeUndefined();
+    expect(scopedPane(data, undefined)).toBeUndefined();
+  });
+
+  it("opens on the pinned run, else the pane's newest run in this repo, else the live run", () => {
+    const runs = [run("gene", "g2", "running"), run("collie", "c1"), run("collie", "c0")];
+    expect(openOnRun("c0", runs, "collie", "live")).toBe("c0");
+    expect(openOnRun(undefined, runs, "collie", "live")).toBe("c1");
+    expect(openOnRun(undefined, runs, "gene", undefined)).toBe("g2");
+    expect(openOnRun(undefined, runs, "other", "live")).toBe("live");
+    expect(openOnRun(undefined, [], "collie", undefined)).toBeUndefined();
   });
 });

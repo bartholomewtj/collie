@@ -4,6 +4,18 @@ _Last handoff: 2026-08-18 (night) — main at **0.35.0** (`7a772de`), tag `v0.35
 
 ## Where this stopped
 
+- **Runs attach to the pane that launched them — PR #46 (0.36.0), live on this box, not yet merged
+  or phone-checked.** Chain: Herdr sets `HERDR_PANE_ID` in every pane → the SSSF tracer writes it to
+  `sessions.pane_id` (claudeSSSF PR #56; the same one-file patch is committed on main in
+  articlegenerator, geneanalysis, overtimetracker, paperfetch, roster-board, signalchecker and in this
+  repo's own `adws/`; the Pi sssf skill template got it too) → visualiser `db.ts` selects `pane_id`
+  (skill-folder edit, `shared/types.ts` too) → `bridge/sssf-viz.ts` `decoratePanes` stamps
+  `pane.sssf.runs` → lanes button in the pane header → `/traces/:space/:repo?pane=<id>[&adw=<id>]`
+  with a chip row, back to the pane. **No run has carried a pane yet** — the first ADW launched from
+  a pane after this lands is the real end-to-end check (expect the button within ~30 s of the run
+  starting; discovery re-reads every RECHECK_MS). claudeSSSF `main` is unpatched until #56 merges,
+  so a run in that repo won't attach yet.
+
 Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
 agents through a Herdr socket, served via `tailscale serve`).
 

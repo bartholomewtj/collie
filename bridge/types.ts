@@ -67,6 +67,9 @@ export interface AgentView {
    * Absent when the title says nothing, and on Herdr servers too old to report it.
    */
   terminalTitle?: string;
+  /** The ADW runs this pane launched — see {@link PaneSssf}. Absent when the SSSF feature is off
+   *  or no run recorded this pane. Stamped by sssf-viz.ts at snapshot time; not a Herdr field. */
+  sssf?: PaneSssf;
   /**
    * Epoch ms of this agent's last observed status transition (bridge/activity.ts). The only thing
    * that can make a pane read as unseen. Absent until the ledger has an entry, and on the very
@@ -114,6 +117,22 @@ export function toPaneWire(
 ): PaneWire {
   const { agentSession, ...rest } = pane;
   return offerHistory(pane.agent, Boolean(agentSession)) ? { ...rest, hasSession: true } : rest;
+}
+
+/** One ADW run a pane launched, as the pane's Traces button lists it. `repo` is a snapshot name
+ *  (a key into the workspace's `sssf.repos`, never a path); `status` is the tracer's own word
+ *  (`running` | `success` | `fail`). */
+export interface PaneSssfRun {
+  repo: string;
+  adwId: string;
+  adwName?: string;
+  status: string;
+  startedAt: string;
+}
+/** The ADW runs a pane launched (bridge/sssf-viz.ts): every run whose tracer recorded this pane's
+ *  `HERDR_PANE_ID`. Newest first, capped. */
+export interface PaneSssf {
+  runs: PaneSssfRun[];
 }
 
 /** A Herdr workspace ("space") — a project-scoped container of tabs. From `workspace.list`. */

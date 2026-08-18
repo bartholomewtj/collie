@@ -2,9 +2,9 @@
  * SSSF traces tab — mounts the Super Simple Software Factory visualiser (an external Vue app) at
  * `/sssf/` and its API at `/sssf/api/*`, one trace db per workspace.
  *
- * The whole feature lives in this file. server.ts calls exactly three things: `owns(pathname)` +
- * `handle(req, url)` at the top of its fetch, and `decorate(workspaces, panes, session)` in the
- * snapshot. Nothing here runs when `SSSF_VIZ_DIR` is unset — `owns()` is false, `decorate()` is the
+ * The whole feature lives in this file. server.ts calls exactly four things: `owns(pathname)` +
+ * `handle(req, url)` at the top of its fetch, and `decorate(workspaces, panes, session)` +
+ * `decoratePanes(panes, session)` in the snapshot. Nothing here runs when `SSSF_VIZ_DIR` is unset — `owns()` is false, `decorate()` is the
  * identity, and Collie behaves as it did before this file existed.
  *
  * Point, don't copy: `SSSF_VIZ_DIR` names the visualiser's source folder (normally
@@ -18,6 +18,12 @@
  * workspace attaches to the repo with the newest run (a running one first) and the frame opens on
  * that run; several repos give the client a name per repo to pick from. Paths never leave the
  * bridge: the client sends a workspace id and a repo *name*, which is only ever a Map lookup.
+ *
+ * Which pane: Herdr exports `HERDR_PANE_ID` into every pane, and an SSSF tracer (claudeSSSF from
+ * 2026-08-18) records it on the run's `sessions` row as `pane_id`. Discovery indexes each repo's
+ * runs by that id, and `decoratePanes` stamps every pane with the runs it launched — that is what
+ * the pane's Traces button opens on. A run started outside a pane (a scheduler, a plain terminal)
+ * has no pane and simply appears on none; nothing is inferred from cwd or timing.
  *
  * Trust: the visualiser folder is code Collie executes (its `db.ts` in-process, its Vite config at
  * build time). See .adr/0011. Inside Collie the UI is framed with `sandbox="allow-scripts"` (opaque
@@ -33,7 +39,7 @@ import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path
 import { pathToFileURL } from "node:url";
 import type { Config } from "./config.ts";
 import { containedRealpath, exists } from "./journal/files.ts";
-import type { WorkspaceView } from "./types.ts";
+import type { PaneSssf, PaneSssfRun, WorkspaceView } from "./types.ts";
 
 // ── Wiring from server.ts ────────────────────────────────────────────────────
 
@@ -85,6 +91,10 @@ interface PaneLike {
   workspaceId: string;
   cwd: string;
 }
+/** What `decoratePanes` needs on top: the id a tracer would have recorded. */
+interface StampablePane extends PaneLike {
+  paneId: string;
+}
 
 export type SssfState = "ready" | "pending";
 
@@ -120,6 +130,8 @@ const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", "venv", "_
 const RECHECK_MS = 30_000;
 const PROMPT_CAP_BYTES = 256 * 1024;
 const DEFAULT_LIST_LIMIT = 200;
+/** Runs listed per pane (newest first) — a pane that has launched more shows the latest of them. */
+const PANE_RUNS_CAP = 20;
 const MAX_LIST_LIMIT = 1000;
 const DEFAULT_EVENTS_LIMIT = 500;
 const MAX_EVENTS_LIMIT = 5000;
@@ -157,6 +169,8 @@ export interface SssfViz {
   handle(req: Request, url: URL): Promise<Response>;
   /** Stamp each workspace with its trace state (and refresh discovery from the panes' cwds). */
   decorate(workspaces: WorkspaceView[], panes: readonly PaneLike[], session?: string): WorkspaceView[];
+  /** Stamp each pane with the ADW runs it launched (`sssf.runs`), from the last discovery pass. */
+  decoratePanes<T extends StampablePane>(panes: T[], session?: string): Array<T & { sssf?: PaneSssf }>;
   /** For the shutdown path. */
   dispose(): void;
 }
@@ -207,6 +221,8 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     state: SssfState | "none";
     repos: FoundRepo[];
     attached: { repo: string; adwId?: string } | undefined;
+    /** Runs by the pane that launched them (`sessions.pane_id`), newest first, capped. */
+    paneRuns: Map<string, PaneSssfRun[]>;
     fingerprint: string;
     at: number;
   }
@@ -367,20 +383,52 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     return repos;
   }
 
-  /** The newest session of a repo (the visualiser lists newest-first), through the shared handle. */
-  function newestOf(c: SssfCandidate): { running: boolean; newest: string; adwId?: string } {
-    if (!c.dbPath || !Db) return { running: false, newest: "" };
+  /** One row of the visualiser's sessions() as this module reads it (every field optional on the
+   *  wire — an older tracer's db lacks `adw_name` and `pane_id`, and db.ts NULLs them). */
+  interface SessionRow {
+    adw_id?: unknown;
+    adw_name?: unknown;
+    status?: unknown;
+    started_at?: unknown;
+    pane_id?: unknown;
+  }
+
+  /** A repo's recent sessions (the visualiser lists newest-first), through the shared handle: the
+   *  newest one decides attachment; the ones carrying a `pane_id` are handed to their pane. */
+  function readSessions(c: SssfCandidate, repoName: string): {
+    running: boolean;
+    newest: string;
+    adwId?: string;
+    byPane: Map<string, PaneSssfRun[]>;
+  } {
+    const byPane = new Map<string, PaneSssfRun[]>();
+    if (!c.dbPath || !Db) return { running: false, newest: "", byPane };
     try {
-      const [s] = openDb(c.dbPath).sessions(1) as Array<{ adw_id?: unknown; status?: unknown; started_at?: unknown }>;
-      if (!s) return { running: false, newest: "" };
+      const rows = openDb(c.dbPath).sessions(DEFAULT_LIST_LIMIT) as SessionRow[];
+      for (const r of rows) {
+        if (typeof r.pane_id !== "string" || !r.pane_id || typeof r.adw_id !== "string") continue;
+        const run: PaneSssfRun = {
+          repo: repoName,
+          adwId: r.adw_id,
+          ...(typeof r.adw_name === "string" && r.adw_name ? { adwName: r.adw_name } : {}),
+          status: typeof r.status === "string" ? r.status : "unknown",
+          startedAt: typeof r.started_at === "string" ? r.started_at : "",
+        };
+        const list = byPane.get(r.pane_id);
+        if (list) list.push(run);
+        else byPane.set(r.pane_id, [run]);
+      }
+      const [s] = rows;
+      if (!s) return { running: false, newest: "", byPane };
       return {
         running: s.status === "running",
         newest: typeof s.started_at === "string" ? s.started_at : "",
         ...(typeof s.adw_id === "string" ? { adwId: s.adw_id } : {}),
+        byPane,
       };
     } catch (err) {
       log(`cannot read ${c.name}: ${err instanceof Error ? err.message : String(err)}`);
-      return { running: false, newest: "" };
+      return { running: false, newest: "", byPane };
     }
   }
 
@@ -394,13 +442,19 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
       for (const cwd of cwds) for (const c of await reposNear(cwd)) byRoot.set(c.root, c);
       const names = new Set<string>();
       const repos: FoundRepo[] = [];
+      const paneRuns = new Map<string, PaneSssfRun[]>();
       let best: { name: string; running: boolean; newest: string; adwId?: string } | null = null;
       for (const c of [...byRoot.values()].sort((a, b) => a.root.localeCompare(b.root))) {
         let name = c.name;
         for (let n = 2; names.has(name); n++) name = `${c.name}-${n}`;
         names.add(name);
-        const s = newestOf(c);
+        const { byPane, ...s } = readSessions(c, name);
         repos.push({ ...c, name, running: s.running, newest: s.newest });
+        for (const [paneId, runs] of byPane) {
+          const list = paneRuns.get(paneId);
+          if (list) list.push(...runs);
+          else paneRuns.set(paneId, runs);
+        }
         if (!c.dbPath) continue;
         // A running run beats any finished one; otherwise the most recently started wins.
         if (!best || (s.running && !best.running) || (s.running === best.running && laterThan(s.newest, best.newest))) {
@@ -408,9 +462,14 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
         }
       }
       const attached = best ? { repo: best.name, ...(best.running && best.adwId ? { adwId: best.adwId } : {}) } : undefined;
+      // A pane's runs may span repos (one pane parked above several); newest first across all of them.
+      for (const [paneId, runs] of paneRuns) {
+        runs.sort((a, b) => (laterThan(a.startedAt, b.startedAt) ? -1 : laterThan(b.startedAt, a.startedAt) ? 1 : 0));
+        if (runs.length > PANE_RUNS_CAP) paneRuns.set(paneId, runs.slice(0, PANE_RUNS_CAP));
+      }
       // "none" is remembered too, so a workspace with no traces isn't re-scanned every snapshot.
       const state: Found["state"] = repos.length === 0 ? "none" : repos.some((r) => r.dbPath) ? "ready" : "pending";
-      found.set(key, { state, repos, attached, fingerprint, at: Date.now() });
+      found.set(key, { state, repos, attached, paneRuns, fingerprint, at: Date.now() });
     } finally {
       inflightDiscovery.delete(key);
     }
@@ -435,6 +494,14 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
         ...(cur.attached ? { attached: cur.attached } : {}),
       };
       return { ...w, sssf };
+    });
+  }
+
+  function decoratePanes<T extends StampablePane>(panes: T[], session?: string): Array<T & { sssf?: PaneSssf }> {
+    if (!enabled) return panes;
+    return panes.map((p) => {
+      const runs = found.get(wsKey(session, p.workspaceId))?.paneRuns.get(p.paneId);
+      return runs && runs.length ? { ...p, sssf: { runs } } : p;
     });
   }
 
@@ -653,7 +720,7 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     dbs.clear();
   }
 
-  return { ready, owns, handle, decorate, dispose };
+  return { ready, owns, handle, decorate, decoratePanes, dispose };
 }
 
 /** ISO timestamps: compare as instants; fall back to string order for anything unparseable. */
