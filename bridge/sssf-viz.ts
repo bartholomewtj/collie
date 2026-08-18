@@ -94,7 +94,6 @@ interface PaneLike {
 /** What `decoratePanes` needs on top: the id a tracer would have recorded. */
 interface StampablePane extends PaneLike {
   paneId: string;
-  sssf?: PaneSssf;
 }
 
 export type SssfState = "ready" | "pending";
@@ -171,7 +170,7 @@ export interface SssfViz {
   /** Stamp each workspace with its trace state (and refresh discovery from the panes' cwds). */
   decorate(workspaces: WorkspaceView[], panes: readonly PaneLike[], session?: string): WorkspaceView[];
   /** Stamp each pane with the ADW runs it launched (`sssf.runs`), from the last discovery pass. */
-  decoratePanes<T extends StampablePane>(panes: T[], session?: string): T[];
+  decoratePanes<T extends StampablePane>(panes: T[], session?: string): Array<T & { sssf?: PaneSssf }>;
   /** For the shutdown path. */
   dispose(): void;
 }
@@ -498,7 +497,7 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     });
   }
 
-  function decoratePanes<T extends StampablePane>(panes: T[], session?: string): T[] {
+  function decoratePanes<T extends StampablePane>(panes: T[], session?: string): Array<T & { sssf?: PaneSssf }> {
     if (!enabled) return panes;
     return panes.map((p) => {
       const runs = found.get(wsKey(session, p.workspaceId))?.paneRuns.get(p.paneId);
