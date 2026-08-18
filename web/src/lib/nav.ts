@@ -21,17 +21,20 @@ export function spacePath(spaceId: string, session?: string): string {
   return `/space/${encodeURIComponent(spaceId)}${sessionSearch(session)}`;
 }
 
-/** Query param that opens a space straight on its Traces tab (see spaceTracesPath / routes/space.tsx). */
-export const TRACES_PARAM = "tab";
-export const TRACES_VALUE = "traces";
-/** The pane the Traces tab was opened from — the space shows a "back to terminal" button for it. */
-export const TRACES_FROM_PARAM = "from";
+/** The Spaces list — the bottom bar's second destination; a space's back button lands here. */
+export function spacesPath(session?: string): string {
+  return `/spaces${sessionSearch(session)}`;
+}
 
-/** The space route with its Traces (SSSF) tab already open — how the pane view jumps to traces. */
-export function spaceTracesPath(spaceId: string, session?: string, fromPaneId?: string): string {
-  const base = spacePath(spaceId, session);
-  const from = fromPaneId ? `&${TRACES_FROM_PARAM}=${encodeURIComponent(fromPaneId)}` : "";
-  return `${base}${base.includes("?") ? "&" : "?"}${TRACES_PARAM}=${TRACES_VALUE}${from}`;
+/** The Traces list (every SSSF repo the bridge found, across spaces) — the bottom bar's Traces tab. */
+export function tracesPath(session?: string): string {
+  return `/traces${sessionSearch(session)}`;
+}
+
+/** One repo's trace visualiser, full screen. The workspace picks the db on the bridge; the repo is a
+ *  name from that workspace's `sssf.repos` (never a path). */
+export function tracePath(spaceId: string, repo: string, session?: string): string {
+  return `/traces/${encodeURIComponent(spaceId)}/${encodeURIComponent(repo)}${sessionSearch(session)}`;
 }
 
 /** The dashboard path, carrying the current session so "go home" doesn't drop you back to primary. */

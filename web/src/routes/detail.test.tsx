@@ -59,6 +59,7 @@ function makeRouter(initialPath: string, homeLoader: () => HomeData) {
         element: <Outlet />,
         children: [
           { index: true, element: <div data-testid="home">HOME</div> },
+          { path: "space/:spaceId", element: <div data-testid="space">SPACE</div> },
           {
             path: "pane/:paneId",
             loader: ({ params }): PaneData => ({
@@ -114,9 +115,10 @@ describe("DetailRoute — freshPane bootstrap", () => {
     expect(screen.queryByTestId("home")).not.toBeInTheDocument();
   });
 
-  it("redirects Home when a seen pane disappears from a connected snapshot", async () => {
+  it("goes up to the pane's space when a seen pane disappears from a connected snapshot", async () => {
     // The flip side: once a pane has actually appeared in a snapshot, its freshPane is retired, so a
-    // later snapshot that no longer lists it (you ran `exit`) must bounce Home rather than strand you.
+    // later snapshot that no longer lists it (you ran `exit`) must bounce up to its space (the
+    // pane's parent in the nav stack) rather than strand you.
     const paneA = agentView("w1:p1", "agent");
     let home = connected([paneA]);
     const router = makeRouter(panePath("w1:p1"), () => home);
@@ -129,7 +131,7 @@ describe("DetailRoute — freshPane bootstrap", () => {
       await router.revalidate();
     });
 
-    await screen.findByTestId("home");
-    expect(router.state.location.pathname).toBe("/");
+    await screen.findByTestId("space");
+    expect(router.state.location.pathname).toBe("/space/w1");
   });
 });

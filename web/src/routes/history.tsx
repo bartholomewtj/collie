@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLoaderData, useNavigate, useParams, useRouteLoaderData } from "react-router";
-import { ArrowUpToLine, ChevronDown, ChevronUp, Loader2, ScrollText, Search, X } from "lucide-react";
+import { ArrowUpToLine, ChevronDown, ChevronUp, Loader2, ScrollText, Search } from "lucide-react";
 
 import { AppHeader } from "@/components/app-header";
 import { ChatMessageList, type ChatMessageListHandle } from "@/components/ui/chat/chat-message-list";
@@ -189,7 +189,7 @@ export function HistoryRoute() {
       <AppHeader
         bridge={root.bridge}
         error={root.error}
-        onHome={() => navigate(panePath(paneId, session))}
+        onBack={() => navigate(panePath(paneId, session))}
         override={
           findOpen ? (
             <FindBar
@@ -221,19 +221,6 @@ export function HistoryRoute() {
               </span>
             )}
           </>
-        }
-        // Explicit exit from reading mode. The Collie mark also returns to the pane, but this is a
-        // full-screen reading view you deliberately entered — it should be as obvious to leave as it
-        // was to open, without relying on the phone's back gesture.
-        rightTrail={
-          <button
-            type="button"
-            onClick={() => navigate(panePath(paneId, session))}
-            aria-label="Close history"
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-muted/60"
-          >
-            <X className="size-4" />
-          </button>
         }
       >
         <div className="min-w-0 flex-1">

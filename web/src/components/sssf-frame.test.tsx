@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
 
 import type { WorkspaceView } from "@/lib/types";
-import { SssfFrame, SssfRepoRow, sssfFrameSrc } from "./sssf-frame";
+import { SssfFrame, sssfFrameSrc } from "./sssf-frame";
 
 const ws: WorkspaceView = {
   workspaceId: "w1",
@@ -35,23 +35,5 @@ describe("SssfFrame — the run to open on is pinned at mount", () => {
     rerender(<SssfFrame workspace={ws} sssf={{ ...sssf, token: "tok2" }} session={undefined} repo="a" adwId="run2" hidden={false} />);
     expect(frame().getAttribute("src")).toBe("/sssf/?ws=w1&t=tok2&embed=1&repo=a#/run1");
     expect(frame().getAttribute("sandbox")).toBe("allow-scripts");
-  });
-});
-
-describe("SssfRepoRow — one chip per repo", () => {
-  const repos = [
-    { name: "collie", state: "ready" as const, running: false },
-    { name: "claudeSSSF", state: "ready" as const, running: true },
-    { name: "soon", state: "pending" as const, running: false },
-  ];
-
-  it("marks the selected repo, dots the running one, disables a pending one, and reports a tap", () => {
-    const onSelect = vi.fn();
-    render(<SssfRepoRow repos={repos} selected="collie" onSelect={onSelect} />);
-    expect(screen.getByRole("tab", { name: "collie" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: /claudeSSSF ?\(running\)/ })).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByRole("tab", { name: "soon" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("tab", { name: /claudeSSSF/ }));
-    expect(onSelect).toHaveBeenCalledWith("claudeSSSF");
   });
 });

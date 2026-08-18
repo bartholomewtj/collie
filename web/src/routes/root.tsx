@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useParams, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useLocation, useParams, useRouteError } from "react-router";
 
 import { usePolling } from "@/hooks/use-polling";
 import { usePollBusy } from "@/hooks/use-poll-busy";
@@ -8,6 +8,7 @@ import { useConnectionLost } from "@/hooks/use-connection-lost";
 import { UpdateAvailableBanner } from "@/components/update-available-banner";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { DogGallop } from "@/components/dog-gallop";
+import { BottomNav } from "@/components/bottom-nav";
 import { homePath } from "@/lib/nav";
 import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import type { HomeData } from "@/lib/loaders";
@@ -30,6 +31,19 @@ export function RootLayout() {
   useAgentTransitions(data.agents, paneId ?? null);
   usePushSetup();
 
+  // The bottom bar shows on the top-level destinations and on a space (still a list you browse);
+  // a pane, one repo's traces, and history are leaf screens that own the bottom edge (composer,
+  // frame) and get a header back button instead.
+  const { pathname } = useLocation();
+  const showNav =
+    pathname === "/" ||
+    pathname === "/spaces" ||
+    pathname.startsWith("/space/") ||
+    pathname === "/traces" ||
+    pathname === "/settings";
+  const anyTraces = data.workspaces.some((w) => w.sssf);
+  const attention = data.agents.some((a) => a.status === "blocked");
+
   // A viewport-height flex column: the top banners (when shown) are in-flow rows at the top and the
   // active route fills the rest (each route root is `min-h-0 flex-1`). This is what keeps a banner
   // from covering the route's sticky header — it reserves real space instead of overlaying.
@@ -45,6 +59,7 @@ export function RootLayout() {
           same shared-clock signals as the header dog, so the two always agree. */}
       <ConnectionBanner bridge={data.bridge} error={data.error} authError={data.authError} />
       <Outlet />
+      {showNav && <BottomNav session={data.session} traces={anyTraces} attention={attention} />}
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bell, Loader2 } from "lucide-react";
-import { useNavigate, useRouteLoaderData } from "react-router";
+import { Bell, Loader2 } from "lucide-react";
+import { useRouteLoaderData } from "react-router";
 
-import { Button } from "@/components/ui/button";
 import { BuildStamp } from "@/components/build-stamp";
 import { UpdateBanner } from "@/components/update-banner";
 import { ConnectionInfo } from "@/components/connection-info";
@@ -16,16 +15,12 @@ import { Switch } from "@/components/ui/switch";
 import { fetchConfig } from "@/lib/api";
 import { usePushControl } from "@/hooks/use-push";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { homePath } from "@/lib/nav";
-import { useSession } from "@/lib/session";
 import type { EnableFailure, PushAvailability } from "@/lib/push";
 import { isReadOnly } from "@/lib/types";
 
-// Settings page — currently just the push-notification toggle. Reachable from the home header gear.
+// Settings page — a bottom-bar destination (theme, haptics, push, updates…).
 // Lives under the root route, so the snapshot polling/push-setup in RootLayout keeps running behind it.
 export function SettingsRoute() {
-  const navigate = useNavigate();
-  const session = useSession();
   const { state, busy, setEnabled } = usePushControl();
   const [error, setError] = useState<string | null>(null);
 
@@ -59,17 +54,7 @@ export function SettingsRoute() {
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/85 px-2 py-2 backdrop-blur-md [padding-top:calc(env(safe-area-inset-top)_+_0.5rem)]">
-        <Button
-          variant="ghost"
-          size="icon"
-          // size="icon" is 36px; the header's other controls are 44px since the tap-target pass.
-          className="size-11"
-          onClick={() => navigate(homePath(session))}
-          aria-label="Back"
-        >
-          <ArrowLeft className="size-5" />
-        </Button>
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/85 px-4 py-2 backdrop-blur-md [padding-top:calc(env(safe-area-inset-top)_+_0.5rem)]">
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
       </header>
 

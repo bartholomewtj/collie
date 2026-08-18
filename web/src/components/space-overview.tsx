@@ -17,9 +17,10 @@ interface SpaceOverviewProps {
   shellPanes?: AgentView[];
   onOpen: (workspaceId: string) => void;
   onNewSpace: () => void;
-  /** Fold state, owned by the dashboard so it can be persisted. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Fold state, owned by the caller so it can be persisted. Omit both for a section that can't
+   *  fold (the Spaces screen, where the list IS the page): always open, plain heading. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 // The dashboard's navigator, and the LAST section on the page: everything you might act on comes
@@ -31,9 +32,11 @@ export function SpaceOverview({
   shellPanes = [],
   onOpen,
   onNewSpace,
-  open,
+  open: openProp,
   onOpenChange,
 }: SpaceOverviewProps) {
+  const foldable = openProp !== undefined && !!onOpenChange;
+  const open = foldable ? openProp : true;
   // Ephemeral view state, like SpaceRoute's tab selection — a filter you typed yesterday should not
   // greet you today with most of your spaces missing.
   const [query, setQuery] = useState("");
@@ -54,9 +57,9 @@ export function SpaceOverview({
         // While filtering, the count reports what you can SEE — a header reading (45) above four
         // rows makes you doubt the filter rather than trust it.
         count={query.trim() ? visible.length : workspaces.length}
-        open={open}
-        onToggle={onOpenChange}
-        controls="spaces-body"
+        open={foldable ? open : undefined}
+        onToggle={foldable ? onOpenChange : undefined}
+        controls={foldable ? "spaces-body" : undefined}
         trailing={
           <>
             {/* Why you'd bother expanding — stays visible while folded. */}
