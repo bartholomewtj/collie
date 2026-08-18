@@ -100,6 +100,10 @@ export function AgentCard({
         // the herd list's markup is untouched. Deliberately NO touch-action:none — the list must
         // keep scrolling; a scroll cancels the hold through the move path instead.
         onLongPress && "select-none [-webkit-touch-callout:none]",
+        // No radius on a flat row. These sit in a `divide-y` list, and a rounded hover fill under a
+        // full-width straight hairline reads as a rendering fault — the corners pull away from a
+        // line that doesn't follow them. A radius here would need a real border to belong to; the
+        // rows that DO have one (blocked) keep theirs below.
         flat && "transition-colors hover:bg-muted/50",
       )}
     >
