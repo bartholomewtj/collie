@@ -36,6 +36,7 @@ export function SpacesRoute() {
             shellPanes={data.shellPanes}
             onOpen={(id) => navigate(spacePath(id, data.session))}
             onNewSpace={() => setNewSpaceOpen(true)}
+            session={data.session}
           />
         </main>
         <UpdateBanner className="px-3 pt-3" />
