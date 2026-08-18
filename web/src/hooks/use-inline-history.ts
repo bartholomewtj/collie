@@ -76,6 +76,10 @@ export function useInlineHistory({
   // The first page has come back (with turns, empty, or unavailable) — refreshes may run from here.
   // Distinct from `seeded`, which an empty first page never sets.
   const primed = useRef(false);
+  // Turn uuids dropped by `reset()` (a `/clear` was sent). The bridge may still hand back the OLD
+  // session's page for a moment after the wipe; a fresh page overlapping these is that page, and is
+  // ignored rather than resurrecting the conversation the operator just cleared.
+  const staleIds = useRef<Set<string>>(new Set());
 
   const captureAnchor = () => {
     const el = getScrollElement();
@@ -94,6 +98,7 @@ export function useInlineHistory({
     }
     let cancelled = false;
     primed.current = false;
+    staleIds.current = new Set();
     const ac = new AbortController();
     loadingRef.current = true;
     setLoading(true);
@@ -164,6 +169,8 @@ export function useInlineHistory({
     try {
       const res = await fetchHistory(paneId, { limit: INLINE_HISTORY_PAGE }, session);
       if (!res.available) return; // keep what we have; the log may be mid-rotation
+      if (res.entries.some((e) => staleIds.current.has(e.uuid))) return; // still the cleared session
+      staleIds.current = new Set();
       setEntries((prev) => {
         const merged = mergeNewest(prev, res.entries);
         // A wholesale replacement is a new session: its "older" side is the fresh page's, not ours.
@@ -190,6 +197,24 @@ export function useInlineHistory({
     return () => clearInterval(id);
   }, [enabled, status, refreshNewest]);
 
+  /**
+   * Drop the loaded turns now — for when the operator sends `/clear` (or an alias). The agent has
+   * wiped its context, so the conversation above the live tail is a different session's and would
+   * otherwise sit there until the next status transition refetches. Nothing is refetched here: the
+   * new session has no log yet, and an eager fetch would only bring the old page back. The next
+   * status change (the first prompt of the new session) loads the new one.
+   */
+  const reset = useCallback(() => {
+    setEntries((prev) => {
+      staleIds.current = new Set(prev.map((e) => e.uuid));
+      return [];
+    });
+    setHasMore(false);
+    seeded.current = false;
+    anchor.current = null;
+    pendingRestore.current = false;
+  }, []);
+
   const growUpward = useCallback(() => {
     if (hasMore) void loadOlder();
   }, [hasMore, loadOlder]);
@@ -207,5 +232,5 @@ export function useInlineHistory({
     anchor.current = null;
   }, [entries, getScrollElement, unavailable]);
 
-  return { entries, loading, hasMore, growUpward, unavailable };
+  return { entries, loading, hasMore, growUpward, unavailable, reset };
 }

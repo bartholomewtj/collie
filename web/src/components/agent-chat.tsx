@@ -340,7 +340,10 @@ export function AgentChat({
   }, [inline.entries, following]);
 
   // After a successful send, snap the mirror back to the live tail so the reply's result is visible.
-  const onSent = () => {
+  // A context wipe (`/clear`, or `/new` on agents that spell it that way) also drops the inline
+  // history right away — those turns belong to the session that just ended.
+  const onSent = (text: string) => {
+    if (/^\/(clear|new)(\s|$)/.test(text.trim())) inline.reset();
     setFollowing(true);
     revalidator.revalidate();
     listRef.current?.scrollToBottom();
