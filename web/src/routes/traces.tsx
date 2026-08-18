@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useRouteLoaderData, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from "react-router";
 
 import { AppHeader } from "@/components/app-header";
 import { LanesIcon, SssfFrame } from "@/components/sssf-frame";
@@ -197,7 +197,10 @@ export function TraceRoute() {
   const navigate = useNavigate();
   const ws = data.workspaces.find((w) => w.workspaceId === spaceId);
   const sssf = ws?.sssf;
-  const back = () => navigate(paneId ? panePath(paneId, data.session) : tracesPath(data.session));
+  // ‹ returns where you came from when the opener said (a space's tab heading), else the scoping
+  // pane, else the Traces list — same rule as the pane's back.
+  const from = (useLocation().state as { from?: string } | null)?.from;
+  const back = () => navigate(from ?? (paneId ? panePath(paneId, data.session) : tracesPath(data.session)));
   const live = sssf?.attached?.repo === repo ? sssf.attached.adwId : undefined;
   const pane = scopedPane(data, paneId);
   const paneRuns = pane?.sssf?.runs ?? [];
