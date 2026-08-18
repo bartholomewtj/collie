@@ -398,7 +398,7 @@ kill() { printf '%s\n' "\$*" >> "$kill_calls"; }
 # Stand in for the process table: 4242 is still our bridge, 4243 is whatever recycled that pid.
 ps() {
   case " \$* " in
-    *" 4242 "*) echo "/opt/homebrew/bin/bun run /x/bridge/index.ts" ;;
+    *" 4242 "*) echo "/opt/homebrew/bin/bun run \${PLUGIN_ROOT}/bridge/index.ts" ;;
     *" 4243 "*) echo "/Applications/Something.app/Contents/MacOS/Something" ;;
   esac
 }
