@@ -76,3 +76,12 @@ A superseded ADR is never deleted or edited into agreement with the present. Mar
 | [0012](./0012-subscribe-stays-read-level.md) | Subscribe stays read-level | Accepted |
 | [0013](./0013-notification-settings-are-writes.md) | Notification settings are writes | Accepted |
 | [0014](./0014-host-validation-is-fail-closed.md) | Host validation is fail-closed | Accepted |
+| [0017](./0017-recognising-a-password-prompt-changes-what-collie-says.md) | Recognising a password prompt changes what Collie says, never what it sends | Accepted |
+| [0018](./0018-operator-command-rows-replace-the-catalog.md) | The operator's command rows replace the catalog, never merge into it | Accepted |
+
+**0011–0016 are not missing** — they are the pack/federation decisions, accepted on the `v1`
+integration branch and arriving here when it merges. Numbers are claimed across *both* branches, so
+the next ADR written on `main` continues from the highest number in use anywhere, not from the highest
+one in this table.
+
+**Fork note (bartholomewtj/collie):** ADRs 0011–0014 in this table are this fork's security-hardening decisions and were numbered before upstream reserved 0011–0016 for its `v1` branch. They will collide when that branch lands; renumbering them (0019+) is a pending chore.
