@@ -66,7 +66,8 @@ interface ComposerProps {
   setRawTerminal: (raw: boolean) => void;
   setTapToFocus: (tapToFocus: boolean) => void;
   /** Snap the mirror to the live tail (follow + revalidate + scroll) after a successful send. */
-  onSent: () => void;
+  /** Called with the text that was sent, after a VERIFIED send. */
+  onSent: (text: string) => void;
 }
 
 // The composer cluster at the bottom of the pane view — everything a phone keyboard can't do on its
@@ -561,7 +562,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         lastSentTimerRef.current = setTimeout(() => setLastSent(null), 6000);
         forceConfirm.reset(); // a clean send disarms any leftover override
         noticeNoEcho(null); // whatever prompt it described, the pane has moved past it
-        onSent(); // you just acted — snap the mirror back to the live tail to see the result
+        onSent(t); // you just acted — snap the mirror back to the live tail to see the result
         return true;
       } else if (res.status === "blocked") {
         // The pre-flight refused: NOTHING was typed. That is usually right (a menu owns the keyboard),

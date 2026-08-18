@@ -6,6 +6,15 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.32.1] - 2026-08-18
+
+### Fixed
+
+- Sending `/clear` (or `/new`) from a pane now drops the inline history above the live tail
+  immediately. Before, the previous conversation stayed scrollable until the next status change
+  refetched it. Pages the bridge still serves from the cleared session are ignored so it can't
+  come back.
+
 ## [0.32.0] - 2026-08-18
 
 ### Fixed
