@@ -4,7 +4,7 @@
 Tailscale. A mobile-first PWA (Vite + React + TS + Tailwind v4 + shadcn) plus a Bun/TS bridge that
 talks to Herdr's Unix socket, letting you monitor and reply to agents from a phone. The Herdr
 plugin id is `herdr.collie` (manifest: `herdr-plugin.toml`). Orientation:
-[`README.md`](./README.md) · [`ARCHITECTURE.md`](./ARCHITECTURE.md) · verified API
+[`CONTEXT.md`](./CONTEXT.md) (ICM system map) · [`README.md`](./README.md) · [`ARCHITECTURE.md`](./ARCHITECTURE.md) · verified API
 [`HERDR_API.md`](./HERDR_API.md) · decisions [`.adr/`](./.adr/) · adding a harness
 [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md).
 
@@ -121,8 +121,14 @@ the unit name; the Herdr action runs from anywhere.
   (`web/src/lib/loaders.ts`) fetch the snapshot + pane; **polling is `useRevalidator()` on an
   adaptive interval** (`web/src/hooks/use-polling.ts`); mutations are direct `lib/api.ts` calls
   followed by `revalidator.revalidate()`. There is **no TanStack Query** — don't reintroduce it.
-- Routes (`web/src/router.tsx`): `/`, `/space/:spaceId`, `/settings`, `/pane/:paneId` and
-  `/pane/:paneId/history`. The router instance is module-scoped so it keeps its location.
+- Routes (`web/src/router.tsx`): `/` (Herd), `/spaces`, `/space/:spaceId`, `/traces`,
+  `/traces/:spaceId/:repo`, `/settings`, `/pane/:paneId` and `/pane/:paneId/history`. The router
+  instance is module-scoped so it keeps its location.
+- **Navigation is a bottom bar + one back rule.** `BottomNav` (Herd / Spaces / Traces / Settings)
+  is mounted in `routes/root.tsx` and shown on the destinations and on a space; every screen below
+  a destination passes `AppHeader onBack` — a "‹" that goes up exactly one level (pane → space →
+  Spaces, trace → Traces, history → pane). Don't add a second way back (a Back chip in a strip, the
+  Collie mark as home) or a sibling-switcher row on a pushed screen; that's the mess 0.35.0 removed.
 - **The idle lock pauses; it does not gate.** It only appears when Collie is left *open, visible and
   untouched* — a hidden page never locks, and returning to the foreground auto-resumes. It covers a
   still-mounted router (unmounting it ate in-progress composer drafts) and pauses polling through
