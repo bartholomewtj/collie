@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.31.1] - 2026-08-18
+
+### Fixed
+
+- **Inline history above the live tail now refreshes while the pane is open** — it was fetched once on open, so turns written since (and a `/clear` that swapped sessions) were missing when you scrolled up. Refetched on each agent status change and every 30s while working (51ce49d)
+
 ## [0.31.0] - 2026-08-17
 
 ### Changed
