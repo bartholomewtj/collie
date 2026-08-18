@@ -314,9 +314,13 @@ SSSF_VIZ_DIR=~/.claude/skills/sssf/apps/visualizer
 
 Collie builds the visualiser once into its own state dir (`sssf-viz/`, ~2 s on first start, again
 whenever the source is newer) and serves it under `/sssf/`; **nothing is copied into the Collie
-checkout**. Which repo: for each workspace Collie walks up from its panes' working directories to the
-first git worktree root holding `adws/adw_data/sssf.db`. A repo with an `adws/` folder but no traces
-yet shows a greyed "Traces" chip; a repo without `adws/` shows nothing.
+checkout**. Which repo: for each workspace Collie looks near its panes' working directories — up to
+the enclosing git worktree root, **and up to two levels down** (a pane parked in a folder of repos
+counts) — for roots holding `adws/adw_data/sssf.db`. The tab opens on the repo with the newest run,
+a running one first, and straight on that run's lanes while it is live; when several repos have
+traces, a row of repo chips above the frame switches between them (a dot marks the one with a run
+going). A repo with an `adws/` folder but no traces yet shows a greyed chip; nothing SSSF-shaped
+nearby shows nothing.
 
 The tab is Collie-only — Herdr never sees it — and the visualiser runs in a sandboxed frame that
 cannot reach Collie's own API. Archiving a run is off inside the tab; use the visualiser standalone

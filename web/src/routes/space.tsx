@@ -5,7 +5,7 @@ import { AppHeader, SettingsGear } from "@/components/app-header";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
 import { SpaceStrip } from "@/components/space-strip";
 import { SpaceView } from "@/components/space-view";
-import { SSSF_TAB, SssfChip, SssfFrame } from "@/components/sssf-frame";
+import { SSSF_TAB, SssfChip, SssfFrame, SssfRepoRow } from "@/components/sssf-frame";
 import { TabStrip } from "@/components/tab-strip";
 import { NewSpaceSheet } from "@/components/new-space-sheet";
 import { StatusArea } from "@/components/status-area";
@@ -45,13 +45,21 @@ export function SpaceRoute() {
 
   // The SSSF traces tab (sssf-frame.tsx): a Collie-only tab the bridge advertises per workspace. Once
   // opened, its frame stays mounted (hidden) across tab switches so a watched run isn't lost; bumping
-  // `sssfReset` remounts it back at its sessions list. Both reset with the space, like `tab`.
+  // `sssfReset` remounts it back at its sessions list. `sssfRepo` is the repo chip picked when the
+  // bridge found several (undefined = its attached repo); the first mount opens on the attached run
+  // when one is live, a reset or a repo switch lands on the list. All reset with the space, like `tab`.
   const sssf = selectedWs?.sssf;
   const sssfOpen = tab === SSSF_TAB;
   const [sssfEverOpened, setSssfEverOpened] = useState(false);
   const [sssfReset, setSssfReset] = useState(0);
+  const [sssfRepo, setSssfRepo] = useState<string | undefined>(undefined);
   if (sssfOpen && !sssfEverOpened) setSssfEverOpened(true);
   if (tabSpace !== spaceId && sssfEverOpened) setSssfEverOpened(false);
+  if (tabSpace !== spaceId && sssfRepo !== undefined) setSssfRepo(undefined);
+  // Pin the repo on first open so a later snapshot re-attaching elsewhere can't swap the frame under
+  // the reader; the run to open on is only ever the attached one at that first mount.
+  if (sssfOpen && sssfRepo === undefined && sssf?.attached) setSssfRepo(sssf.attached.repo);
+  const sssfOpenOn = sssfReset === 0 ? sssf?.attached?.adwId : undefined;
 
   const toDashboard = () => navigate(homePath(data.session));
   const switchSpace = (id: string) => navigate(spacePath(id, data.session));
@@ -143,12 +151,24 @@ export function SpaceRoute() {
                   onOpen={open}
                 />
               )}
+              {sssf && sssfOpen && sssf.repos.length > 1 && sssfRepo && (
+                <SssfRepoRow
+                  repos={sssf.repos}
+                  selected={sssfRepo}
+                  onSelect={(name) => {
+                    setSssfRepo(name);
+                    setSssfReset((n) => n + 1);
+                  }}
+                />
+              )}
               {sssf && sssfEverOpened && (
                 <SssfFrame
-                  key={sssfReset}
+                  key={`${sssfReset}:${sssfRepo ?? ""}`}
                   workspace={selectedWs}
                   sssf={sssf}
                   session={data.session}
+                  repo={sssfRepo}
+                  adwId={sssfOpenOn}
                   hidden={!sssfOpen}
                 />
               )}
