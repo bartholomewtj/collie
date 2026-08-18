@@ -1,4 +1,4 @@
-﻿# 0013 — A control key is not a menu key
+﻿# 0022 — A control key is not a menu key
 
 Status: **Accepted** (2026-08-17)
 

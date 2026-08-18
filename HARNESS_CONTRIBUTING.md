@@ -101,7 +101,7 @@ What your adapter must satisfy (all pinned by `describeAdapterConformance`):
    [ADR 0009](./.adr/0009-a-generic-menu-is-driven-by-the-keys-it-names.md) records why (in `/model`
    a digit confirms *and* rewrites the user's default).
 3. **Never a control key**, even when the screen prints one in its footer —
-   [ADR 0013](./.adr/0013-a-control-key-is-not-a-menu-key.md) records why (a control key isn't
+   [ADR 0022](./.adr/0022-a-control-key-is-not-a-menu-key.md) records why (a control key isn't
    consumed by the modal; it reaches the harness's signal handling, and the button's label came from
    the same agent text as the key).
 4. A non-empty `signature` over the region that **changes when the region's text does** — Herdr's

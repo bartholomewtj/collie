@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, realpath, rm } from "node:fs/promises";
+import { mkdir, realpath, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -134,6 +134,12 @@ describe("GrokTranscriptSource", () => {
     await Bun.write(olderLog, userQuery("older"));
     // Make SID newer so inferFromCwd picks the live session.
     await Bun.write(log, userQuery("hi") + "\n" + assistant("yo"));
+    // Stamped explicitly: on a fast disk both writes can land in the same millisecond, and a tie on
+    // mtime would leave readdir order to decide which session is "newest".
+    const older = new Date("2026-01-01T00:00:00Z");
+    const newer = new Date("2026-01-01T00:01:00Z");
+    await utimes(olderLog, older, older);
+    await utimes(log, newer, newer);
     return { base, root, cwd, log };
   }
 

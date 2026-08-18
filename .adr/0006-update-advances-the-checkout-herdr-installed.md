@@ -26,7 +26,7 @@ checkout and re-runs `[[build]]` but does **not** restart the service. Two optio
 
 **`update` advances whatever shape the checkout is in.** One predicate — `git symbolic-ref -q HEAD` —
 picks the strategy: fast-forward the branch for a linked clone, or fetch the default-branch tip and
-re-detach onto it for a managed one, the way Herdr got there (refined by [ADR 0011](./0011-update-pins-to-the-newest-release-tag.md): the managed shape now pins to the newest release tag).
+re-detach onto it for a managed one, the way Herdr got there (refined by [ADR 0019](./0019-update-pins-to-the-newest-release-tag.md): the managed shape now pins to the newest release tag).
 
 **We do not defer to `herdr plugin install` as the refresh path for managed installs.** Reinstall
 doesn't restart the bridge, so it is a two-command dance with a version-skew window in the middle:
