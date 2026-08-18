@@ -1,24 +1,24 @@
 # Next session
 
-_Last handoff: 2026-08-18 (night) — main at 0.34.1 (`ee0d71d`); **PR #43 `nav-restructure` (0.35.0) open, unmerged, and it is what the live bridge is serving**_
+_Last handoff: 2026-08-18 (night) — main at **0.35.0** (`7a772de`), tag `v0.35.0`, **live on this box**_
 
 ## Where this stopped
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
 agents through a Herdr socket, served via `tailscale serve`).
 
-- **Nav rebuilt on phone-app lines — PR #43 (`nav-restructure`, bumps to 0.35.0), awaiting your
-  review.** Bottom tab bar Herd / Spaces / Traces / Settings (`web/src/components/bottom-nav.tsx`,
+- **Nav rebuilt on phone-app lines — PR #43 merged as 0.35.0, tagged.** Bottom tab bar Herd / Spaces / Traces / Settings (`web/src/components/bottom-nav.tsx`,
   mounted in `routes/root.tsx`, shown on `/`, `/spaces`, `/space/*`, `/traces`, `/settings`); every
   pushed screen gets `AppHeader onBack` (a "‹" that goes up one level: pane → space → Spaces, trace →
   Traces, history → pane). New routes `routes/spaces.tsx`, `routes/traces.tsx` (`/traces` list,
   `/traces/:spaceId/:repo` full-screen frame). Removed: `SpaceStrip`, `SssfChip`, `SssfRepoRow`,
   `TabStrip.trailing`, `spaceTracesPath`/`?tab=traces&from=`, the Settings gear, the in-pane tab
   strip, the space heading in `SpaceView`. Typecheck clean, 2617 web tests pass, clicked through on
-  the tailnet URL. **The bridge on this box is serving the branch build** (`web/dist` was rebuilt
-  from it) — open the PWA to try it; to go back: `git checkout main`, `collie-ctl.ps1 build`.
-  Judgment call to confirm with Bart: the in-pane tab strip is gone (swipe-up switcher and back →
-  space cover it); offer a compact one back if missed.
+  the tailnet URL. The bridge here serves this build (`web/dist` rebuilt from it before merge; the
+  merged tree is identical). Not yet phone-checked by Bart. Judgment call to confirm: the in-pane
+  tab strip is gone (swipe-up switcher and back → space cover it); offer a compact one back if
+  missed. `CLAUDE.md` now states the nav rule (bottom bar + one back) so upstream merges don't
+  reintroduce a second way back.
 - **Visualiser phone fix (in the sssf skill folder, not this repo):** `SessionTrace.vue` ≤640px now
   keeps the waterfall at desktop width (`min-width: 900px`), scrolls it sideways, and pins the
   lane-name column (`position: sticky`). Collie rebuilt it on restart. Same caveat as the other
@@ -84,8 +84,8 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Review PR #43 on the phone** (it's live). Merge, tag `v0.35.0`, or say what to change. If the
-   PR is dropped, rebuild main so the live UI matches (`collie-ctl.ps1 build` then `restart`).
+1. **Phone-check 0.35.0** (it's live): bottom bar, back from a pane, Traces list → repo → back.
+   Fix-ups are patch bumps.
 2. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
 3. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
