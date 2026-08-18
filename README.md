@@ -320,7 +320,9 @@ counts) — for roots holding `adws/adw_data/sssf.db`. The tab opens on the repo
 a running one first, and straight on that run's lanes while it is live; when several repos have
 traces, a row of repo chips above the frame switches between them (a dot marks the one with a run
 going). A repo with an `adws/` folder but no traces yet shows a greyed chip; nothing SSSF-shaped
-nearby shows nothing.
+nearby shows nothing. The same Traces chip sits at the end of a pane's own tab bar, so you can
+jump to traces from the terminal view; the space then shows a **← Back to terminal** button that
+returns you to that pane.
 
 The tab is Collie-only — Herdr never sees it — and the visualiser runs in a sandboxed frame that
 cannot reach Collie's own API. Archiving a run is off inside the tab; use the visualiser standalone
