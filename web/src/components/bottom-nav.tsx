@@ -44,7 +44,9 @@ export function BottomNav({ session, traces, attention }: BottomNavProps) {
           type="button"
           aria-current={it.on ? "page" : undefined}
           onClick={() => {
-            if (!it.on) navigate(it.to);
+            // replace, not push: a tab bar switches sections, it doesn't drill down. Otherwise the
+            // phone's back gesture retraces every tab you touched before it leaves the app.
+            if (!it.on) navigate(it.to, { replace: true });
           }}
           className={cn(
             "relative flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-medium transition-colors active:bg-background/40",

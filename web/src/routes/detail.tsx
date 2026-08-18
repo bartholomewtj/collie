@@ -24,7 +24,11 @@ export function DetailRoute() {
   const location = useLocation();
   const stalled = useLoadingStalled();
 
-  const fresh = (location.state as { freshPane?: AgentView } | null)?.freshPane;
+  const navState = location.state as { freshPane?: AgentView; from?: string } | null;
+  const fresh = navState?.freshPane;
+  // The screen that opened this pane (Herd sets it; a deep link / notification / Spaces drill-in
+  // doesn't). "‹" returns there, so the header back and the phone's back gesture agree.
+  const from = navState?.from;
   const inSnapshot =
     root.agents.some((a) => a.paneId === paneId) ||
     root.shellPanes.some((p) => p.paneId === paneId);
@@ -48,12 +52,14 @@ export function DetailRoute() {
   const tabLabel = root.tabs.find((t) => t.tabId === agent?.tabId)?.label;
   const gone = !agent;
 
-  // "Up" from a pane is its space — the native stack shape (Spaces › space › pane). Remember the
-  // last workspace we saw so a pane that has just closed still lands on its space, not Home.
+  // "Up" from a pane is where you came from when we know it (`from`), else its space — the native
+  // stack shape (Spaces › space › pane). Remember the last workspace we saw so a pane that has just
+  // closed still lands on its space, not Home.
   const lastWorkspace = useRef<string | undefined>(undefined);
   if (agent) lastWorkspace.current = agent.workspaceId;
-  const up = () =>
-    navigate(lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session));
+  const upPath = () =>
+    from ?? (lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session));
+  const up = () => navigate(upPath());
 
   // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up to its space
   // instead of leaving you on a dead "agent gone" view. Guarded on a connected, non-stale snapshot
@@ -61,12 +67,9 @@ export function DetailRoute() {
   useEffect(() => {
     if (gone && root.bridge === "connected" && !root.error) {
       setStatus("Pane closed", "info");
-      navigate(
-        lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session),
-        { replace: true },
-      );
+      navigate(upPath(), { replace: true });
     }
-  }, [gone, root.bridge, root.error, navigate, session]);
+  }, [gone, root.bridge, root.error, navigate, session, from]);
 
   return (
     <AgentChat
@@ -85,7 +88,8 @@ export function DetailRoute() {
       error={root.error}
       stalled={stalled}
       onBack={up}
-      onSelect={(id) => navigate(panePath(id, session))}
+      // A pane→pane switch keeps `from`, so "‹" still returns to the screen you started from.
+      onSelect={(id) => navigate(panePath(id, session), { state: { from } })}
     />
   );
 }

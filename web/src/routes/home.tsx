@@ -10,7 +10,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { useDashPrefs } from "@/hooks/use-dash-prefs";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { panePath } from "@/lib/nav";
+import { homePath, panePath } from "@/lib/nav";
 
 // Herd — the home destination. The triaged herd and nothing else: Needs you → Ready · unseen →
 // Working → Recent (see lib/triage.ts). Tapping an agent opens its pane. Spaces live behind their
@@ -24,7 +24,11 @@ export function HomeRoute() {
   const navigate = useNavigate();
   const { prefs, setRecentOpen, setRecentDir } = useDashPrefs();
 
-  const open = (id: string) => navigate(panePath(id, data.session));
+  // `from` is where the pane's "‹" returns to. Without it the pane falls back to its space, which
+  // is right when you drilled in via Spaces but wrong from Herd — two back-taps would strand you on
+  // the Spaces list, a screen you never visited, while the phone's own back gesture went to Herd.
+  const open = (id: string) =>
+    navigate(panePath(id, data.session), { state: { from: homePath(data.session) } });
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">
