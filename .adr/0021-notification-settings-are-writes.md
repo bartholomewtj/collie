@@ -1,4 +1,4 @@
-# 0013 — Notification settings are writes
+# 0021 — Notification settings are writes
 
 Status: **Accepted** (2026-08-17)
 

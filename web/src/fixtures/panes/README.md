@@ -228,6 +228,21 @@ transcript above the dialog" is not available as corroborating evidence the way 
 omp's `agent_status` stays `idle` while a picker is up; only the `ask` tool flips it to `blocked`.
 **Nothing may gate on `blocked`.**
 
+## Grok Build TUI corpus (sanitized 2026-08-17)
+
+Grok paints a **full-width rounded box** at the tail (`╭─╮` / `│ >` / `╰─╯`) and pads every
+transcript row out to the terminal column count so timestamps sit on the right. On a phone those
+`─` borders wrap into a wall of horizontal lines. The grok adapter (Tier 1) strips the box and
+tightens the pad. These four files keep the live chrome shape and genericize the conversation —
+do not replace them with a raw dump of a real session.
+
+| Fixture | State / what's in it |
+|---|---|
+| `grok--fresh-idle.txt` | Empty `│ >` box + key-hint row; transcript above survives the strip |
+| `grok--working.txt` | Same box with the activity row (`\| … [stop]`) above it — peeled and re-surfaced as status |
+| `grok--draft-single.txt` | A one-line stranded draft on `│ >` — recovered by `extractInputDraft`, gone from the mirror |
+| `grok--draft-wrapped.txt` | Draft split across two `│ … │` rows — folded back into one space-joined line |
+
 ## Lessons already encoded here (don't re-learn them)
 
 - **Match on parsed text, not raw bytes**: SGR codes sit *between* glyphs (`❯` and `1.` are in

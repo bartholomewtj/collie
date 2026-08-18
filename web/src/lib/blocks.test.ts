@@ -154,9 +154,21 @@ describe("splitLines — no-wrap terminal borders", () => {
     ["corner row", "┌".repeat(40)],
     ["vertical row", "│".repeat(40)],
     ["table edge", `┌${"─".repeat(40)}┐`],
+    ["short rounded box", `╭${"─".repeat(19)}╮`],
     ["prose", "This ordinary prose should retain its normal wrapping behavior."],
   ])("does not mark %s", (_name, text) => {
     expect(splitLines(parseAnsi(text))[0]!.noWrap).toBeUndefined();
+  });
+
+  // Grok/omp composer chrome: a rounded full-width box. Wrap-on would otherwise turn each
+  // 200-column `╭─╮` / `╰─╯` into a wall of `─` on a phone. Square `┌─┐` table edges stay
+  // unmarked above — this is the rounded pair only, and only once the `─` run clears the
+  // same twenty-glyph floor as a pure rule.
+  it("clips a long rounded box border, including Grok's labelled bottom", () => {
+    const top = `  ╭${"─".repeat(40)}╮  `;
+    const bottom = `  ╰${"─".repeat(20)} Grok 4.6 (high) · always-approve ─╯`;
+    expect(splitLines(parseAnsi(top))[0]!.noWrap).toBe(true);
+    expect(splitLines(parseAnsi(bottom))[0]!.noWrap).toBe(true);
   });
 });
 

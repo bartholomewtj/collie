@@ -1,4 +1,4 @@
-# 0011 — Update pins to the newest release tag
+# 0019 — Update pins to the newest release tag
 
 Status: **Accepted** (2026-08-17)
 

@@ -1,4 +1,4 @@
-# 0012 — Subscribe stays read-level
+# 0020 — Subscribe stays read-level
 
 Status: **Accepted** (2026-08-17)
 

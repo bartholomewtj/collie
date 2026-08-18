@@ -93,22 +93,27 @@ export interface AgentView {
  * added to the omit list here. If you add one, strip it here in the same change.
  */
 export type PaneWire = Omit<AgentView, "agentSession"> & {
-  /** True when this pane's history is actually offerable: the agent named a session AND its harness
-   *  has a journal adapter. Says nothing about whether the log is readable — a named session whose
-   *  file is missing still answers `available:false` with reason `no-log`. */
+  /** True when this pane's history is actually offerable: the harness has a journal adapter AND
+   *  either Herdr named a session or the adapter can infer one from cwd (Grok). Says nothing about
+   *  whether the log is readable — a named session whose file is missing still answers
+   *  `available:false` with reason `no-log`. */
   hasSession?: boolean;
 };
 
 /**
  * Strip a pane down to its wire shape. The one place the session ref leaves the bridge's hands.
  *
- * `hasJournal` is asked rather than assumed: a harness can name a session while having no adapter to
- * read it (Herdr detects more agents than Collie has journals for). Keying the flag on the ref alone
- * would advertise a History affordance that always comes back empty, so the registry gets a vote.
+ * `offerHistory` is asked rather than assumed: a harness can name a session while having no adapter
+ * to read it (Herdr detects more agents than Collie has journals for), and a harness can have an
+ * adapter with no Herdr session (Grok, inferred from cwd). Keying the flag on the ref alone would
+ * hide Grok history and advertise empty History buttons for unsupported agents.
  */
-export function toPaneWire(pane: AgentView, hasJournal: (agent: string) => boolean): PaneWire {
+export function toPaneWire(
+  pane: AgentView,
+  offerHistory: (agent: string, hasSessionRef: boolean) => boolean,
+): PaneWire {
   const { agentSession, ...rest } = pane;
-  return agentSession && hasJournal(pane.agent) ? { ...rest, hasSession: true } : rest;
+  return offerHistory(pane.agent, Boolean(agentSession)) ? { ...rest, hasSession: true } : rest;
 }
 
 /** A Herdr workspace ("space") — a project-scoped container of tabs. From `workspace.list`. */
@@ -277,12 +282,40 @@ export interface CreatedPane {
  */
 export type CreateResponse = { ok: true; pane: CreatedPane } | { ok: false; error: string };
 
+/**
+ * One operator-declared slash command (a `[[commands]]` row in their `commands.toml`). A pane any of
+ * these rows address shows them INSTEAD of the shipped Agent-commands catalog; a pane none of them
+ * address keeps it (ADR 0018). This is the escape hatch for commands the shipped catalog cannot know
+ * about — plugin- or user-registered ones like omp's `/fork-in-herdr` — which exist only on THIS
+ * operator's machine and so must never be hard-coded into `web/src/lib/agent-commands.ts`.
+ */
+export interface OperatorCommand {
+  /** Herdr agent name this applies to, lowercased. Omitted = every agent. */
+  agent?: string;
+  /** Includes the leading slash. */
+  command: string;
+  /** One-line description shown in the palette (also searched). */
+  description: string;
+  /** True when tapping should insert `/cmd ` into the composer instead of submitting it. */
+  takesArg: boolean;
+  /** Placeholder shown after insert, e.g. `<name>`. Empty when {@link takesArg} is false. */
+  argHint: string;
+  /**
+   * The operator marking their own row dangerous — it then gets the same two-tap confirmation a
+   * shipped dangerous command gets. Only ever ADDS: a row naming a shipped command inherits that
+   * command's confirm regardless (rule 3 in agent-commands.ts), and `false` cannot lift it.
+   */
+  confirm: boolean;
+}
+
 /** GET /api/config — bridge capabilities and the build id (push setup + stale-cache detection). */
 export interface BridgeConfig {
   push: boolean;
   vapidPublicKey: string;
   /** Build id of the bundle the bridge is currently serving (for stale-cache detection). */
   build?: string;
+  /** The operator's own palette rows. Absent/empty when there is no `commands.toml`. */
+  operatorCommands?: OperatorCommand[];
 }
 
 /** Rank for triage ordering — lower sorts first ("NEEDS YOU" at the top). */

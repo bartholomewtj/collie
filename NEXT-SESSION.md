@@ -1,51 +1,67 @@
 # Next session
 
-_Last handoff: 2026-08-17 — branch `chore/claudesssf-install`_
+_Last handoff: 2026-08-18 — main at 0.32.0 (`b099df8`)_
 
 ## Where this stopped
 
-This is a fork of [AltanS/collie](https://github.com/AltanS/collie) (a phone web UI that drives
-terminal AI agents through a Herdr socket, published via `tailscale serve`). A security audit of
-upstream was done on 2026-08-16 and its 12 findings are filed as issues #1–#12 on **this fork**
-(`bartholomewtj/collie`), ordered by severity. Nothing has been fixed yet and nothing has been
-reported upstream. claudeSSSF is installed so the fixes can be run as ADWs; PR #13 carries that
-install and is waiting for you to merge.
+Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
+agents through a Herdr socket, served via `tailscale serve`).
+
+- **Security audit is done.** 11 of the 12 issues filed on 2026-08-16 are fixed and merged; each has
+  a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default changed
+  (`.adr/0019`–`0023`). Only #12 (low-priority ops hardening) is open.
+- **Upstream is merged in** (PR #35): AltanS/collie 0.30.0 → 0.31.1 landed as fork **0.32.0**.
+  Both repos had used `0.31.1` for different content, so the fork's version line now runs ahead;
+  `CHANGELOG.md` keeps upstream's entries under their own heading.
+- **ADRs renumbered** (PR #36): the fork's five ADRs moved from 0011–0014 to 0019–0023 so
+  upstream's reserved `v1` block (0011–0016) can't collide.
+- Nothing has been reported upstream.
 
 ## Resume with
 
 ```bash
 cd C:\claudeOS\Projects\collie
-git checkout main && git pull            # after merging PR #13
-bun install --frozen-lockfile && bun test ./bridge   # 547 pass / 39 fail on Windows — see below
-just demo                                # claudeSSSF smoke test (or: uv run adws/adw_prompt.py "hi" --agent scout)
+git checkout main && git pull
+git fetch upstream && git log --oneline HEAD..upstream/main    # anything new upstream?
+bun install --frozen-lockfile && bun test ./bridge/server.test.ts
 ```
+
+Clean test bar without WSL — run in a container (mount path must be Windows-style):
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -v "C:\claudeOS\Projects\collie:/src:ro" oven/bun:1 bash -c \
+  'cp -r /src /w && cd /w && rm -rf node_modules web/node_modules && bun install --frozen-lockfile >/dev/null; bun test bridge | tail -3'
+```
+
+For `scripts/collie-ctl.test.sh` in that container also `apt-get install -y git` and strip CRLF
+first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. Merge PR #13 (claudeSSSF install) — https://github.com/bartholomewtj/collie/pull/13
-2. Fix issue #1 (High: any `localhost` Origin bypasses the same-origin gate) — one clause in
-   `bridge/server.ts:1141-1145` plus the test at `bridge/server.test.ts:92-99` that asserts the
-   bug. Say "run adw_simple_sdlc on issue #1" and the orchestrator will drive it; branch + PR
-   on this fork, you merge.
-3. Decide whether to send #1 upstream to AltanS/collie (not sent yet — your call). Then work
-   down #2–#7 (Medium) the same way.
+1. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
+   concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
+   fail-closed defaults; take upstream's docs structure.
+2. **#12** — low-priority ops hardening (CI permissions/pins, systemd directives, pidfile match,
+   Windows arg quoting). Small; could be a hand-written PR rather than a factory run.
+3. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
 
 ## Open
 
-- PR #13 — Install claudeSSSF factory — waiting on your review/merge (no CI on the fork)
-- Issues #1 High CSRF via loopback Origin · #2 TRUSTED_USER fails open · #3 DNS rebinding default
-  · #4 0.0.0.0 bind accepted · #5 `.env` sourced as shell · #6 unverified update · #7 push SSRF
-  · #8–#12 Low hardening (read-level POSTs, upload MIME, error page leak, frontend, ops/CI)
+- Issue #12 only.
+- claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits; fix belongs in
+  the factory, not here.
 
 ## Watch out for
 
-- **`bun test ./bridge` fails 39 tests on Windows** — all POSIX path assumptions (`/srv/...`,
-  chmod, unix sockets). Upstream targets Linux/macOS; its CI is green. Don't chase these; judge
-  fixes by the tests you touch, or run in WSL/a sandbox for a clean bar.
-- `gh` default repo is now set to `bartholomewtj/collie`. Remotes: `origin` = fork,
-  `upstream` = AltanS/collie. `gh issue`/`gh pr` without `--repo` used to hit upstream — that's why
-  the handoff survey listed upstream's #91/#99/#105.
-- claudeSSSF roster (`adws/adw_sssf_config/sssf.config.yaml`): planner=opus on Claude Code,
-  builder/scout/documenter=agy (free Gemini quota), reviewer=grok. `.env` exists and is
-  gitignored; `PYTHONUTF8=1` needed on Windows for the ADW scripts.
-- The audit's full write-up lives only in the issues — there is no separate report file.
+- **Stacked PRs: retarget to `main` before merging the base PR**, then merge, then delete branches.
+  Deleting a branch another PR targets auto-closes that PR (how #15 died; #18 replaced it).
+- **Don't edit `adws/adw_sssf_config/sssf.config.yaml` while a run is going** — the builder's
+  permission check sees a changed protected file and rolls it back.
+- `bun test ./bridge` fails 34 tests on Windows (symlinks, chmod 0600, unix sockets) — same set on
+  every branch. Judge by the tests you touched, or use the container above (752/752 on Linux).
+- The Windows checkout is CRLF (autocrlf). Python `str.replace` scripts need `\r\n`; `sed -n` hides
+  the `\r`. `bash scripts/*.sh` on Linux fails with `set: pipefail: invalid option` until stripped.
+- `sssf.db` shows several old sessions as `running`/`fail` — killed runs whose work was harvested
+  by hand. Not live.
+- Roster (`sssf.config.yaml`): planner opus, builder/scout/documenter agy, reviewer grok-4.5.
+- `gh` default repo is this fork; `origin` = fork, `upstream` = AltanS/collie.

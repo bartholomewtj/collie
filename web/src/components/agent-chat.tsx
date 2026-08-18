@@ -36,6 +36,8 @@ import type { PromptBlockAction } from "@/components/prompt-select-block";
 import type { PreviewBlockAction } from "@/components/preview-select-block";
 import type { MenuBlockAction } from "@/components/menu-block";
 import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
+import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
+import { TranscriptView } from "@/components/transcript-view";
 import { shortCwd } from "@/lib/format";
 import { historyPath, spacePath } from "@/lib/nav";
 import { isReadOnly } from "@/lib/types";
@@ -85,10 +87,11 @@ type Drawer = "switcher" | null;
 // line (`setStatus`), then a revalidation pulls the fresh output.
 //
 // This shell owns the pane frame: the header (the find bar takes it over while find is open), the
-// terminal mirror (freeze, find highlighting, load-older scrollback), and navigation (the nav hub +
-// swipe-up switcher). The composer cluster — draft, send, keys, quick actions, slash-commands, image
-// upload, display prefs, and the find-in-output trigger — lives in <Composer>; it reaches back here
-// only to re-follow the tail after a send, focus on a mirror tap, and open find (which freezes the tail).
+// terminal mirror (freeze, find highlighting, transcript above the live tail, load-older scrollback
+// on shells), and navigation (the nav hub + swipe-up switcher). The composer cluster — draft, send,
+// keys, quick actions, slash-commands, image upload, display prefs, and the find-in-output trigger —
+// lives in <Composer>; it reaches back here only to re-follow the tail after a send, focus on a
+// mirror tap, and open find (which freezes the tail).
 export function AgentChat({
   paneId,
   session,
@@ -115,7 +118,7 @@ export function AgentChat({
   const connecting = isConnecting({ bridge, error, stalled });
   const { newTab } = useSpaceActions();
   // Single display-prefs instance: the View controls (in <Composer>) write it, the mirror reads it.
-  const { prefs, setWrap, stepFontSize, setRawTerminal } = useDisplayPrefs();
+  const { prefs, setWrap, stepFontSize, setRawTerminal, setTapToFocus } = useDisplayPrefs();
   // Raw-terminal escape hatch: when on, every Claude grammar is bypassed and the plain mirror shows,
   // so a mis-detected/mis-rendered dialog can always be driven by hand with the keys pad.
   const grammarsOn = !prefs.rawTerminal;
@@ -254,6 +257,18 @@ export function AgentChat({
     requestedLines < agent.readableLines &&
     canGrowRequestedLines(paneId, session);
 
+  // Prefetch the last transcript turns above the live tail so a swipe up reads the conversation
+  // instead of bouncing off a 50-row alternate-screen viewport, and keep that end fresh as the agent
+  // works (keyed on its status). Header History still opens the dedicated page (find / jump-to-turn).
+  const getScrollElement = useCallback(() => listRef.current?.getScrollElement() ?? null, []);
+  const inline = useInlineHistory({
+    paneId,
+    session,
+    enabled: historyAvailable,
+    status: agent?.status,
+    getScrollElement,
+  });
+
   // Load older scrollback: raise the per-pane requested line count and refetch. The enlarged buffer
   // prepends older lines at the top, so we adopt it into the frozen display and re-anchor the scroll
   // position (measure height before, restore after) to keep the content you were reading in place.
@@ -261,7 +276,7 @@ export function AgentChat({
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const adoptTarget = useRef<number | null>(null); // the requestedLines a pending grow is waiting on
   const pendingRestore = useRef(false); // re-anchor scroll after the enlarged display paints
-  function loadOlder() {
+  const loadOlder = useCallback(() => {
     if (loadingOlder || !canGrowRequestedLines(paneId, session)) return;
     const el = listRef.current?.getScrollElement();
     olderAnchor.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
@@ -269,7 +284,7 @@ export function AgentChat({
     setFollowing(false); // stay put in history rather than snapping to the tail
     adoptTarget.current = growRequestedLines(paneId, session);
     revalidator.revalidate();
-  }
+  }, [loadingOlder, paneId, session, revalidator]);
   // Adopt the enlarged buffer into the frozen display once the *grown* fetch lands — keyed on the
   // requested line count so a stale in-flight poll (still on the old window) can't adopt early.
   // Adopts the whole {text, revision} pair (props from the same loader result) so the frozen
@@ -297,6 +312,19 @@ export function AgentChat({
     olderAnchor.current = null;
   }, [display]);
 
+  // Swipe toward the top pages older transcript turns. Shells still use the Load older tap —
+  // each grow is a bigger Herdr read, and auto-firing those from a restore would cascade.
+  useEffect(() => {
+    const el = listRef.current?.getScrollElement();
+    if (!el) return;
+    const onScroll = () => {
+      if (el.scrollTop >= INLINE_GROW_THRESHOLD) return;
+      if (historyAvailable) inline.growUpward();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [historyAvailable, inline.growUpward]);
+
   // Opening / switching into this pane must land on the live tail. Stickiness usually handles it,
   // but the first flex layout + AnsiOutput paint can race; pin once after mount so a tab/pane open
   // never strands you at the oldest scrollback.
@@ -304,8 +332,18 @@ export function AgentChat({
     listRef.current?.scrollToBottom();
   }, []);
 
+  // Prefetch inserts turns ABOVE the live tail. If the mirror didn't overflow, scrollTop was 0
+  // and stays 0, so without a re-pin the reader lands on the oldest turn. Stay on the tail
+  // while following; the hook re-anchors once they've scrolled up.
+  useLayoutEffect(() => {
+    if (following && inline.entries.length > 0) listRef.current?.scrollToBottom();
+  }, [inline.entries, following]);
+
   // After a successful send, snap the mirror back to the live tail so the reply's result is visible.
-  const onSent = () => {
+  // A context wipe (`/clear`, or `/new` on agents that spell it that way) also drops the inline
+  // history right away — those turns belong to the session that just ended.
+  const onSent = (text: string) => {
+    if (/^\/(clear|new)(\s|$)/.test(text.trim())) inline.reset();
     setFollowing(true);
     revalidator.revalidate();
     listRef.current?.scrollToBottom();
@@ -534,7 +572,14 @@ export function AgentChat({
     navigate(spacePath(workspaceId, session));
   }
 
-  // Tapping the terminal mirror focuses the composer so you can start typing right away. Two bails:
+  // Tapping the terminal mirror focuses the composer so you can start typing right away. Three bails:
+  //  - the operator turned "Tap to type" off (View). It is on by default and always has been — the
+  //    mirror as one big "start typing" target is the fastest path from reading to replying on a
+  //    phone. But the same handler makes the mirror unable to behave like a document, which is what
+  //    someone expects who is trying to interact with a LINE rather than reply to it, and they read
+  //    it as the tap being absorbed. Off, the mirror keeps its buttons and its links; it just stops
+  //    volunteering the keyboard. (What it still cannot offer is a tappable agent-printed hyperlink:
+  //    herdr's `pane.read` strips OSC 8, so the link target never reaches Collie at all.)
   //  - the tap landed on an interactive control INSIDE the mirror — a native prompt/wizard/preview
   //    button, the Load-older button, or the note editor's own textarea. Their click bubbles up to
   //    this handler, and focusing the composer here would pop the soft keyboard on every option tap
@@ -542,6 +587,7 @@ export function AgentChat({
   //  - the user is selecting text (a long-press selection), so copy works instead of the tap
   //    collapsing the selection and popping the keyboard.
   function focusFromMirror(e: ReactMouseEvent<HTMLDivElement>) {
+    if (!prefs.tapToFocus) return;
     const target = e.target as Element | null;
     // The `a` is what keeps a tap on an autolinked URL (components/ansi-output) from popping the
     // keyboard on top of the page it just opened. Don't trim it out of this selector.
@@ -585,10 +631,10 @@ export function AgentChat({
         // composer's old View row, which put the button at the bottom of the screen and its UI at the
         // top. Offered only when there's buffered output to search; opening it freezes the tail.
         //
-        // History opens the agent's own transcript, the only real conversation history a Claude pane
-        // has: its terminal runs on the alternate screen, so the mirror below can never show more
-        // than the visible viewport. Offered only when the pane reported an agent session id (i.e. a
-        // transcript can exist at all), so the button never leads to an empty screen.
+        // History still opens the dedicated transcript page (find / jump-to-turn). The last turns
+        // now also sit above the live tail so a swipe up reads the conversation without leaving
+        // the pane. Offered only when the pane reported an agent session id, so the button never
+        // leads to an empty screen.
         //
         // The status pill is dimmed while the connection isn't live, so a frozen "working"/"idle"
         // from the last snapshot doesn't masquerade as current. A bare shell shows a muted "shell" tag.
@@ -729,46 +775,44 @@ export function AgentChat({
             hasNew={hasNew}
             className="px-2 py-3"
           >
-            {display ? (
-              <>
-                {/* Top-of-buffer affordance, reached by scrolling up. WHICH button appears is decided
-                    by what the pane can actually offer, because the two are never both possible:
-
-                      • an agent pane with a transcript → "Show entire history". Its terminal runs on
-                        the alternate screen, which keeps no scrollback ring, so the mirror can never
-                        show more than the viewport — the agent's own session log is the only history
-                        that exists (see bridge/transcript.ts).
-                      • a pane with real scrollback (a shell, on the primary screen) → "Load older",
-                        which grows the requested window.
-                      • neither → nothing.
-
-                    This used to be gated on `truncated`, which Herdr never sets true — so the button
-                    rendered on no pane at all. `readableLines` (scrollback depth + viewport) is the
-                    signal that actually works. */}
-                {historyAvailable ? (
-                  <button
-                    type="button"
-                    onClick={() => navigate(historyPath(paneId, session))}
-                    className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium text-muted-foreground transition-colors active:bg-muted/50"
-                  >
-                    <ScrollText className="size-3.5" />
-                    Show entire history
-                  </button>
-                ) : moreScrollback ? (
-                  <button
-                    type="button"
-                    onClick={loadOlder}
-                    disabled={loadingOlder}
-                    className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium text-muted-foreground transition-colors active:bg-muted/50 disabled:opacity-60"
-                  >
-                    {loadingOlder ? (
+            <>
+              {/* Agent panes: last transcript turns sit above the live tail so a swipe up reads
+                  the conversation. Shells (primary screen, real scrollback ring) still page the
+                  terminal buffer with Load older. The two are never both possible. */}
+              {inline.entries.length > 0 && (
+                <div className="mb-3">
+                  {inline.loading && (
+                    <div className="mb-2 flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground">
                       <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <ArrowUpToLine className="size-3.5" />
-                    )}
-                    {loadingOlder ? "Loading…" : "Load older"}
-                  </button>
-                ) : null}
+                      Loading…
+                    </div>
+                  )}
+                  <TranscriptView entries={inline.entries} agent={agent?.agent} />
+                  {display ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-[11px] font-medium text-muted-foreground">Live</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  ) : null}
+                </div>
+              )}
+              {!historyAvailable && moreScrollback ? (
+                <button
+                  type="button"
+                  onClick={loadOlder}
+                  disabled={loadingOlder}
+                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium text-muted-foreground transition-colors active:bg-muted/50 disabled:opacity-60"
+                >
+                  {loadingOlder ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUpToLine className="size-3.5" />
+                  )}
+                  {loadingOlder ? "Loading…" : "Load older"}
+                </button>
+              ) : null}
+              {display ? (
                 <AnsiOutput
                   text={display}
                   wrap={prefs.wrap}
@@ -784,10 +828,10 @@ export function AgentChat({
                   onMenuAction={handleMenuAction}
                   promptDisabled={readOnly || gone}
                 />
-              </>
-            ) : (
-              <div className="py-16 text-center text-sm text-muted-foreground">(no recent output)</div>
-            )}
+              ) : inline.entries.length === 0 ? (
+                <div className="py-16 text-center text-sm text-muted-foreground">(no recent output)</div>
+              ) : null}
+            </>
           </ChatMessageList>
         </div>
 
@@ -870,6 +914,7 @@ export function AgentChat({
             setWrap={setWrap}
             stepFontSize={stepFontSize}
             setRawTerminal={setRawTerminal}
+            setTapToFocus={setTapToFocus}
             onSent={onSent}
           />
         </div>

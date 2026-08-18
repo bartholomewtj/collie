@@ -13,6 +13,7 @@ describe("safeHref", () => {
     ["http", "http://example.com"],
     ["mailto", "mailto:a@b.com"],
     ["rooted path", "/pane/w1:p1"],
+    ["rooted path with a nested slash", "/pane/w1:p1/history"],
     ["fragment", "#section"],
   ])("allows %s", (_label, href) => {
     expect(safeHref(href)).toBe(href);
@@ -24,6 +25,8 @@ describe("safeHref", () => {
     ["JaVaScRiPt: (case dodge)", "JaVaScRiPt:alert(1)"],
     ["data:", "data:text/html,<script>alert(1)</script>"],
     ["vbscript:", "vbscript:msgbox(1)"],
+    ["scheme-relative //", "//evil.tld/login"],
+    ["scheme-relative /\\ (browsers normalise it to //)", "/\\evil.tld/login"],
     ["a bare word", "notaurl"],
     ["empty", "   "],
   ])("refuses %s", (_label, href) => {

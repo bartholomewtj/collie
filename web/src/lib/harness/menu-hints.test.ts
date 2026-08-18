@@ -18,7 +18,15 @@ describe("menuKeyFor", () => {
     expect(menuKeyFor("↓")).toBe("Down");
     expect(menuKeyFor("←")).toBe("Left");
     expect(menuKeyFor("→")).toBe("Right");
-    expect(menuKeyFor("ctrl+g")).toBe("ctrl+g");
+  });
+
+  // .adr/0022: unlike the footer's other keys, a control key isn't consumed by the modal — it
+  // reaches the harness's signal handling. The label comes from the same agent text as the key, so
+  // "ctrl+c to Continue" was a button reading "Continue" that interrupted the run (issue #11).
+  it("NEVER maps a control key, even when the footer names one", () => {
+    for (const token of ["ctrl+c", "ctrl+d", "ctrl+z", "ctrl+g", "ctrl+e", "Ctrl+C"]) {
+      expect(menuKeyFor(token), token).toBeNull();
+    }
   });
 
   // .adr/0009: a digit in the /model picker confirms AND persists the default. It is a valid Herdr

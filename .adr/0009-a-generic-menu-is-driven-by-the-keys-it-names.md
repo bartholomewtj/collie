@@ -1,6 +1,6 @@
 # 0009 — A generic menu is driven by the keys it names, never by digits
 
-Status: **Accepted** (2026-08-05)
+Status: **Accepted** (2026-08-05) — narrowed by [0022](./0022-a-control-key-is-not-a-menu-key.md)
 
 ## Context
 

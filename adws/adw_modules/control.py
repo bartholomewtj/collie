@@ -69,7 +69,7 @@ class BudgetExceeded(SystemExit):
 
 RATE_LIMIT_TYPES = {"rate_limit_error", "rate_limit", "usage_limit_error"}
 RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "usage limit",
-                      "too many requests", "429")
+                      "session limit", "too many requests", "429")
 
 # Where a reset time might be, in the order we look. Values are read as:
 #   > 1_000_000_000  -> unix epoch seconds
@@ -361,12 +361,17 @@ def replayable(phase_name: str, completed: dict[str, str]) -> bool:
     return phase_name in completed
 
 
-def commit_already_made(porcelain: str, head_message: str, message: str) -> bool:
-    """True when `git commit` would be a no-op repeat of the commit already
-    at HEAD: nothing staged AND HEAD's message is the one we were about to
-    write. This is what makes a resumed run walk past a commit phase instead
-    of dying on "nothing to commit"."""
-    return not porcelain.strip() and head_message.strip() == message.strip()
+def commit_already_made(porcelain: str, recent_messages: str, message: str) -> bool:
+    """True when `git commit` would be a no-op repeat of a commit the branch
+    already carries: nothing staged AND the message we were about to write is
+    already on a recent commit. HEAD alone is not enough — by the time a run
+    is resumed, an engineer may have stacked commits (a harness fix, say) on
+    top of the one the replayed phase wrote, so the last few messages are
+    searched, record-separated by \\x1e. This is what makes a resumed run walk
+    past a commit phase instead of dying on "nothing to commit"."""
+    wanted = message.strip()
+    made = any(m.strip() == wanted for m in recent_messages.split("\x1e"))
+    return not porcelain.strip() and made
 
 
 # --- The fake -------------------------------------------------------------

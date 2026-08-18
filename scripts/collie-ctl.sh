@@ -274,6 +274,21 @@ self_dnsname() {
     "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).Self.DNSName.replace(/\.\$/,''))}catch{}})"
 }
 
+# The host identities this node actually answers to on the tailnet — MagicDNS name plus Self
+# TailscaleIPs — comma-joined for COLLIE_TAILSCALE_HOSTS. The bridge's Host allowlist is fail-closed
+# (issue #3), and without this every tailnet deployment would need COLLIE_PUBLIC_HOSTS set by hand.
+# Prints nothing if tailscale is absent or not up; callers must tolerate empty.
+# Always exits 0: this script runs under `set -o pipefail`, and `tailscale status` is a failing
+# left-hand side on CI and on any host that is logged out. A failing substitution here used to
+# abort `cmd_start` before the bridge came up (test_serve_failure_does_not_abort_start).
+# Uses PATH `bun`, not `$BUN`: lifecycle tests stub BUN=/bin/true so the bridge is not launched,
+# but still need a real interpreter to parse the fake tailscale JSON.
+self_hosts() {
+  command -v bun >/dev/null || return 0
+  tailscale status --json 2>/dev/null | bun -e \
+    "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d).Self;const o=[];if(s.DNSName)o.push(s.DNSName.replace(/\.\$/,''));for(const ip of s.TailscaleIPs||[])o.push(ip.includes(':')?'['+ip+']':ip);process.stdout.write(o.join(','))}catch{}})" || true
+}
+
 bridge_url() {
   local name; name="$(self_dnsname)"
   if [ -z "$name" ]; then echo "http://127.0.0.1:${PORT} (Tailscale name unavailable)"; return; fi
@@ -428,6 +443,8 @@ write_unit() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   mkdir -p "$(dirname "$UNIT_FILE")" "$CONFIG_DIR"
   harden_config_perms
+  local ts_env=""
+  [ -n "${COLLIE_TAILSCALE_HOSTS:-}" ] && ts_env="Environment=COLLIE_TAILSCALE_HOSTS=${COLLIE_TAILSCALE_HOSTS}"
   cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=Collie
@@ -470,6 +487,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 Environment="HERDR_SOCKET_PATH=${SOCKET}"
 Environment="COLLIE_PORT=${PORT}"
 Environment="HERDR_PLUGIN_CONFIG_DIR=${CONFIG_DIR}"
+${ts_env}
 EnvironmentFile=-"${CONFIG_DIR}/.env"
 
 [Install]
@@ -545,6 +563,10 @@ EOF
 cmd_exec_bridge() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
   export_bridge_env
+  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ] && [ -z "${COLLIE_TAILSCALE_HOSTS:-}" ]; then
+    COLLIE_TAILSCALE_HOSTS="$(self_hosts || true)"
+  fi
+  export COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}"
   export COLLIE_PORT="$PORT"
   export HERDR_SOCKET_PATH="$SOCKET"
   export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
@@ -563,12 +585,19 @@ start_unsupervised() {
     HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
       nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
     echo $! > "${CONFIG_DIR}/collie.pid" )
+  COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}" \
+  HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
+    nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
+  echo $! > "${CONFIG_DIR}/collie.pid"
   echo "bridge started (pid $(cat "${CONFIG_DIR}/collie.pid"), unsupervised)"
 }
 
 cmd_start() {
   harden_config_perms
   ensure_build || true
+  COLLIE_TAILSCALE_HOSTS=""
+  if [ "${COLLIE_SKIP_SERVE:-}" != "1" ]; then COLLIE_TAILSCALE_HOSTS="$(self_hosts || true)"; fi
+  export COLLIE_TAILSCALE_HOSTS
   if have_systemd; then
     write_unit
     systemctl --user enable --now "$UNIT"
@@ -1105,6 +1134,18 @@ cmd_push_test() {
   ( export_bridge_env; "$BUN" run "${PLUGIN_ROOT}/scripts/push-test.ts" "$@" )
 }
 
+# Generate the VAPID keypair Web Push needs and write it into the plugin .env. This exists because the
+# config dir is the hard part: it is resolved four different ways (see resolve_config_dir), so an
+# operator following a "put these in your .env" instruction has to first work out WHICH .env — and
+# getting that wrong looks exactly like push being broken. This verb never guesses: it writes to the
+# same "${CONFIG_DIR}/.env" this script sourced at the top and the unit's EnvironmentFile= points at.
+# Args: [subject] [--force]; scripts/push-keys.ts owns the refusal to silently replace live keys.
+cmd_push_keys() {
+  [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
+  mkdir -p "$CONFIG_DIR"
+  "$BUN" run "${PLUGIN_ROOT}/scripts/push-keys.ts" "${CONFIG_DIR}/.env" "$@"
+}
+
 # Sourced (by scripts/collie-ctl.test.sh) rather than run: define the functions and stop before the
 # dispatch, so a test can call one function in isolation with its dependencies stubbed out.
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
@@ -1126,7 +1167,8 @@ case "${1:-}" in
   url)     bridge_url ;;
   qr)      cmd_qr ;;
   version) cmd_version ;;
+  push-keys) shift || true; cmd_push_keys "$@" ;;
   push-test) shift || true; cmd_push_test "$@" ;;
   logs)    cmd_logs "${2:-50}" ;;
-  *) echo "usage: collie-ctl.sh {start|stop|restart|uninstall|update|version|push-test|build|serve|unserve|status|url|qr|logs}" >&2; exit 2 ;;
+  *) echo "usage: collie-ctl.sh {start|stop|restart|uninstall|update|version|push-keys|push-test|build|serve|unserve|status|url|qr|logs}" >&2; exit 2 ;;
 esac

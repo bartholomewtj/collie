@@ -20,11 +20,13 @@ const KEYS = [
   "COLLIE_CODEX_ROOT",
   "COLLIE_PI_ROOT",
   "COLLIE_OPENCODE_ROOT",
+  "COLLIE_GROK_ROOT",
   // Each harness's own home var participates in journal-root resolution, so the suite must own them
   // too — otherwise a developer with CODEX_HOME set gets different results than CI.
   "CODEX_HOME",
   "PI_CODING_AGENT_DIR",
   "XDG_DATA_HOME",
+  "GROK_HOME",
   "COLLIE_SUBMIT_KEYS",
   "COLLIE_TRUSTED_USER",
   "COLLIE_TRUSTED_USER_OPTIONAL",
@@ -32,6 +34,8 @@ const KEYS = [
   "COLLIE_DEVICE_ALLOWLIST",
   "COLLIE_ALLOWED_ORIGINS",
   "COLLIE_PUBLIC_HOSTS",
+  "COLLIE_TAILSCALE_HOSTS",
+  "COLLIE_ALLOW_ANY_HOST",
   "COLLIE_VAPID_PUBLIC",
   "COLLIE_VAPID_PRIVATE",
   "COLLIE_VAPID_SUBJECT",
@@ -40,6 +44,7 @@ const KEYS = [
   "COLLIE_SKIP_SERVE",
   "HERDR_SOCKET_PATH",
   "HERDR_PLUGIN_STATE_DIR",
+  "HERDR_PLUGIN_CONFIG_DIR",
   "COLLIE_HERDR_DIAL",
 ];
 
@@ -74,9 +79,10 @@ describe("loadConfig", () => {
     expect(cfg.transcript).toBe(true);
     // One root by default, and it is a list of one rather than a special case (issue #92).
     expect(cfg.journalRoots.claude).toHaveLength(1);
-    expect(cfg.journalRoots.claude[0]).toEndWith("/.claude/projects");
+    expect(cfg.journalRoots.claude[0]).toEndWith(join(".claude", "projects"));
     // OpenCode keeps ONE sqlite database at the top of its XDG data dir — no per-session files.
     expect(cfg.journalRoots.opencode).toEqual([join(homedir(), ".local", "share", "opencode")]);
+    expect(cfg.journalRoots.grok).toEqual([join(homedir(), ".grok", "sessions")]);
     expect(cfg.submitKeys).toEqual(["Enter"]);
     expect(cfg.trustedUser).toBe("");
     expect(cfg.trustedUserOptional).toBe(false);
@@ -195,26 +201,39 @@ describe("loadConfig", () => {
     process.env.COLLIE_CODEX_ROOT = "/a/sessions,/b/sessions";
     process.env.COLLIE_PI_ROOT = "/c/sessions,/d/sessions";
     process.env.COLLIE_OPENCODE_ROOT = "/e/opencode,/f/opencode";
+    process.env.COLLIE_GROK_ROOT = "/g/sessions,/h/sessions";
     const cfg = loadConfig();
     expect(cfg.journalRoots.codex).toEqual(["/a/sessions", "/b/sessions"]);
     expect(cfg.journalRoots.pi).toEqual(["/c/sessions", "/d/sessions"]);
     expect(cfg.journalRoots.opencode).toEqual(["/e/opencode", "/f/opencode"]);
+    expect(cfg.journalRoots.grok).toEqual(["/g/sessions", "/h/sessions"]);
   });
 
   test("each harness's own home var relocates its journal root", () => {
     process.env.CODEX_HOME = "/srv/codex";
     process.env.PI_CODING_AGENT_DIR = "/srv/pi";
     process.env.XDG_DATA_HOME = "/srv/share";
+    process.env.GROK_HOME = "/srv/grok";
     const cfg = loadConfig();
-    expect(cfg.journalRoots.codex).toEqual(["/srv/codex/sessions"]);
-    expect(cfg.journalRoots.pi).toEqual(["/srv/pi/sessions"]);
-    expect(cfg.journalRoots.opencode).toEqual(["/srv/share/opencode"]);
+    expect(cfg.journalRoots.codex).toEqual([join("/srv/codex", "sessions")]);
+    expect(cfg.journalRoots.pi).toEqual([join("/srv/pi", "sessions")]);
+    expect(cfg.journalRoots.opencode).toEqual([join("/srv/share", "opencode")]);
+    expect(cfg.journalRoots.grok).toEqual([join("/srv/grok", "sessions")]);
   });
 
   test("an explicit COLLIE_* root beats the harness's home var", () => {
     process.env.CODEX_HOME = "/srv/codex";
     process.env.COLLIE_CODEX_ROOT = "/elsewhere/rollouts";
     expect(loadConfig().journalRoots.codex).toEqual(["/elsewhere/rollouts"]);
+  });
+
+  // The operator's rows sit beside their .env, and the launcher hands us that dir precisely so the
+  // bridge and scripts/collie-ctl.sh never disagree about which one it is.
+  test("commands.toml is resolved in the plugin config dir the launcher passed", () => {
+    process.env.HERDR_PLUGIN_CONFIG_DIR = "/srv/herdr/plugins/collie";
+    expect(loadConfig().commandsFile).toBe(join("/srv/herdr/plugins/collie", "commands.toml"));
+    delete process.env.HERDR_PLUGIN_CONFIG_DIR;
+    expect(loadConfig().commandsFile).toBe(join(homedir(), ".config", "collie", "commands.toml"));
   });
 
   test("reads the per-device auth header and allowlist", () => {
@@ -267,6 +286,19 @@ describe("loadConfig", () => {
     expect(loadConfig().publicHosts).toEqual([
       "collie.example.ts.net",
       "collie.example.com:8443",
+    ]);
+  });
+
+  test("reads the tailscale-hosts allowlist and allowAnyHost flag", () => {
+    expect(loadConfig().allowAnyHost).toBe(false);
+    process.env.COLLIE_ALLOW_ANY_HOST = "1";
+    expect(loadConfig().allowAnyHost).toBe(true);
+
+    process.env.COLLIE_TAILSCALE_HOSTS = " host.example.ts.net , 100.64.0.1 , [fd7a::1] ,";
+    expect(loadConfig().tailscaleHosts).toEqual([
+      "host.example.ts.net",
+      "100.64.0.1",
+      "[fd7a::1]",
     ]);
   });
 

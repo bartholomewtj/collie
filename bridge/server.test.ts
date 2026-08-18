@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { join, normalize } from "node:path";
 
 import {
   BUILD_HEADER,
   cacheControlFor,
   checkAccess,
+  decodePathSegment,
+  failureText,
   marksPaneSeen,
   SEEN_HEADER,
   deviceAuth,
@@ -12,6 +15,7 @@ import {
   isHostAllowed,
   isJsonContentType,
   isLoopbackPeer,
+  isPrivateStaticFile,
   isReservedAuthPath,
   isStateChangingMethod,
   keysPane,
@@ -56,15 +60,22 @@ function cfg(overrides: Partial<Config> = {}): Config {
       codex: ["/nope/codex"],
       pi: ["/nope/pi"],
       opencode: ["/nope/opencode"],
+      grok: ["/nope/grok"],
     },
     submitKeys: ["Enter"],
+    commandsFile: "/nope/commands.toml",
     trustedUser: "",
     trustedUserOptional: false,
+    auditContent: "preview",
     deviceHeader: "",
     deviceAllowlist: [],
     allowedOrigins: [],
     publicHosts: [],
     pushAllowedHosts: [],
+    tailscaleHosts: [],
+    // Test helper default only — keeps non-Host tests testing their own rules without needing ~30
+    // call sites updated. The product default is allowAnyHost: false (fail-closed, issue #3).
+    allowAnyHost: true,
     vapidPublic: "",
     vapidPrivate: "",
     vapidSubject: "mailto:admin@example.com",
@@ -200,8 +211,32 @@ describe("checkAccess — Tailscale identity gate", () => {
   });
 });
 
-describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
-  const c = cfg({ publicHosts: ["collie.example.ts.net"] });
+describe("checkAccess — Host-header validation", () => {
+  const c = cfg({ allowAnyHost: false, publicHosts: ["collie.example.ts.net"] });
+
+  test("the default config rejects a rebound Host==Origin==evil (issue #3)", () => {
+    const defaultCfg = cfg({ allowAnyHost: false });
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        defaultCfg,
+        "read",
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        defaultCfg,
+        "write",
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+  });
+
+  test("default fail-closed config + loopback Host passes for read and write", () => {
+    const defaultCfg = cfg({ allowAnyHost: false });
+    expect(checkAccess(req({ host: "127.0.0.1:8787" }), defaultCfg, "read")).toEqual({ ok: true });
+    expect(checkAccess(req({ host: "localhost:8787" }), defaultCfg, "write")).toEqual({ ok: true });
+  });
 
   test("DNS-rebinding: Origin==Host==evil host is rejected once publicHosts is set", () => {
     expect(
@@ -229,6 +264,7 @@ describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
 
   test("a Host derived from an allowed origin passes", () => {
     const c2 = cfg({
+      allowAnyHost: false,
       publicHosts: ["collie.example.ts.net"],
       allowedOrigins: ["https://collie.example.com"],
     });
@@ -237,11 +273,54 @@ describe("checkAccess — Host-header validation (COLLIE_PUBLIC_HOSTS)", () => {
     ).toEqual({ ok: true });
   });
 
-  test("empty publicHosts keeps legacy behaviour (Host==Origin==evil still passes reads)", () => {
-    // Without opting in, an evil host that also sets a matching Origin passes the bare same-origin
-    // check — the documented legacy hole COLLIE_PUBLIC_HOSTS closes. Proves the default is unchanged.
+  test("tailscaleHosts allows bare host, port, and IP, but rejects unlisted hosts", () => {
+    const cTs = cfg({
+      allowAnyHost: false,
+      tailscaleHosts: ["collie.example.ts.net", "100.64.0.1"],
+    });
+    // Host collie.example.ts.net (no port) passes — https serve
     expect(
-      checkAccess(req({ origin: "https://evil.example.com", host: "evil.example.com" }), cfg()),
+      checkAccess(
+        req({ origin: "https://collie.example.ts.net", host: "collie.example.ts.net" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host collie.example.ts.net:8787 passes — http serve mode, same entry
+    expect(
+      checkAccess(
+        req({ origin: "http://collie.example.ts.net:8787", host: "collie.example.ts.net:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host 100.64.0.1:8787 passes — raw tailnet IP
+    expect(
+      checkAccess(
+        req({ origin: "http://100.64.0.1:8787", host: "100.64.0.1:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: true });
+    // Host evil.example.com rejected
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.example.com", host: "evil.example.com" }),
+        cTs,
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+    // Host evil.com:8787 whose bare form is not an entry rejected
+    expect(
+      checkAccess(
+        req({ origin: "http://evil.com:8787", host: "evil.com:8787" }),
+        cTs,
+      ),
+    ).toEqual({ ok: false, reason: "host not allowed" });
+  });
+
+  test("allowAnyHost opt-out restores permissive Host validation", () => {
+    expect(
+      checkAccess(
+        req({ origin: "https://evil.example.com", host: "evil.example.com" }),
+        cfg({ allowAnyHost: true }),
+      ),
     ).toEqual({ ok: true });
   });
 });
@@ -316,18 +395,35 @@ describe("isStateChangingMethod", () => {
 
 describe("isHostAllowed", () => {
   test("loopback forms are always allowed", () => {
-    const c = cfg({ publicHosts: ["a.ts.net"] });
+    const c = cfg({ allowAnyHost: false, publicHosts: ["a.ts.net"] });
     expect(isHostAllowed("127.0.0.1:8787", c)).toBe(true);
     expect(isHostAllowed("localhost", c)).toBe(true);
     expect(isHostAllowed("[::1]:8787", c)).toBe(true);
   });
 
   test("configured public host and allowed-origin host pass; anything else fails", () => {
-    const c = cfg({ publicHosts: ["a.ts.net"], allowedOrigins: ["https://b.example.com"] });
+    const c = cfg({
+      allowAnyHost: false,
+      publicHosts: ["a.ts.net"],
+      allowedOrigins: ["https://b.example.com"],
+    });
     expect(isHostAllowed("a.ts.net", c)).toBe(true);
     expect(isHostAllowed("b.example.com", c)).toBe(true);
     expect(isHostAllowed("evil.com", c)).toBe(false);
     expect(isHostAllowed("", c)).toBe(false);
+  });
+
+  test("tailscale hosts match bare or with any port, including IPv6 literals", () => {
+    const c = cfg({
+      allowAnyHost: false,
+      tailscaleHosts: ["collie.example.ts.net", "[fd7a::1]"],
+    });
+    expect(isHostAllowed("collie.example.ts.net", c)).toBe(true);
+    expect(isHostAllowed("collie.example.ts.net:8787", c)).toBe(true);
+    expect(isHostAllowed("[fd7a::1]", c)).toBe(true);
+    expect(isHostAllowed("[fd7a::1]:8787", c)).toBe(true);
+    expect(isHostAllowed("other.ts.net", c)).toBe(false);
+    expect(isHostAllowed("evil.com:8787", c)).toBe(false);
   });
 });
 
@@ -410,17 +506,17 @@ describe("sendReplySteps — two-step send & partial-failure clarity", () => {
     expect(client.calls).toEqual(["text", "keys"]);
   });
 
-  test("text step fails → nothing delivered, surfaces Herdr's message (safe to resend)", async () => {
+  test("text step fails → nothing delivered, generic failure (safe to resend)", async () => {
     const client = new FakeClient("text");
     const out = await sendReplySteps(client, "p1", "hello", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "text rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["text"]); // never reached the keys step
   });
 
   test("submit-only (empty text) failure is a plain failure, not the partial-delivery message", async () => {
     const client = new FakeClient("keys");
     const out = await sendReplySteps(client, "p1", "", true, ["Enter"], noSleep);
-    expect(out).toEqual({ ok: false, textDelivered: false, error: "keys rejected" });
+    expect(out).toEqual({ ok: false, textDelivered: false, error: "reply failed" });
     expect(client.calls).toEqual(["keys"]); // no text typed
   });
 
@@ -906,7 +1002,9 @@ describe("startupWarnings — security-posture nags", () => {
     const ws = startupWarnings(cfg({ skipServe: true, trustedUser: "me@example.com" }));
     expect(has(ws, "COLLIE_TRUSTED_USER has no effect")).toBe(true);
     expect(has(ws, "COLLIE_DEVICE_HEADER")).toBe(true);
-    expect(has(ws, "Variant C")).toBe(true);
+    // The pointer must name the doc the variant actually lives in — B–E moved to DEPLOYMENT.md in
+    // 0.31.0, while Variant A stayed in the README (pinned in the empty-trustedUser test below).
+    expect(has(ws, "DEPLOYMENT.md → Variant C")).toBe(true);
     // The Variant-A empty-trustedUser nag must NOT also fire (it's meaningless behind a proxy).
     expect(has(ws, "any tailnet device/user")).toBe(false);
   });
@@ -919,7 +1017,7 @@ describe("startupWarnings — security-posture nags", () => {
   test("no skipServe + empty trustedUser: the existing Variant-A warning still fires", () => {
     const ws = startupWarnings(cfg({ skipServe: false, trustedUser: "" }));
     expect(has(ws, "COLLIE_TRUSTED_USER is empty")).toBe(true);
-    expect(has(ws, "Variant A")).toBe(true);
+    expect(has(ws, "README → Variant A")).toBe(true);
   });
 
   test("no skipServe + trustedUser set: no identity warning (correctly configured)", () => {
@@ -932,16 +1030,30 @@ describe("startupWarnings — security-posture nags", () => {
     expect(has(ws, "COLLIE_TRUSTED_USER_OPTIONAL")).toBe(true);
   });
 
-  test("empty publicHosts: the Host-validation warning fires and no longer names COLLIE_SERVE_MODE", () => {
-    const ws = startupWarnings(cfg({ publicHosts: [] }));
-    expect(has(ws, "COLLIE_PUBLIC_HOSTS is empty")).toBe(true);
-    // The reworded clause must not reference the script-only COLLIE_SERVE_MODE var.
-    expect(has(ws, "COLLIE_SERVE_MODE")).toBe(false);
+  test("allowAnyHost: warns that Host validation is OFF", () => {
+    const ws = startupWarnings(cfg({ allowAnyHost: true }));
+    expect(has(ws, "COLLIE_ALLOW_ANY_HOST=1")).toBe(true);
+  });
+
+  test("empty allowlists: warns that no non-loopback Host is allowed", () => {
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, publicHosts: [], tailscaleHosts: [], allowedOrigins: [] }),
+    );
+    expect(has(ws, "no non-loopback Host is allowed")).toBe(true);
+  });
+
+  test("populated tailscaleHosts: no Host-validation warning", () => {
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, tailscaleHosts: ["collie.example.ts.net"], publicHosts: [] }),
+    );
+    expect(has(ws, "Host")).toBe(false);
   });
 
   test("populated publicHosts: no Host-validation warning", () => {
-    const ws = startupWarnings(cfg({ publicHosts: ["collie.example.ts.net"] }));
-    expect(has(ws, "COLLIE_PUBLIC_HOSTS")).toBe(false);
+    const ws = startupWarnings(
+      cfg({ allowAnyHost: false, publicHosts: ["collie.example.ts.net"] }),
+    );
+    expect(has(ws, "Host")).toBe(false);
   });
 
   test("loopback IPv6 host ::1 produces no bind warning", () => {
@@ -1051,7 +1163,6 @@ describe("cacheControlFor", () => {
       "sw.js",
       "index.html",
       "manifest.webmanifest",
-      "build-info.json",
       "favicon.svg",
       "favicon.ico",
       "apple-touch-icon.png",
@@ -1110,3 +1221,119 @@ describe("marksPaneSeen — CSRF guard on marking a pane seen", () => {
     expect(marksPaneSeen(withHeader({ [SEEN_HEADER]: "anything" }), undefined)).toBe(true);
   });
 });
+
+// issue #11: three checks key off `rel` (the private-file denial, sw.js's Service-Worker-Allowed
+// header, and cacheControlFor's immutable/no-cache split), but `rel` used to come straight from the
+// request while only `full` was normalised — so "/./build-info.json" cleared the containment check
+// and then dodged a rel-keyed denial. WEB is built with join() so this runs on Windows too; the
+// older describe above hardcodes a POSIX path and is a known Windows-only failure.
+describe("resolveStaticPath — rel is normalised, not echoed", () => {
+  const WEB = normalize(join("/srv", "collie", "web", "dist"));
+
+  test.each([
+    ["/./build-info.json", "build-info.json"],
+    ["/a/../build-info.json", "build-info.json"],
+    ["/./assets/app.js", "assets/app.js"],
+    ["/assets/app.js", "assets/app.js"],
+    ["/", "index.html"],
+    ["//sw.js", "sw.js"],
+  ])("%s → rel %s", (pathname, rel) => {
+    expect(resolveStaticPath(pathname, WEB)?.rel).toBe(rel);
+  });
+});
+
+// The build id in a file, served to anyone who could reach the port. Nothing fetches this path —
+// the bridge and collie-ctl read it off disk — so refusing it costs nothing (issue #11).
+describe("isPrivateStaticFile", () => {
+  test("build-info.json is never served", () => {
+    expect(isPrivateStaticFile("build-info.json")).toBe(true);
+  });
+
+  test("every other dist file still is", () => {
+    for (const rel of ["index.html", "sw.js", "manifest.webmanifest", "assets/app.js"]) {
+      expect(isPrivateStaticFile(rel)).toBe(false);
+    }
+  });
+});
+
+describe("decodePathSegment", () => {
+  test("valid plain segment round-trips", () => {
+    expect(decodePathSegment("pane-123")).toBe("pane-123");
+    expect(decodePathSegment("tab1")).toBe("tab1");
+  });
+
+  test("decodes valid percent-escapes", () => {
+    expect(decodePathSegment("%20")).toBe(" ");
+    expect(decodePathSegment("w1%3Ap1")).toBe("w1:p1");
+    expect(decodePathSegment("hello%2Fworld")).toBe("hello/world");
+  });
+
+  test("returns null on malformed percent-escapes", () => {
+    expect(decodePathSegment("%ff")).toBeNull();
+    expect(decodePathSegment("%E0%A4%A")).toBeNull();
+    expect(decodePathSegment("%")).toBeNull();
+    expect(decodePathSegment("%1")).toBeNull();
+    expect(decodePathSegment("%ZZ")).toBeNull();
+  });
+
+  test("returns empty string when decoding an empty string (falsy but valid)", () => {
+    expect(decodePathSegment("")).toBe("");
+  });
+});
+
+describe("failureText", () => {
+  test("returns exactly '<context> failed'", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("something went wrong");
+      expect(failureText("upload", err)).toBe("upload failed");
+      expect(failureText("herdr read", err)).toBe("herdr read failed");
+      expect(failureText("transcript read", err)).toBe("transcript read failed");
+      expect(failureText("reply", err)).toBe("reply failed");
+      expect(failureText("key send", err)).toBe("key send failed");
+      expect(failureText("close pane", err)).toBe("close pane failed");
+      expect(failureText("rename pane", err)).toBe("rename pane failed");
+      expect(failureText("close tab", err)).toBe("close tab failed");
+      expect(failureText("rename tab", err)).toBe("rename tab failed");
+      expect(failureText("create tab", err)).toBe("create tab failed");
+      expect(failureText("create space", err)).toBe("create space failed");
+      expect(failureText("request", err)).toBe("request failed");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the returned string does NOT contain the error's message or paths", () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const err = new Error("/home/op/.local/state/collie/push-subscriptions.json: EACCES");
+      const result = failureText("transcript read", err);
+      expect(result).toBe("transcript read failed");
+      expect(result.includes("/home")).toBe(false);
+      expect(result.includes("EACCES")).toBe(false);
+      expect(result.includes("push-subscriptions.json")).toBe(false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("the real error is logged to console.error with full object", () => {
+    const originalConsoleError = console.error;
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logged.push(args);
+    };
+    const err = new Error("something internal");
+    try {
+      failureText("reply", err);
+      expect(logged.length).toBe(1);
+      expect(logged[0]![0]).toBe("[bridge] reply failed:");
+      expect(logged[0]![1]).toBe(err);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+});
+

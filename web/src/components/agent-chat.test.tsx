@@ -174,6 +174,37 @@ describe("AgentChat — raw-terminal escape hatch", () => {
     expect(screen.getByText(/1\. Yes/)).toBeInTheDocument();
   });
 
+  // "Tap to type" — on, the mirror is one big "start typing" target; off, it is a document. The
+  // pref must gate ONLY the focus, never the mirror's own controls: someone who turned it off to
+  // stop the keyboard appearing has not asked to lose the prompt buttons.
+  it("focuses the composer on a mirror tap by default", async () => {
+    renderChat({ text: "just some output\n" });
+    const line = screen.getByText(/just some output/);
+    fireEvent.click(line);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Type a reply/i)));
+  });
+
+  it("leaves focus alone on a mirror tap when Tap to type is off", async () => {
+    localStorage.setItem(
+      "collie:display-prefs:v4",
+      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: false }),
+    );
+    renderChat({ text: "just some output\n" });
+    const before = document.activeElement;
+    fireEvent.click(screen.getByText(/just some output/));
+    expect(document.activeElement).toBe(before);
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText(/Type a reply/i));
+  });
+
+  it("still lifts a menu into buttons with Tap to type off — it gates focus, not the grammars", async () => {
+    localStorage.setItem(
+      "collie:display-prefs:v4",
+      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: false }),
+    );
+    renderChat({ text: MENU_TEXT });
+    expect(await screen.findByRole("button", { name: "Yes" })).toBeInTheDocument();
+  });
+
   it("lifts a multi-question wizard into native controls by default (grammars on)", async () => {
     renderChat({ text: WIZARD_TEXT });
     expect(await screen.findByRole("button", { name: /Parser/ })).toBeInTheDocument();
@@ -480,20 +511,21 @@ describe("AgentChat — history affordance", () => {
   });
 });
 
-// The top-of-mirror affordance. This block previously rendered on NO pane at all: it was gated on
-// `truncated`, which Herdr never sets true even when a read demonstrably cut scrollback off. The
-// working signal is `readableLines` (scrollback depth + viewport), and which button appears is
-// decided by what the pane can actually offer — the two are never simultaneously possible.
+// The top-of-mirror affordance. Agent panes prefetch the transcript above the live tail (a swipe
+// up reads the conversation). Shells still page Herdr scrollback with Load older. The two are
+// never simultaneously possible — a transcript wins, because alt-screen panes have no ring.
 describe("AgentChat — top-of-mirror history affordance", () => {
   const showHistory = () => screen.queryByRole("button", { name: /show entire history/i });
   const loadOlder = () => screen.queryByRole("button", { name: /load older/i });
 
-  it("an agent pane with a transcript offers the full history, not scrollback paging", () => {
+  it("an agent pane with a transcript inlines it above the live tail, not a jump-away button", async () => {
     // A Claude pane: alt-screen, so readableLines is just its viewport — there IS no scrollback.
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 51 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
-    expect(showHistory()).toBeInTheDocument();
+    expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
   it("a pane with real scrollback and no transcript offers Load older", () => {
@@ -524,10 +556,18 @@ describe("AgentChat — top-of-mirror history affordance", () => {
     expect(showHistory()).not.toBeInTheDocument();
   });
 
-  it("a transcript wins even when the pane also reports scrollback", () => {
+  it("a transcript wins even when the pane also reports scrollback", async () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 6946 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
-    expect(showHistory()).toBeInTheDocument();
+    expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
+  });
+
+  it("keeps the header History button so find / jump-to-turn still have a page", async () => {
+    const agent = { ...fixtureAgents[0]!, hasSession: true };
+    renderChat({ agent, agents: [agent] });
+    expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
+    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
   });
 });

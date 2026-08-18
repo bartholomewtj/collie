@@ -6,18 +6,62 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
-## [0.30.1] - 2026-08-17
+## [0.32.2] - 2026-08-18
 
 ### Changed
 
-- **CI runs with `contents: read` and SHA-pinned actions** — a moved tag can no longer change what CI executes (#12, 8e04bea)
-- **The systemd unit is confined** — kernel/cgroup/SUID/realtime restrictions, `SystemCallArchitectures=native`, an address-family allow-list and `UMask=0077`; `MemoryDenyWriteExecute` stays off (Bun's JIT) (#12, c595a26)
-- **Generated unit values are quoted** — a checkout or config path containing a space no longer truncates `Environment=` / `ExecStart=` (#12, c595a26)
+- **CI runs with `contents: read` and SHA-pinned actions** — a moved tag can no longer change what CI executes (#12)
+- **The systemd unit is confined** — kernel/cgroup/SUID/realtime restrictions, `SystemCallArchitectures=native`, an address-family allow-list and `UMask=0077`; `MemoryDenyWriteExecute` stays off (Bun's JIT) (#12)
+- **Generated unit values are quoted** — a checkout or config path containing a space no longer truncates `Environment=` / `ExecStart=` (#12)
 
 ### Fixed
 
-- **The pidfile kill matches this checkout's absolute path** — a recycled pid running another checkout's `bridge/index.ts` is no longer killed on `start` (#12, 021d58a)
-- **Windows launchers quote each argument** — a path with a space or a quote no longer re-splits into the wrong arguments (#12, 2476930)
+- **The pidfile kill matches this checkout's absolute path** — a recycled pid running another checkout's `bridge/index.ts` is no longer killed on `start` (#12)
+- **Windows launchers quote each argument** — a path with a space or a quote no longer re-splits into the wrong arguments (#12)
+
+## [0.32.1] - 2026-08-18
+
+### Fixed
+
+- Sending `/clear` (or `/new`) from a pane now drops the inline history above the live tail
+  immediately. Before, the previous conversation stayed scrollable until the next status change
+  refetched it. Pages the bridge still serves from the cleared session are ignored so it can't
+  come back.
+
+## [0.32.0] - 2026-08-18
+
+### Fixed
+
+- **Inline history above the live tail now refreshes while the pane is open** — it was fetched once on open, so turns written since (and a `/clear` that swapped sessions) were missing when you scrolled up. Refetched on each agent status change and every 30s while working (51ce49d)
+- **A long request survives socket backpressure** — Bun's socket accepts fewer bytes than it is handed under pressure and queues nothing; the dialer now parks the tail and resumes from `drain`, so a big request can no longer silently truncate and die on the timeout (cc810c9). Probed while fixing: herdr drops any request line of 1 MiB or more — now in `HERDR_API.md`
+
+### Changed
+
+- In-code pointers name `DEPLOYMENT.md` now that variants B–E live there (cd2f1f8); `COLLIE_MULTI_SESSION` spelled `on`/`off` everywhere; `push-keys`/`push-test` listed in the Commands table (ee64069)
+
+### Merged from upstream
+
+- Everything in upstream [AltanS/collie](https://github.com/AltanS/collie) 0.30.0 → 0.31.1: `push-keys`, `commands.toml` operator palette, `COLLIE_AUDIT_CONTENT=none`, password-prompt handling, oversize-draft and half-arrived-send fixes, "Tap to type" toggle, README/DEPLOYMENT split. Their entries are reproduced below under *Upstream releases*. This fork's own 0.30.x/0.31.x numbers were assigned independently and do not correspond to upstream's
+
+## [0.31.0] - 2026-08-17
+
+### Changed
+
+- **BREAKING: Host-header validation is on by default and fails closed** — the bridge answers only to loopback, the Tailscale name/IPs `collie-ctl.sh` discovers, `COLLIE_PUBLIC_HOSTS`, and `COLLIE_ALLOWED_ORIGINS` hosts. A DNS-rebound `Host: evil.example` no longer gets reads or writes (#3, 213b024)
+- **`COLLIE_SKIP_SERVE=1` deployments must now set `COLLIE_PUBLIC_HOSTS`** — behind your own reverse proxy Collie can't discover the public host, so an unpinned install returns 403 `host not allowed` until you set it (#3, 213b024)
+
+### Added
+
+- `COLLIE_ALLOW_ANY_HOST=1` — explicit opt-out that turns Host validation off, with a loud startup warning. Re-opens the rebinding hole; only for a deployment whose Host genuinely can't be enumerated (#3, 213b024)
+- `collie-ctl.sh` injects `COLLIE_TAILSCALE_HOSTS` (MagicDNS name + tailnet IPs) into the service env, so a normal tailnet install needs no manual allowlist (#3, 213b024)
+
+## [0.30.1] - 2026-08-17
+
+### Fixed
+
+- **Malformed percent-escapes in a pane or tab URL return 400** instead of Bun's HTML dev error page (#10)
+- **`Bun.serve` runs with `development: false` and an `error()` catch-all**, so no stack trace or source path can reach a client (#10)
+- **Error responses name what failed and nothing else**; the full error, with paths, now goes only to the log — read it with `journalctl --user -u collie -f` (#10)
 
 ## [0.30.0] - 2026-08-17
 
@@ -29,6 +73,37 @@ All notable changes to Collie are recorded here. The format follows
 
 - **`/api/subscribe` validates push endpoints, key lengths, and caps stored subscriptions** — stops arbitrary outbound HTTPS requests on agent state changes and caps stored subscriptions at 20 (#7, dff5b67)
 - **Push delivery options include a 10s send timeout**, preventing black-hole endpoints from stalling broadcast rounds (#7, dff5b67)
+
+## Upstream releases (AltanS/collie) merged in 0.32.0
+
+### Upstream [0.31.0] - 2026-08-18
+
+### Added
+
+- **`push-keys` generates the VAPID keypair and writes it into the right `.env`** — Web Push setup is now three plugin actions (`push-keys` → `restart` → subscribe), no manual key wrangling (85f0454)
+- **"Tap to type" can be turned off** — a display setting stops the mirror volunteering the keyboard on a tap; on by default (357b86f)
+- **`COLLIE_AUDIT_CONTENT=none` keeps the audit trail and drops the bodies** — a fail-closed allowlist keeps action parameters legible while anything operator- or screen-originated redacts (#107, 5dda876, cdad445) — thanks @shuangwangnyc
+- **Your own slash commands in the palette, declared in `commands.toml`** — on a pane your rows address they replace the shipped catalog (ADR 0018); `confirm = true` adds a two-tap; edits are live, no restart (#109, 35da673, 28bdf5a) — thanks @enieuwy
+
+### Fixed
+
+- **⚠ A paste too big to persist no longer restores an older, shorter draft after a remount** — oversize drafts now ride an in-memory tier whole, never truncated and never swapped for stale text; they survive pane switches but not closing the app, and the composer says so (7965674)
+- **A half-arrived long send is no longer accepted as send evidence** — when the input box ends in literal text it must be the end of what was sent, or the guard refuses to press Enter (#110, 27f4cdf)
+- **Direct typing no longer owes a "mode stopped" notice to the next pane**, and the blur it schedules is settled by cancellation instead of racing a re-arm (#108, 452da20, 1a2ca49) — thanks @enieuwy
+
+### Changed
+
+- **README cut to ~60% of its length, how-first** — deployment variants B–E now live in `DEPLOYMENT.md`, and troubleshooting entries are findable by the words you'd actually search (9464c14, c52d4af)
+
+### Upstream [0.30.0] - 2026-08-16
+
+### Added
+
+- **A password prompt says what it is and offers the control that works.** `sudo`, an SSH passphrase and `gpg` echo nothing, so Send's verification can never arrive — the refusal now names that and hands off to **Type** in one tap, instead of "a menu or dialog is probably up" (#103, 1334540)
+
+### Fixed
+
+- **A password typed into the composer is no longer kept for 48 hours** — recognising the prompt drops the stored draft and stops persisting keystrokes; the write-through had stored it before any send was attempted (#103, 1334540)
 
 ## [0.29.0] - 2026-08-16
 

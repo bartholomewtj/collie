@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { AuditContent } from "./audit.ts";
 import type { DialMode } from "./dial.ts";
 import type { JournalRoots } from "./journal/registry.ts";
 
@@ -147,6 +148,12 @@ export interface Config {
   /** Key sequence sent to submit a reply after the text (agent-dependent; see HERDR_API.md). */
   submitKeys: string[];
   /**
+   * Where the operator's Agent-commands rows live — `commands.toml` in the same dir as their
+   * `.env`. Read at request time behind an mtime check (bridge/operator-commands.ts), so it is
+   * resolved here but never read here.
+   */
+  commandsFile: string;
+  /**
    * Tailscale identity gate. If set, requests must carry a `Tailscale-User-Login` header (injected by
    * `tailscale serve`) matching this login. A mismatching login is rejected, and so is an ABSENT one
    * — `tailscale serve` injects no identity for TAGGED nodes, so tolerating an absent header handed
@@ -162,6 +169,11 @@ export interface Config {
    * re-opens the tagged-node hole, so it is off by default and warned about at startup.
    */
   trustedUserOptional: boolean;
+  /**
+   * How much of each value's content the audit trail keeps — see {@link AuditContent} in audit.ts
+   * for what `none` does and does not redact.
+   */
+  auditContent: AuditContent;
   /**
    * Per-device authorisation. Name of a request header carrying an opaque device identifier,
    * injected by a trusted upstream reverse proxy. Empty = the feature is off (no behaviour change).
@@ -182,12 +194,11 @@ export interface Config {
    */
   allowedOrigins: string[];
   /**
-   * Host-header allowlist (`host` or `host:port` values). When non-empty, the operator has opted
-   * in to strict Host validation: any request whose `Host` header isn't a loopback form, one of
-   * these, or a host parsed from {@link allowedOrigins} is rejected before the Origin check. This
-   * closes the DNS-rebinding hole (Host==Origin==evil.com would otherwise pass), which matters most
-   * under `COLLIE_SERVE_MODE=http` (no TLS). Empty = validation off (legacy behaviour) — set this
-   * to your MagicDNS name (`collie.<tailnet>.ts.net`), especially in http serve mode.
+   * Additional allowed Host headers (`host` or `host:port` values) beyond loopback and the
+   * discovered {@link tailscaleHosts}. Host validation is fail-closed by default: any request whose
+   * `Host` header isn't a loopback form, one of these, a discovered Tailscale host, or a host
+   * parsed from {@link allowedOrigins} is rejected before the Origin check. Required under
+   * `COLLIE_SKIP_SERVE=1` (where Collie discovers no Tailscale hosts) to name your public domain.
    */
   publicHosts: string[];
   /**
@@ -196,6 +207,22 @@ export interface Config {
    * `a.push.example.com`). Only needed when running a self-hosted push service.
    */
   pushAllowedHosts: string[];
+  /**
+   * Hosts this bridge is actually published on, discovered by `collie-ctl.sh` from
+   * `tailscale status --json` (Self.DNSName + Self.TailscaleIPs) and injected as
+   * COLLIE_TAILSCALE_HOSTS. Operators don't set this — it exists so the Host allowlist can be
+   * fail-closed by default without every tailnet deployment needing COLLIE_PUBLIC_HOSTS. Matched
+   * with or without a port. Empty under COLLIE_SKIP_SERVE=1: the operator owns that ingress and
+   * must pin {@link publicHosts} themselves.
+   */
+  tailscaleHosts: string[];
+  /**
+   * Escape hatch that turns Host validation OFF entirely (COLLIE_ALLOW_ANY_HOST=1), restoring the
+   * pre-0.31 behaviour where any Host passed as long as Origin matched it. That is the DNS-rebinding
+   * hole (issue #3) — a hostile page rebinds to 127.0.0.1 and sends Host==Origin==evil.example.
+   * Only for a deployment whose real Host genuinely can't be enumerated. Warned about at startup.
+   */
+  allowAnyHost: boolean;
   /** Web Push (VAPID). All three required to enable push; otherwise push is disabled. */
   vapidPublic: string;
   vapidPrivate: string;
@@ -215,7 +242,7 @@ export interface Config {
    * proxy (Caddy/Nginx) fronts the loopback bridge instead. The bridge itself handles every request
    * identically either way — this flag only informs the startup warnings: without `tailscale serve`
    * in front, the `Tailscale-User-Login` header is never injected, so {@link trustedUser} is inert
-   * and per-device auth ({@link deviceHeader}) becomes the way to gate writes (README → Variant C).
+   * and per-device auth ({@link deviceHeader}) becomes the way to gate writes (DEPLOYMENT.md → Variant C).
    */
   skipServe: boolean;
 }
@@ -279,6 +306,12 @@ export function loadConfig(): Config {
         `control in front, set COLLIE_ALLOW_NON_LOOPBACK_BIND=1.`,
     );
   }
+  // The operator's config dir — where their `.env` lives, and now their `commands.toml` beside it.
+  // Resolved exactly the way scripts/collie-ctl.sh resolves it MINUS the `herdr` shell-out: the
+  // launcher passes HERDR_PLUGIN_CONFIG_DIR into the unit (and the launchd plist) precisely so this
+  // process never has to ask the CLI, and the two entry points must not disagree about which dir
+  // that is. ~/.config/collie is the same last-resort default the shim ends on.
+  const configDir = process.env.HERDR_PLUGIN_CONFIG_DIR ?? join(homedir(), ".config", "collie");
 
   return {
     socketPath: process.env.HERDR_SOCKET_PATH ?? defaultSocketPath(),
@@ -313,15 +346,23 @@ export function loadConfig(): Config {
         "COLLIE_OPENCODE_ROOT",
         join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "opencode"),
       ),
+      grok: envRoots(
+        "COLLIE_GROK_ROOT",
+        join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "sessions"),
+      ),
     },
     submitKeys: submitKeys.length ? submitKeys : ["Enter"],
+    commandsFile: join(configDir, "commands.toml"),
     trustedUser: process.env.COLLIE_TRUSTED_USER ?? "",
     trustedUserOptional: envBool("COLLIE_TRUSTED_USER_OPTIONAL", false),
+    auditContent: envEnum("COLLIE_AUDIT_CONTENT", ["preview", "none"] as const, "preview"),
     deviceHeader: (process.env.COLLIE_DEVICE_HEADER ?? "").trim(),
     deviceAllowlist: envList("COLLIE_DEVICE_ALLOWLIST"),
     allowedOrigins: envList("COLLIE_ALLOWED_ORIGINS"),
     publicHosts: envList("COLLIE_PUBLIC_HOSTS"),
     pushAllowedHosts: envList("COLLIE_PUSH_ALLOWED_HOSTS"),
+    tailscaleHosts: envList("COLLIE_TAILSCALE_HOSTS"),
+    allowAnyHost: envBool("COLLIE_ALLOW_ANY_HOST", false),
     vapidPublic: process.env.COLLIE_VAPID_PUBLIC ?? "",
     vapidPrivate: process.env.COLLIE_VAPID_PRIVATE ?? "",
     vapidSubject: process.env.COLLIE_VAPID_SUBJECT ?? "mailto:admin@example.com",

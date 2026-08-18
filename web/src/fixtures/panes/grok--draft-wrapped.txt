@@ -1,0 +1,11 @@
+  C:\\project                                                                 12K / 500K
+
+     Yes. Tap the image button on the reply box.                            3:01 PM
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ > this is a long draft that will not fit                           │
+  │   on one row of the box                                            │
+  ╰───────────────────────────────── Grok 4.6 (high) · always-approve ─╯
+
+  Enter:send now  │  Shift+Tab:mode  │  Esc:cancel  │  Ctrl+x:shortcuts
+

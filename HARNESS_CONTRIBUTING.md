@@ -100,9 +100,13 @@ What your adapter must satisfy (all pinned by `describeAdapterConformance`):
 2. **Never a digit**, however tempting the numbered rows look —
    [ADR 0009](./.adr/0009-a-generic-menu-is-driven-by-the-keys-it-names.md) records why (in `/model`
    a digit confirms *and* rewrites the user's default).
-3. A non-empty `signature` over the region that **changes when the region's text does** — Herdr's
+3. **Never a control key**, even when the screen prints one in its footer —
+   [ADR 0022](./.adr/0022-a-control-key-is-not-a-menu-key.md) records why (a control key isn't
+   consumed by the modal; it reaches the harness's signal handling, and the button's label came from
+   the same agent text as the key).
+4. A non-empty `signature` over the region that **changes when the region's text does** — Herdr's
    `revision` is a stub, so it is the entire race guard (the generic one — see the next section).
-4. Menu detection runs **last**, after every specific grammar you have, and must decline a screen with
+5. Menu detection runs **last**, after every specific grammar you have, and must decline a screen with
    a live input box; your `composerReady` must answer `false` while the modal is up.
 
 ## Every dialog model is a contract, and the race guard is generic
