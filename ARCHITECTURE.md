@@ -115,7 +115,8 @@ Product details that shaped the loop:
 - **Close the trust loop.** A "Sent" state on the `POST`'s HTTP response, then the visible
   blocked→working transition. Without it, latency makes users double-tap.
 - **Manage a pane, tab or space in place.** One gesture everywhere: tap-and-hold opens a small
-  actions sheet. A pane pill → rename / close (`pane-actions-sheet.tsx`); a tab chip *or* a tab
+  actions sheet. A pane pill *or* a pane row in the space's list → rename / close
+  (`pane-actions-sheet.tsx`); a tab chip *or* a tab
   heading in the space's "All" list → rename / close, with the blast radius named
   (`tab-actions-sheet.tsx`); a space row on the Spaces screen → rename only
   (`space-actions-sheet.tsx`). All are structural writes (`pane.rename` / `pane.close` /

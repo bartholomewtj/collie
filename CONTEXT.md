@@ -3,7 +3,7 @@
 > **Form**: System Map (ICM Form 6 — Van Clief & McDermott, [arXiv:2603.16021](https://arxiv.org/abs/2603.16021))  
 > **Target**: `AltanS/collie` (forked repo on Windows at `C:\ClaudeOS\Projects\collie`)  
 > **Entry Twins**: [`CLAUDE.md`](file:///C:/ClaudeOS/Projects/collie/CLAUDE.md) · [`AGENTS.md`](file:///C:/ClaudeOS/Projects/collie/AGENTS.md) · [`CONTEXT.md`](file:///C:/ClaudeOS/Projects/collie/CONTEXT.md)  
-> **Current Version**: `0.37.0` (`v0.37.0`) | Herdr Plugin: `herdr.collie`
+> **Current Version**: `0.38.0` (`v0.38.0`) | Herdr Plugin: `herdr.collie`
 
 ---
 
