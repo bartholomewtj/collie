@@ -1,0 +1,1 @@
+bun run ~/.claude/skills/sssf/apps/visualizer/server/index.ts --db 'C:\ClaudeOS\Projects\collie/adws/adw_data/sssf.db'
