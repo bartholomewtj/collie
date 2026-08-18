@@ -5,6 +5,7 @@ import { AppHeader, SettingsGear } from "@/components/app-header";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
 import { SpaceStrip } from "@/components/space-strip";
 import { SpaceView } from "@/components/space-view";
+import { SSSF_TAB, SssfChip, SssfFrame } from "@/components/sssf-frame";
 import { TabStrip } from "@/components/tab-strip";
 import { NewSpaceSheet } from "@/components/new-space-sheet";
 import { StatusArea } from "@/components/status-area";
@@ -41,6 +42,16 @@ export function SpaceRoute() {
   }
 
   const selectedWs = data.workspaces.find((w) => w.workspaceId === spaceId);
+
+  // The SSSF traces tab (sssf-frame.tsx): a Collie-only tab the bridge advertises per workspace. Once
+  // opened, its frame stays mounted (hidden) across tab switches so a watched run isn't lost; bumping
+  // `sssfReset` remounts it back at its sessions list. Both reset with the space, like `tab`.
+  const sssf = selectedWs?.sssf;
+  const sssfOpen = tab === SSSF_TAB;
+  const [sssfEverOpened, setSssfEverOpened] = useState(false);
+  const [sssfReset, setSssfReset] = useState(0);
+  if (sssfOpen && !sssfEverOpened) setSssfEverOpened(true);
+  if (tabSpace !== spaceId && sssfEverOpened) setSssfEverOpened(false);
 
   const toDashboard = () => navigate(homePath(data.session));
   const switchSpace = (id: string) => navigate(spacePath(id, data.session));
@@ -107,24 +118,52 @@ export function SpaceRoute() {
                 if (tab === tabId) setTab(null);
                 revalidator.revalidate();
               }}
+              trailing={
+                sssf && (
+                  <SssfChip
+                    sssf={sssf}
+                    active={sssfOpen}
+                    onSelect={() => setTab(SSSF_TAB)}
+                    onTapActive={() => setSssfReset((n) => n + 1)}
+                  />
+                )
+              }
             />
-            <main className="flex-1">
-              <SpaceView
-                workspace={selectedWs}
-                tabs={data.tabs}
-                agents={data.agents}
-                shellPanes={data.shellPanes}
-                selectedTab={tab}
-                onOpen={open}
-              />
+            {/* With the traces tab open the frame is the sole scroller (the visualiser scrolls
+                inside itself; nesting it in this scroller gave two ambiguous scrollers and let a
+                pull at its top reload the PWA), so main clips and the banners below step aside. */}
+            <main className={sssfOpen ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1"}>
+              {!sssfOpen && (
+                <SpaceView
+                  workspace={selectedWs}
+                  tabs={data.tabs}
+                  agents={data.agents}
+                  shellPanes={data.shellPanes}
+                  selectedTab={tab}
+                  onOpen={open}
+                />
+              )}
+              {sssf && sssfEverOpened && (
+                <SssfFrame
+                  key={sssfReset}
+                  workspace={selectedWs}
+                  sssf={sssf}
+                  session={data.session}
+                  hidden={!sssfOpen}
+                />
+              )}
             </main>
           </>
         )}
 
         {/* An available update / needed restart, then the build stamp (which bundle you're
             running, with a stale-cache nudge). */}
-        <UpdateBanner className="px-3 pt-3" />
-        <BuildStamp className="px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)]" />
+        {!sssfOpen && (
+          <>
+            <UpdateBanner className="px-3 pt-3" />
+            <BuildStamp className="px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)]" />
+          </>
+        )}
       </div>
 
       {/* Status overlay, anchored to the bottom of the viewport. Stays outside the scroller. */}

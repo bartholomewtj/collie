@@ -126,6 +126,9 @@ export interface WorkspaceView {
   activeTabId: string;
   tabCount: number;
   paneCount: number;
+  /** SSSF traces for this workspace's repo (bridge/sssf-viz.ts). Absent when the feature is off or
+   *  the repo has no `adws/`; "pending" = an `adws/` dir but no trace db yet. */
+  sssf?: { state: "ready" | "pending"; token: string };
 }
 
 /** A tab within a workspace (a layout/view holding one or more panes). From `tab.list`. */

@@ -37,7 +37,7 @@ public access, Collie isn't built for it. Read the
 - [Requirements](#requirements)
 - [Install](#install)
 - [First run — what you'll see](#first-run--what-youll-see)
-- [Configure](#configure) · [Your own slash commands](#your-own-slash-commands) ·
+- [Configure](#configure) · [Your own slash commands](#your-own-slash-commands) · [SSSF traces tab](#sssf-traces-tab) ·
   [Multi-session](#multi-session)
 - [Dark mode / light mode](#dark-mode--light-mode)
 - [Commands](#commands)
@@ -299,6 +299,30 @@ The bridge reads `.env` only at startup — after any edit, `scripts/collie-ctl.
 
 Reading history from more than one agent home? List them all in `COLLIE_TRANSCRIPT_ROOT`,
 comma-separated.
+
+### SSSF traces tab
+
+If you run [Super Simple Software Factory](https://github.com/disler/super-simple-software-factory)
+ADWs in a repo, Collie can show that repo's trace UI as an extra **Traces** tab in the workspace —
+the SSSF three-lanes icon instead of a tab number, so it can't be mistaken for a Herdr tab. Point
+Collie at the visualiser's source folder (the sssf skill's app) and restart:
+
+```bash
+# in your .env
+SSSF_VIZ_DIR=~/.claude/skills/sssf/apps/visualizer
+```
+
+Collie builds the visualiser once into its own state dir (`sssf-viz/`, ~2 s on first start, again
+whenever the source is newer) and serves it under `/sssf/`; **nothing is copied into the Collie
+checkout**. Which repo: for each workspace Collie walks up from its panes' working directories to the
+first git worktree root holding `adws/adw_data/sssf.db`. A repo with an `adws/` folder but no traces
+yet shows a greyed "Traces" chip; a repo without `adws/` shows nothing.
+
+The tab is Collie-only — Herdr never sees it — and the visualiser runs in a sandboxed frame that
+cannot reach Collie's own API. Archiving a run is off inside the tab; use the visualiser standalone
+(`just obs`) for that. If Collie logs `[sssf] disabled: …` at start, the folder is missing, isn't the
+visualiser, or (after a skill re-install) lacks the host-mount patches — the rest of Collie is
+unaffected. Read-only devices see the traces like anything else.
 
 **Custom domain or reverse proxy?** [`DEPLOYMENT.md`](./DEPLOYMENT.md) has the full front-door setup.
 The one rule to know here: Collie is same-origin only, so a different hostname or TLS terminator

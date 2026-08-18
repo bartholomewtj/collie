@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 
 import { Chip } from "@/components/ui/chip";
@@ -25,6 +25,8 @@ interface TabStripProps {
   onRenamed?: () => void;
   /** Refresh/fall back after a close. Enables long-press together with onRenamed. */
   onClosed?: (tabId: string) => void;
+  /** Extra chips after the Herdr tabs (e.g. the SSSF traces tab) — Collie-only, no pane behind them. */
+  trailing?: ReactNode;
 }
 
 // The selected space's tabs as a horizontal strip — the second header row under SpaceStrip, mirroring
@@ -46,6 +48,7 @@ export function TabStrip({
   readOnly,
   onRenamed,
   onClosed,
+  trailing,
 }: TabStripProps) {
   const [sheetTab, setSheetTab] = useState<TabView | null>(null);
   // Actions need both callbacks wired (revalidate on rename, fall back on close); without them the
@@ -53,7 +56,7 @@ export function TabStrip({
   const actionsEnabled = !!onRenamed && !!onClosed;
 
   const wsTabs = tabs.filter((t) => t.workspaceId === workspaceId);
-  if (wsTabs.length === 0) return null;
+  if (wsTabs.length === 0 && !trailing) return null;
 
   return (
     <>
@@ -77,6 +80,7 @@ export function TabStrip({
             onTapActive={actionsEnabled ? () => setSheetTab(t) : undefined}
           />
         ))}
+        {trailing}
         <button
           type="button"
           onClick={() => onNewTab(workspaceId)}
