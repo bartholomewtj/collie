@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.35.0] - 2026-08-18
+
+### Changed
+
+- **Navigation rebuilt on phone-app lines** — a bottom bar with Herd / Spaces / Traces / Settings, and one "‹ back" in the header that goes up exactly one level on every pushed screen (pane → space → Spaces, trace → Traces, history → pane) (fafe560)
+- Home is the triaged herd only; Spaces is its own screen; the Settings gear, the sibling-space chip row and its Back chip, and the in-pane tab strip are gone (fafe560)
+- **Traces is a destination**: a list of every SSSF repo near any space (running first) opening the visualiser full screen — replaces the Traces chip on the tab bar and the `?tab=traces&from=` hop (fafe560)
+
 ## [0.34.1] - 2026-08-18
 
 ### Added
