@@ -1,15 +1,29 @@
 # Next session
 
-_Last handoff: 2026-08-18 — main at 0.32.0 (`b099df8`)_
+_Last handoff: 2026-08-18 (evening) — main at 0.33.0 (`5db9bfd`), tag `v0.33.0` pushed_
 
 ## Where this stopped
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie) (phone web UI that drives terminal AI
 agents through a Herdr socket, served via `tailscale serve`).
 
-- **Security audit is done.** 11 of the 12 issues filed on 2026-08-16 are fixed and merged; each has
-  a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default changed
-  (`.adr/0019`–`0023`). Only #12 (low-priority ops hardening) is open.
+- **SSSF traces tab shipped (PR #38, 0.33.0).** Set `SSSF_VIZ_DIR` and any workspace whose repo has
+  `adws/adw_data/sssf.db` gets a Collie-only "Traces" tab showing the SSSF visualiser for that repo,
+  in a sandboxed iframe. Everything lives in `bridge/sssf-viz.ts` + `web/src/components/sssf-frame.tsx`
+  with one-line hooks; plan `specs/5f2a9c11_sssf-viz-mount.md` (post-council, all six findings folded
+  in), decision `.adr/0024`. **It's live on this box**: `SSSF_VIZ_DIR` is in Collie's real `.env`
+  (`%APPDATA%\herdr\plugins\config\herdr.collie\.env`) and the log showed the build + `/sssf/` 200.
+  The visualiser's own phone/embed edits are in the sssf skill folder
+  (`C:\claudeOS\config\skills\sssfppsisualizer`), NOT in any repo — a skill re-install would
+  drop them and Collie would log `[sssf] disabled: … lacks BASE_URL` (by design).
+- **Not yet checked on the phone:** the Traces chip inside the real space view, and tapping a phase
+  block inside the sandboxed frame (the browser extension couldn't drive clicks into the frame; a
+  real DOM click fires the handler fine). If a phase tap doesn't open the panel, swap the block's
+  `navigate()` for an `<a href>` in the visualiser's `SessionTrace.vue`.
+
+- **Security audit is done.** All 12 issues filed on 2026-08-16 are fixed and merged (#12 landed as
+  PR #27, 0.32.2); each has a spec in `specs/`, a write-up in `app_docs/`, and an ADR where a default
+  changed (`.adr/0019`–`0023`).
 - **Upstream is merged in** (PR #35): AltanS/collie 0.30.0 → 0.31.1 landed as fork **0.32.0**.
   Both repos had used `0.31.1` for different content, so the fork's version line now runs ahead;
   `CHANGELOG.md` keeps upstream's entries under their own heading.
@@ -38,20 +52,30 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
+1. **Phone-check the Traces tab** (see above). Then optional polish the council flagged and I
+   skipped: `.zone-head` overlaps ticks only when the request zone is narrow (hidden under 640px
+   now); `ctx-detail` numbers only show under `(hover: none)`.
+2. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
    concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
-   fail-closed defaults; take upstream's docs structure.
-2. **#12** — low-priority ops hardening (CI permissions/pins, systemd directives, pidfile match,
-   Windows arg quoting). Small; could be a hand-written PR rather than a factory run.
+   fail-closed defaults; take upstream's docs structure. The SSSF hooks are one-liners in
+   `server.ts` (fetch top + snapshot), `types.ts`, `tab-strip.tsx` (`trailing` prop), `space.tsx`,
+   `sw-routes.ts` — expect them to conflict trivially.
 3. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
 
 ## Open
 
-- Issue #12 only.
+- No open issues.
 - claudeSSSF issue #52 — agy builder hangs on its `schedule` tool and self-commits; fix belongs in
   the factory, not here.
 
 ## Watch out for
+
+- **Restarting Collie on Windows:** the Herdr `restart` action says `platform_unsupported`; use
+  `powershell -File contrib\windows\collie-ctl.ps1 restart`. `taskkill /IM bun.exe` kills the live
+  bridge too (I did this once by accident on 2026-08-18; Herdr restarted it).
+- **`bun test bridge/sssf-viz.test.ts` has an integration half** that runs only with
+  `SSSF_VIZ_DIR` and `SSSF_TEST_REPO=C:/ClaudeOS/Projects/claudeSSSF` set — run it after any sssf
+  skill update; it imports the real `db.ts` and is the drift tripwire.
 
 - **Stacked PRs: retarget to `main` before merging the base PR**, then merge, then delete branches.
   Deleting a branch another PR targets auto-closes that PR (how #15 died; #18 replaced it).
