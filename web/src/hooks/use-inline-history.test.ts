@@ -8,6 +8,7 @@ import type { TranscriptEntry } from "@/lib/types";
 import {
   INLINE_HISTORY_PAGE,
   INLINE_HISTORY_STEP,
+  mergeNewest,
   useInlineHistory,
 } from "./use-inline-history";
 
@@ -151,5 +152,111 @@ describe("useInlineHistory", () => {
       result.current.growUpward();
     });
     expect(hits).toBe(1);
+  });
+});
+
+describe("useInlineHistory refresh", () => {
+  const getScrollElement = () => null;
+
+  function page(entries: TranscriptEntry[], hasMore = false) {
+    return HttpResponse.json({
+      paneId: "w1:p1",
+      available: true,
+      entries,
+      hasMore,
+      total: entries.length,
+      fileTruncated: false,
+    });
+  }
+
+  it("refetches the newest page when the agent's status changes and appends the new turns", async () => {
+    let hits = 0;
+    server.use(
+      http.get(/\/api\/pane\/[^/]+\/history/, () => {
+        hits += 1;
+        return hits === 1
+          ? page(fixtureTranscript)
+          : page([...fixtureTranscript, olderTurn("t3")]);
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ status }: { status: string }) =>
+        useInlineHistory({ paneId: "w1:p1", enabled: true, status, getScrollElement }),
+      { initialProps: { status: "working" } },
+    );
+    await waitFor(() => expect(result.current.entries.map((e) => e.uuid)).toEqual(["t1", "t2"]));
+    rerender({ status: "idle" });
+    await waitFor(() =>
+      expect(result.current.entries.map((e) => e.uuid)).toEqual(["t1", "t2", "t3"]),
+    );
+    expect(hits).toBe(2);
+  });
+
+  it("replaces the held turns when the fresh page shares nothing with them (a new session)", async () => {
+    let hits = 0;
+    server.use(
+      http.get(/\/api\/pane\/[^/]+\/history/, () => {
+        hits += 1;
+        return hits === 1 ? page(fixtureTranscript, true) : page([olderTurn("n1")], false);
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ status }: { status: string }) =>
+        useInlineHistory({ paneId: "w1:p1", enabled: true, status, getScrollElement }),
+      { initialProps: { status: "idle" } },
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    rerender({ status: "working" });
+    await waitFor(() => expect(result.current.entries.map((e) => e.uuid)).toEqual(["n1"]));
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("does not refetch when the status is unchanged on rerender", async () => {
+    let hits = 0;
+    server.use(
+      http.get(/\/api\/pane\/[^/]+\/history/, () => {
+        hits += 1;
+        return page(fixtureTranscript);
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ status }: { status: string }) =>
+        useInlineHistory({ paneId: "w1:p1", enabled: true, status, getScrollElement }),
+      { initialProps: { status: "idle" } },
+    );
+    await waitFor(() => expect(result.current.entries).toHaveLength(2));
+    rerender({ status: "idle" });
+    await act(async () => {});
+    expect(hits).toBe(1);
+  });
+});
+
+describe("mergeNewest", () => {
+  const t = (uuid: string, text = uuid): TranscriptEntry => ({
+    uuid,
+    ts: "2026-07-24T06:00:00.000Z",
+    role: "assistant",
+    parts: [{ kind: "text", text }],
+  });
+
+  it("appends the turns after the overlap and takes the fresh copy of overlapping ones", () => {
+    const prev = [t("a"), t("b"), t("c", "c-pending")];
+    const fresh = [t("b"), t("c", "c-done"), t("d")];
+    expect(mergeNewest(prev, fresh).map((e) => e.parts[0])).toEqual([
+      { kind: "text", text: "a" },
+      { kind: "text", text: "b" },
+      { kind: "text", text: "c-done" },
+      { kind: "text", text: "d" },
+    ]);
+  });
+
+  it("returns the fresh page itself when nothing overlaps", () => {
+    const fresh = [t("x")];
+    expect(mergeNewest([t("a")], fresh)).toBe(fresh);
+  });
+
+  it("returns the fresh page when nothing was held", () => {
+    const fresh = [t("x")];
+    expect(mergeNewest([], fresh)).toBe(fresh);
   });
 });

@@ -258,13 +258,14 @@ export function AgentChat({
     canGrowRequestedLines(paneId, session);
 
   // Prefetch the last transcript turns above the live tail so a swipe up reads the conversation
-  // instead of bouncing off a 50-row alternate-screen viewport. Header History still opens the
-  // dedicated page (find / jump-to-turn).
+  // instead of bouncing off a 50-row alternate-screen viewport, and keep that end fresh as the agent
+  // works (keyed on its status). Header History still opens the dedicated page (find / jump-to-turn).
   const getScrollElement = useCallback(() => listRef.current?.getScrollElement() ?? null, []);
   const inline = useInlineHistory({
     paneId,
     session,
     enabled: historyAvailable,
+    status: agent?.status,
     getScrollElement,
   });
 
