@@ -1,8 +1,36 @@
 # Next session
 
-_Last handoff: 2026-08-18 (late night) — main at **0.36.0** (`7aab32d`), tag `v0.36.0`, **live on this box**_
+_Last handoff: 2026-08-18 (late) — main at **0.37.0** (`1a85eb2`), tag `v0.37.0`, **live on this box**, not phone-checked_
 
 ## Where this stopped
+
+- **0.37.0 shipped — PR #47 merged, tagged, bridge restarted here (pid 22504, one listener on :8787,
+  serves `0.37.0+1a85eb2`). Three features, each its own `adw_simple_sdlc` run on one stacked branch:**
+  1. `4396573c` — **tap-and-hold a tab heading** in a space's "All" list → the same Rename / Close
+     sheet as the tab chips (`space-view.tsx` `TabHeading`; props threaded from `routes/space.tsx`).
+  2. `8d2c86fe` — **Spaces rows carry the lanes icon** when the space has SSSF repos, green dot while
+     `w.sssf.repos.some(running)`, tap → `tracePath(space, attached.repo ?? repos[0])`. The row is now
+     a `<div>` holding the row button + a sibling icon button (`space-overview.tsx`).
+  3. `31bcbf4a` — **tap-and-hold a Spaces row → rename the space.** New bridge route
+     `POST /api/workspace/:id/rename` (write guard, audit `workspace.rename`, `normalizeLabel` shared
+     with tabs), `HerdrClient.renameWorkspace`, `space-actions-sheet.tsx` (rename only — no close).
+  **None of it phone-checked yet.** Things to look at on the phone: does the tab-heading hold register
+  (the target is a small `text-xs` button — widen its padding if it's fiddly); does the row hold fire
+  without also opening the space; is the lanes icon crowding a 390px row.
+- **Docs current as of this handoff:** CLAUDE.md gained the tap-and-hold rule; ARCHITECTURE §4 and
+  CONTEXT.md (version stamp, nav-table row for the long-press sheets) updated. `HERDR_API.md`
+  `workspace.rename` is now wired (was listed, unused).
+- **Factory findings from tonight's runs, all filed in claudeSSSF:**
+  - **#57 (new)** — the `verdict_consistent` gate rejects valid command evidence in Bun/TS repos
+    (`_COMMAND` knows no `bun`/`bunx`/`tsc`; `_OUTCOME` no "untouched/clean"), so every review here
+    fails once and retries. Fix is regex + tests in `gates.py` (both copies), then restamp this repo's
+    `adws/`.
+  - **#9 comment** — the "rate limited: sleeping 5s" console line in run 2 was the agy **stall** guard
+    (600 s idle → kill → resend), not a limit; suggested labelling it `stalled:`. **#52 comment** — that
+    stall recurred; the guard recovered it.
+  - When a run's stderr is redirected into `adws/adw_data/`, the ADW's git phase sweeps the file into
+    a commit (`obs.log.err` did tonight; removed in b619f5d). Redirect run logs to the scratchpad, or
+    add `adws/adw_data/*.log*` to `.gitignore`.
 
 - **Runs attach to the pane that launched them — PR #46 merged as 0.36.0, tagged, live here, NOT yet
   phone-checked.** Chain: Herdr sets `HERDR_PANE_ID` in every pane → the SSSF tracer writes it to
@@ -99,17 +127,20 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 
 ## Next thing to do
 
-1. **Phone-check 0.35.0** (it's live): bottom bar, back from a pane, Traces list → repo → back.
-   Fix-ups are patch bumps.
-2. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
+1. **Phone-check 0.37.0** (it's live): tab-heading hold in a space's All list; Spaces row hold →
+   rename; lanes icon + green dot on a space with a running ADW; then the still-unchecked 0.36.0
+   pane-header Traces button and 0.35.0 nav. Fix-ups are patch bumps.
+2. **Fix claudeSSSF #57**, restamp `adws/` here, and watch the next run's review pass first time.
+3. Optional Traces polish the council flagged and I skipped: `.zone-head` overlaps ticks only when the request zone is narrow
    (hidden under 640px now); `ctx-detail` numbers only show under `(hover: none)`.
-3. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
+4. **Pull upstream regularly** — `git fetch upstream`, then merge on a branch as in #35. Conflicts
    concentrate in `README.md`, `CHANGELOG.md`, `bridge/config.ts`, `.adr/README.md`. Keep the fork's
    fail-closed defaults; take upstream's docs structure. The SSSF hooks are one-liners in
    `server.ts` (fetch top + snapshot), `types.ts`, `routes/traces.tsx` — expect them to conflict
-   trivially. After #43 the nav files (`root.tsx`, `home.tsx`, `space.tsx`, `agent-chat.tsx`,
-   `app-header.tsx`) diverge from upstream more; expect real conflicts there.
-4. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
+   trivially. After #43/#47 the nav and space files (`root.tsx`, `home.tsx`, `space.tsx`,
+   `space-view.tsx`, `space-overview.tsx`, `agent-chat.tsx`, `app-header.tsx`) diverge from upstream
+   more; expect real conflicts there.
+5. Decide whether to send any of the security fixes upstream to AltanS/collie (parked, your call).
 
 ## Open
 
