@@ -109,6 +109,7 @@ export function SpaceRoute() {
                   if (tab === tabId) setTab(null);
                   revalidator.revalidate();
                 }}
+                onPaneClosed={() => revalidator.revalidate()}
               />
             </main>
           </>

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ShellBadge, StatusBadge, StatusDot } from "@/components/status-badge";
 import { AgentIcon } from "@/components/agent-icon";
+import { useLongPress } from "@/hooks/use-long-press";
 import { timeAgoShort } from "@/lib/format";
 import { paneParts, paneTitleInTab } from "@/lib/pane-name";
 import { STATUS_LABEL } from "@/lib/types";
@@ -12,6 +13,12 @@ import type { AgentView } from "@/lib/types";
 interface AgentCardProps {
   agent: AgentView;
   onClick: () => void;
+  /**
+   * Hold-to-manage. When set, a long-press on the row opens the caller's actions sheet instead of
+   * opening the pane (the hook swallows the click that follows a completed hold). Unset — the herd
+   * list — leaves the row exactly as it was.
+   */
+  onLongPress?: () => void;
   /**
    * Show "how long ago" on the second line, and which timestamp it means: "seen" for the Recent
    * section (when you last opened it), "active" for Ready · unseen (when it finished). Omitted
@@ -49,7 +56,8 @@ function Age({ at }: { at: number }) {
 }
 
 // A pane row, used by the triage home and the space view. Usually an agent; for a bare shell pane
-// (kind:"shell") it shows a terminal glyph and a muted "shell" tag instead of a status badge.
+// (kind:"shell") it shows a terminal glyph and a muted "shell" tag instead of a status badge. A
+// hold opens the caller's pane actions when onLongPress is wired.
 //
 // The title is `project · tab` — NOT the agent name, which every row would otherwise share. The two
 // parts render as separate spans on purpose: eight panes in one project all start `moonward_os · `,
@@ -58,6 +66,7 @@ function Age({ at }: { at: number }) {
 export function AgentCard({
   agent,
   onClick,
+  onLongPress,
   age,
   scope = "herd",
   statusStyle = "badge",
@@ -75,14 +84,22 @@ export function AgentCard({
   // title, then crossed 200px of empty card to a 10px mark describing it.
   const cornerDot = statusStyle === "dot" && !isShell;
 
+  const longPress = useLongPress(onLongPress);
+
   const Shell = flat ? "div" : Card;
 
   return (
     <button
       type="button"
       onClick={onClick}
+      {...longPress}
       className={cn(
         "w-full text-left transition-transform active:scale-[0.99]",
+        // select-none + -webkit-touch-callout:none stop iOS Safari's selection loupe, whose native
+        // long-press fires pointercancel and kills the hold timer. Only when the hold is wired, so
+        // the herd list's markup is untouched. Deliberately NO touch-action:none — the list must
+        // keep scrolling; a scroll cancels the hold through the move path instead.
+        onLongPress && "select-none [-webkit-touch-callout:none]",
         // No radius on a flat row. These sit in a `divide-y` list, and a rounded hover fill under a
         // full-width straight hairline reads as a rendering fault — the corners pull away from a
         // line that doesn't follow them. A radius here would need a real border to belong to; the
