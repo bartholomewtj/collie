@@ -162,14 +162,14 @@ On the host, not your phone. Two ways in.
 **From GitHub (turnkey)** — Herdr fetches and builds for you:
 
 ```bash
-herdr plugin install AltanS/collie
+herdr plugin install bartholomewtj/collie
 herdr plugin action invoke start --plugin herdr.collie
 ```
 
 **From a local clone (for development)** — registered by path:
 
 ```bash
-git clone https://github.com/AltanS/collie.git && cd collie
+git clone https://github.com/bartholomewtj/collie.git && cd collie
 herdr plugin link "$(pwd)"
 herdr plugin action invoke start --plugin herdr.collie
 ```
@@ -667,7 +667,7 @@ pull into, and no install of that vintage could refresh itself. The fix ships in
 repairs, so it takes one reinstall to land; `update` works normally from then on:
 
 ```bash
-herdr plugin install AltanS/collie --yes          # replaces the checkout, rebuilds the UI
+herdr plugin install bartholomewtj/collie --yes          # replaces the checkout, rebuilds the UI
 herdr plugin action invoke restart --plugin herdr.collie   # reinstall doesn't restart the service
 herdr plugin action invoke version --plugin herdr.collie   # expect 0.23.1 or newer
 ```
