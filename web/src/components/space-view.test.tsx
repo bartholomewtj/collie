@@ -446,3 +446,52 @@ describe("SpaceView — long-press pane actions", () => {
     expect(screen.queryByRole("button", { name: "Close pane" })).toBeNull();
   });
 });
+
+describe("SpaceView — tab traces mark", () => {
+  const run = (adwId: string, status: string, startedAt: string) => ({
+    repo: "myrepo",
+    adwId,
+    status,
+    startedAt,
+  });
+  const withRuns: AgentView[] = [
+    { ...pane("w1:t1", "w1:t1:p1"), sssf: { runs: [run("a1", "success", "2026-08-19T01:00:00Z")] } },
+    { ...pane("w1:t1", "w1:t1:p2"), sssf: { runs: [run("a2", "running", "2026-08-19T02:00:00Z")] } },
+    pane("w1:t2", "w1:t2:p1"),
+  ];
+
+  it("shows the lanes mark only on tabs whose panes launched runs, dotted while one is live", async () => {
+    const onOpenTraces = vi.fn();
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={withRuns}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={vi.fn()}
+        onOpenTraces={onOpenTraces}
+      />,
+    );
+    const marks = screen.getAllByRole("button", { name: /ADW runs in this tab/ });
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveAccessibleName("ADW runs in this tab (one running)");
+    await userEvent.click(marks[0]);
+    // The tab's NEWEST run wins, with the pane that owns it.
+    expect(onOpenTraces).toHaveBeenCalledWith("w1:t1:p2", expect.objectContaining({ adwId: "a2" }));
+  });
+
+  it("stays hidden when the route doesn't wire onOpenTraces", () => {
+    render(
+      <SpaceView
+        workspace={workspace}
+        tabs={tabs}
+        agents={withRuns}
+        shellPanes={[]}
+        selectedTab={null}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /ADW runs in this tab/ })).toBeNull();
+  });
+});

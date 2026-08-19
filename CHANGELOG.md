@@ -6,6 +6,15 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.39.0] - 2026-08-19
+
+### Added
+- Inside a space, a tab whose panes launched ADW runs shows the lanes mark on its heading (green dot while one is live); tap opens the visualiser on the tab's newest run, ‹ returns to the space (eb8b021)
+
+### Fixed
+- A pane opened from Herd now goes back to Herd on ‹, not to its space then Spaces — the header back and the phone's back gesture agree; Spaces drill-ins and deep links still go up to the space (bc610dc)
+- Bottom-bar tab taps replace history instead of pushing it, so the phone's back gesture no longer retraces every tab you touched (bc610dc)
+
 ## [0.38.0] - 2026-08-18
 
 ### Added

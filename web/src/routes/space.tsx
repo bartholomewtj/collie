@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useRevalidator, useRouteLoaderData } from "react-router";
+import { useLocation, useNavigate, useParams, useRevalidator, useRouteLoaderData } from "react-router";
 
 import { AppHeader } from "@/components/app-header";
 import { ReadOnlyBanner } from "@/components/read-only-banner";
@@ -11,9 +11,9 @@ import { UpdateBanner } from "@/components/update-banner";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { panePath, spacesPath } from "@/lib/nav";
+import { panePath, spacesPath, tracePath } from "@/lib/nav";
 import { setStatus } from "@/lib/status";
-import { isReadOnly } from "@/lib/types";
+import { isReadOnly, type PaneSssfRun } from "@/lib/types";
 
 // Space detail route: one space's tabs + panes. Shares the root snapshot (no own loader), reading
 // :spaceId from the URL — deep-linkable. Native stack shape: the header's "‹" goes up one level to
@@ -42,6 +42,13 @@ export function SpaceRoute() {
 
   const back = () => navigate(spacesPath(data.session));
   const open = (id: string) => navigate(panePath(id, data.session));
+  // A tab heading's lanes mark: the visualiser scoped to the pane that owns that tab's newest run
+  // (the trace screen is per-pane). `from` brings its ‹ back to this space, not to that pane.
+  const { pathname, search } = useLocation();
+  const openTraces = (paneId: string, run: PaneSssfRun) =>
+    navigate(tracePath(spaceId, run.repo, data.session, { pane: paneId }), {
+      state: { from: pathname + search },
+    });
 
   // Recover from a deleted space: once a healthy snapshot no longer has it, bounce to the Spaces
   // list instead of leaving you on an empty shell. Guarded on a connected, non-stale snapshot so a
@@ -102,6 +109,7 @@ export function SpaceRoute() {
                 shellPanes={data.shellPanes}
                 selectedTab={tab}
                 onOpen={open}
+                onOpenTraces={openTraces}
                 session={data.session}
                 readOnly={isReadOnly(data.device)}
                 onRenamed={() => revalidator.revalidate()}
