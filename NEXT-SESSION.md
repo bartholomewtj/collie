@@ -159,12 +159,14 @@ first: `find scripts -name "*.sh" -exec sed -i "s/\r$//" {} +`.
 ## Watch out for
 
 - **Restarting Collie on Windows:** the Herdr `restart` action says `platform_unsupported`; use
+  `bash scripts/collie-ctl.sh restart` (delegates to the ps1 since 0.40.2, which stops every bridge
+  from this checkout and refuses to start beside a foreign listener — #41 closed) after
   `powershell -File contrib\windows\collie-ctl.ps1 build` (the restart alone won't rebuild an
-  existing `web/dist`) then `… restart`. Its "cannot reach Herdr" warning afterwards is a false
+  existing `web/dist`). Its "cannot reach Herdr" warning afterwards is a false
   alarm: the ctl probes `/api/snapshot` without the identity header and gets the 403 from
   `COLLIE_TRUSTED_USER`. Check for real with
   `curl -H "Tailscale-User-Login: <trusted user>" http://127.0.0.1:8787/api/snapshot`. `taskkill /IM bun.exe` kills the live
-  bridge too (I did this once by accident on 2026-08-18; Herdr restarted it). **`bash scripts/collie-ctl.sh restart` does not stop the old bridge on Windows** — see issue #41; check `netstat -ano | findstr :8787` shows one pid tree before trusting a restart.
+  bridge too (I did this once by accident on 2026-08-18; Herdr restarted it). `netstat -ano | findstr :8787` should show ONE listener after any restart; if not, that's #41 back.
 - **`bun test bridge/sssf-viz.test.ts` has an integration half** that runs only with
   `SSSF_VIZ_DIR` and `SSSF_TEST_REPO=C:/ClaudeOS/Projects/claudeSSSF` set — run it after any sssf
   skill update; it imports the real `db.ts` and is the drift tripwire.

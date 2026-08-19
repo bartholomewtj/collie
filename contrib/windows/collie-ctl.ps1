@@ -361,6 +361,9 @@ function Show-CollieStatus {
 
 function Start-Collie {
   Ensure-CollieBuild
+  # `start` is not `restart`: it must not stack a second bridge on a port that already has one, and it
+  # must not silently adopt one either. Stop what this checkout owns and refuse if a stranger remains.
+  Stop-AllCollieBridges
   Register-CollieTask | Out-Null
   Start-ScheduledTask -TaskName $script:TaskName
   Write-Output "bridge started (Task Scheduler: $($script:TaskName))"
@@ -368,6 +371,72 @@ function Start-Collie {
     Write-Warning "Collie cannot reach Herdr yet. Herdr may be temporarily unavailable or running as Administrator. The bridge remains supervised and will reconnect."
   }
   Show-CollieStatus
+}
+
+# Every process running THIS checkout's bridge, or supervising one, whether or not the record names
+# it — the record holds one launcher|bridge pair, and a bridge started any other way (an older
+# start whose record was overwritten, `bash scripts/collie-ctl.sh`, a stray `bun run bridge/index.ts`)
+# stayed alive across `stop`. Windows lets a second bridge bind 127.0.0.1:$Port beside the first, so
+# the miss did not fail loud — it stacked, and requests round-robined between old and new code (#41).
+# Ownership is the command line: bridge = bun running "<PluginRoot>\bridge\index.ts" (either slash
+# style, since bash callers pass forward ones); launcher = this script run with _exec-bridge. One
+# widening, for the case that actually stacked: a bridge started by hand from the checkout root runs
+# as `bun run bridge/index.ts` — a RELATIVE path that names no checkout — so a bun whose command line
+# is that relative script AND that is listening on our port is taken as ours too. The port alone never
+# is: an unrelated listener on :$Port is left alone and reported by Wait-ColliePortFree.
+function Get-CollieBridgeProcesses {
+  $bridgeBack = Join-Path $script:PluginRoot "bridge\index.ts"
+  $bridgeFwd = $bridgeBack.Replace("\", "/")
+  $controlScript = Join-Path $PSScriptRoot "collie-ctl.ps1"
+  $listeners = @(Get-ColliePortListeners)
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $line = $_.CommandLine
+    if (-not $line) { return $false }
+    if ($_.ProcessId -eq $PID) { return $false }
+    if ($line.Contains($bridgeBack) -or $line.Contains($bridgeFwd)) { return $true }
+    if ($line.Contains($controlScript) -and $line.Contains("_exec-bridge")) { return $true }
+    ($listeners -contains $_.ProcessId) -and ($line -match '(^|[\s"''])bridge[\\/]index\.ts(["'']|\s|$)')
+  }
+}
+
+# Stop the recorded pair, then every stray, then wait until nothing listens on the port. Throws if a
+# listener remains: something that is NOT this checkout's bridge owns the port, and starting beside it
+# is exactly the failure this function exists to remove — better to stop with the pids on screen.
+function Stop-AllCollieBridges {
+  Stop-RecordedCollieProcesses
+  foreach ($proc in @(Get-CollieBridgeProcesses)) {
+    if ($proc.CommandLine.Contains("_exec-bridge")) {
+      Stop-CollieProcessTree $proc.ProcessId
+    } else {
+      Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  }
+  Wait-ColliePortFree
+}
+
+# A launcher and everything under it (its bun child). Checked first so a pid that has already gone
+# does not make taskkill complain to the console.
+function Stop-CollieProcessTree([int]$Id) {
+  if (-not (Get-Process -Id $Id -ErrorAction SilentlyContinue)) { return }
+  & (Join-Path $env:SystemRoot "System32\taskkill.exe") /PID $Id /T /F | Out-Null
+}
+
+# The pids listening on 127.0.0.1:$Port right now (Get-NetTCPConnection is the netstat -ano of #41).
+function Get-ColliePortListeners {
+  @(Get-NetTCPConnection -LocalPort $script:Port -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.LocalAddress -eq "127.0.0.1" -or $_.LocalAddress -eq "0.0.0.0" -or $_.LocalAddress -eq "::" -or $_.LocalAddress -eq "::1" } |
+    ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)
+}
+
+function Wait-ColliePortFree([int]$Attempts = 25) {
+  for ($i = 0; $i -lt $Attempts; $i++) {
+    $pids = @(Get-ColliePortListeners)
+    if ($pids.Count -eq 0) { return }
+    Start-Sleep -Milliseconds 200
+  }
+  $pids = @(Get-ColliePortListeners)
+  if ($pids.Count -eq 0) { return }
+  throw "127.0.0.1:$($script:Port) is still bound by pid(s) $($pids -join ', ') after stopping Collie's bridges. Something that is not this checkout's bridge owns the port; refusing to start a second listener beside it (#41). Free the port (taskkill /PID <pid> /F) and retry."
 }
 
 function Stop-RecordedCollieProcesses {
@@ -403,7 +472,8 @@ function Stop-Collie {
   if ($task) {
     Disable-ScheduledTask -TaskName $script:TaskName | Out-Null
   }
-  Stop-RecordedCollieProcesses
+  # Disabled first, so the scheduler does not relaunch what we are about to stop.
+  Stop-AllCollieBridges
   if ($task) { Stop-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue }
   Write-Output "bridge stopped"
 }
@@ -542,7 +612,8 @@ function Invoke-CollieBridge {
     $env:HERDR_PLUGIN_STATE_DIR = Join-Path $localData "herdr\plugins\$($script:PluginId)"
   }
   $bridge = Join-Path $script:PluginRoot "bridge\index.ts"
-  Stop-RecordedCollieProcesses
+  # The launcher is the last line: whatever reached this point, there is exactly one bridge after it.
+  Stop-AllCollieBridges
   while ($true) {
     "$PID|0" | Set-Content -LiteralPath $script:PidFile -NoNewline
     $process = Start-Process `

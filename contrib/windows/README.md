@@ -29,10 +29,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File contrib\windows\collie-c
 ```
 
 `start` registers a Task Scheduler job (`herdr.collie`, override with `COLLIE_TASK_NAME`) that runs
-at logon, restarts after failures, and outlives Herdr. `status` prints the same readiness banner the
-POSIX script does; `logs` tails the bridge's stdout/stderr, including the pair preserved from the
+at logon, restarts after failures, and outlives Herdr. `stop` (and so `restart` and `start`) stops
+**every** bridge running from this checkout — the recorded one and any stray, e.g. one started by hand
+with `bun run bridge/index.ts` — and waits until nothing listens on the port; if something that isn't
+Collie's bridge still holds it, `start` refuses with the pid instead of stacking a second listener
+beside it (Windows allows that, and the two then answer requests turn about — #41). `status` prints
+the same readiness banner the POSIX script does; `logs` tails the bridge's stdout/stderr, including the pair preserved from the
 last crash. Config is the usual `.env` in the plugin config dir
 ([`.env.example`](../../.env.example) documents every key).
+
+**`bash scripts/collie-ctl.sh start|stop|restart` on Git Bash hands over to this script** (one owner
+of the process, whichever shell you typed in); the other verbs (`build`, `status`, `push-keys`, …)
+still run in bash.
 
 **Herdr's action buttons stay POSIX.** [`herdr-plugin.toml`](../../herdr-plugin.toml) declares
 `linux`/`macos` only and its actions shell out to `bash`, and this directory deliberately doesn't
