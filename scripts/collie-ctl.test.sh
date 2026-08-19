@@ -366,7 +366,7 @@ cmd_start
 [ -f "${CONFIG_DIR}/collie.pid" ] || exit 91
 cmd_start
 EOF
-  bash "$harness" > "${CASE_DIR}/start.out" 2>&1 || fail "unsupervised start failed: $(cat "${CASE_DIR}/start.out")"
+  bash "$harness" > "${CASE_DIR}/start.out" 2>&1 || fail "unsupervised start failed: $(cat "${CASE_DIR}/start.out")"
   sleep 1   # the fake bun is nohup'd; let it record itself
   # Two starts, two bridges launched in total — not four.
   assert_eq "$(grep -c '|run ' "$calls")" "2"
