@@ -9,7 +9,7 @@ All notable changes to Collie are recorded here. The format follows
 ## [0.40.5] - 2026-08-20
 
 ### Fixed
-- Windows: the Task Scheduler job no longer leaves a console window on screen while the bridge is running (f4347fc, 420e22c)
+- Windows: the Task Scheduler job no longer leaves a console window on screen while the bridge is running (f4347fc, 420e22c, e4afcc2)
 
 ## [0.40.4] - 2026-08-19
 
