@@ -405,15 +405,16 @@ function Start-Collie {
 # task host became wscript.exe running exec-bridge.vbs, Stop-AllCollieBridges matched that parent
 # and taskkill /T'd it — which killed the bridge it had just started.
 function Get-SelfProcessIds {
-  $ids = New-Object 'System.Collections.Generic.HashSet[int]'
-  $current = $PID
+  $ids = @()
+  $current = [int]$PID
   for ($i = 0; $i -lt 16; $i++) {
-    if (-not $ids.Add($current)) { break }
+    if ($ids -contains $current) { break }
+    $ids += $current
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $current" -ErrorAction SilentlyContinue
     if (-not $proc -or $proc.ParentProcessId -le 0) { break }
     $current = [int]$proc.ParentProcessId
   }
-  return $ids
+  return @($ids)
 }
 
 # Ownership is the command line: bridge = bun running "<PluginRoot>\bridge\index.ts" (either slash
@@ -433,7 +434,7 @@ function Get-CollieBridgeProcesses {
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $line = $_.CommandLine
     if (-not $line) { return $false }
-    if ($selfIds.Contains($_.ProcessId)) { return $false }
+    if ($selfIds -contains [int]$_.ProcessId) { return $false }
     if ($line.Contains($bridgeBack) -or $line.Contains($bridgeFwd)) { return $true }
     if ($line.Contains($controlScript) -and $line.Contains("_exec-bridge")) { return $true }
     if ($line.Contains($hiddenScript)) { return $true }

@@ -32,7 +32,8 @@ COLLIE_HOST="127.0.0.1"
   . (Join-Path $PSScriptRoot "collie-ctl.ps1")
   Assert-Equal $script:Port 9123 ".env port"
   Assert-Equal $env:COLLIE_HOST "127.0.0.1" ".env quoted value"
-  Assert-Equal ((Get-SelfProcessIds).Contains($PID)) $true "self ids include the current process"
+  Assert-Equal ((Get-SelfProcessIds) -contains [int]$PID) $true "self ids include the current process"
+  Assert-Equal ((Get-SelfProcessIds) -contains [uint32]$PID) $true "self ids match UInt32 process ids from Win32_Process"
 
   $originalPluginRoot = $script:PluginRoot
   $script:PluginRoot = Join-Path $temp "launcher plugin & space"
