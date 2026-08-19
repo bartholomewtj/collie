@@ -141,11 +141,12 @@ the unit name; the Herdr action runs from anywhere.
   still-mounted router (unmounting it ate in-progress composer drafts) and pauses polling through
   `lib/idle.ts`. Don't restore it as a security control or re-describe it as one
   ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
-- **"Type into terminal" is armed by a named choice and dies with the pane view.** Long-pressing Send
-  opens a menu; the hold never arms it alone. It disarms on a pane switch, a composer lock (gone pane,
-  read-only, idle pause), a hidden page, and a failed batch — never persisted, never restored. Don't
-  lift it, and don't add the reply guard's `composerReady` pre-flight to it; the reasoning for both
-  sits in `web/src/components/send-mode-menu.tsx`'s header.
+- **"Type into terminal" is armed by a named choice and dies with the pane view.** It is the "Type"
+  toggle in the Controls row beside Keys — never a gesture on Send, and never a bare long-press. It
+  disarms on a pane switch, a composer lock (gone pane, read-only, idle pause), a hidden page, and a
+  failed batch — never persisted, never restored. Don't lift it, and don't add the reply guard's
+  `composerReady` pre-flight to it; the reasoning for the entry point sits at the toggle in
+  `web/src/components/composer.tsx`, and for the pre-flight in `web/src/hooks/use-direct-typing.ts`.
 - **The operator's rows in `commands.toml` replace the shipped command catalog on the panes they
   address, never merge into it** ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md));
   the bridge re-reads the file behind an mtime check, so edits are live and need no restart. The
@@ -210,8 +211,8 @@ the unit name; the Herdr action runs from anywhere.
 
 ## The journal (scrollback the mirror can't give you)
 
-`bridge/journal/` reads the agent's own session log off disk, per harness (`claude` / `codex` / `pi`,
-registered in `registry.ts`). It and `bridge/sssf-viz.ts` (the SSSF traces tab,
+`bridge/journal/` reads the agent's own session log off disk, per harness (`claude` / `codex` / `pi` /
+`grok` / `opencode`, registered in `registry.ts`). It and `bridge/sssf-viz.ts` (the SSSF traces tab,
 [ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)) are the **only** things
 in the bridge that touch the filesystem, so the containment rule in
 [`files.ts`](./bridge/journal/files.ts) is absolute: **every** path an
@@ -233,7 +234,7 @@ Every other tunnel (NetBird, ZeroTier, Cloudflare Tunnel) is `COLLIE_SKIP_SERVE=
 Variant E: the operator owns the ingress, Collie publishes nothing. **Don't add a second managed front
 door** — [ADR 0001](./.adr/0001-one-managed-front-door.md).
 
-**Push subscribe stays read-level** — closed by endpoint validation and caps, not by gating notifications away from read-only devices ([ADR 0020](./.adr/0020-subscribe-stays-read-level.md)).
+**Push subscribe, snooze and notification prefs (POST) are write-level** — bridge-wide state a read-only device must not be able to set; endpoint validation and caps in `push-endpoint.ts` still close the SSRF ([ADR 0021](./.adr/0021-notification-settings-are-writes.md), which supersedes 0020). `GET …/prefs` and `POST /api/update/check` stay read-level.
 
 **Host validation is fail-closed** — a non-loopback Host must be loopback, a `COLLIE_PUBLIC_HOSTS`
 entry, a ctl-discovered Tailscale host, or an allowed origin's host

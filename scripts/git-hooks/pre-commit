@@ -2,6 +2,7 @@
 # Versioning guard. Install with: scripts/install-hooks.sh (sets core.hooksPath).
 # 1) versions must be consistent (check-version.sh)
 # 2) if functional code changed, the canonical version must differ from HEAD (i.e. you bumped it)
+# 3) staged entry docs must not link to files that don't exist (check-doc-links.sh)
 # Override a single commit with: SKIP_VERSION_CHECK=1 git commit …
 set -euo pipefail
 
@@ -14,6 +15,13 @@ fi
 
 # (1) consistency
 "$ROOT/scripts/check-version.sh" >/dev/null
+
+# (1b) doc links — if an entry doc is staged, every relative link / repo path in it must resolve.
+staged_docs="$(git diff --cached --name-only | grep -E '^(CLAUDE|CONTEXT|AGENTS|README|ARCHITECTURE|DEPLOYMENT|HARNESS_CONTRIBUTING|HERDR_API|NEXT-SESSION)\.md$|^\.adr/README\.md$' || true)"
+if [ -n "$staged_docs" ]; then
+  # shellcheck disable=SC2086
+  "$ROOT/scripts/check-doc-links.sh" $staged_docs
+fi
 
 # (2) bump-on-change — any functional path in this set requires a version bump.
 staged="$(git diff --cached --name-only)"

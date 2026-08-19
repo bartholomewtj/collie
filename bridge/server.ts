@@ -393,7 +393,7 @@ export function startServer(opts: {
         // Write-level: a subscription is a standing grant to receive every alert this bridge sends,
         // so an unallowlisted device must not be able to create one for itself (issue #8). It isn't
         // terminal-driving, but "read-only" has never meant "may register for the operator's push
-        // stream" — see .adr/0020.
+        // stream" — see .adr/0021 (which supersedes 0020).
         const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const bad = requireJsonBody(req);

@@ -1,6 +1,8 @@
 # 0020 — Subscribe stays read-level
 
-Status: **Accepted** (2026-08-17)
+Status: **Superseded** by [0021](./0021-notification-settings-are-writes.md) (2026-08-17; marked 2026-08-19)
+
+> `POST /api/subscribe` is **write**-level today (issue #8, ADR 0021). The endpoint validation and caps below still stand; only the access level changed.
 
 ## Context
 

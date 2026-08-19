@@ -1,212 +1,240 @@
-# Collie — ICM System Map & Context Router
+# Collie — system map
 
-> **Form**: System Map (ICM Form 6 — Van Clief & McDermott, [arXiv:2603.16021](https://arxiv.org/abs/2603.16021))  
-> **Target**: `AltanS/collie` (forked repo on Windows at `C:\ClaudeOS\Projects\collie`)  
-> **Entry Twins**: [`CLAUDE.md`](file:///C:/ClaudeOS/Projects/collie/CLAUDE.md) · [`AGENTS.md`](file:///C:/ClaudeOS/Projects/collie/AGENTS.md) · [`CONTEXT.md`](file:///C:/ClaudeOS/Projects/collie/CONTEXT.md)  
-> **Current Version**: `0.40.3` (`v0.40.3`) | Herdr Plugin: `herdr.collie`
+> **What this is**: the map. Where things live, what talks to what, and which files to open for a
+> task. **Rules** (versioning, security posture, don't-do-this) live in [`CLAUDE.md`](./CLAUDE.md) —
+> not restated here. **Why-not** decisions live in [`.adr/`](./.adr/README.md).
+> Form: ICM System Map (Van Clief & McDermott, [arXiv:2603.16021](https://arxiv.org/abs/2603.16021)).
+>
+> **This checkout runs on Windows** (`C:\ClaudeOS\Projects\collie`, fork of `AltanS/collie`, remote
+> `bartholomewtj/collie`). Upstream and the docs assume Linux + systemd; on this box the bridge is
+> started/stopped by `contrib/windows/collie-ctl.ps1` and the Herdr `update`/`restart` plugin actions
+> answer `platform_unsupported`. Current version and session state: [`NEXT-SESSION.md`](./NEXT-SESSION.md).
 
 ---
 
-## 1. Universes & Concept Disambiguations
+## 1. Universes — what is live, what is not
 
-### Universes
-| Universe | Scope & Files | Maintenance Rule |
+| Universe | Where | Rule |
 |---|---|---|
-| **live** | `bridge/*.ts` (Bun backend), `web/src/` (Vite+React frontend), `scripts/collie-ctl.sh`, `herdr-plugin.toml`, `.adr/` | Active implementation. Changes must pass `scripts/check-version.sh` and tests (`bun test`). |
-| **leftover** | `contrib/windows/`, `app_docs/`, historical specs in `specs/`, legacy test scripts `scripts/push-test.ts` | Historical documentation and auxiliary platform scripts. Reference only; do not refactor without reason. |
-| **ghost** | Speculative features parked in [`ARCHITECTURE.md §8`](file:///C:/ClaudeOS/Projects/collie/ARCHITECTURE.md#L273-L288) (`herdr terminal session observe`/`control`, client-side terminal emulator, auto-speech recognition APIs) | **Do not implement**. Explicitly closed by ADRs (e.g. [ADR 0008](file:///C:/ClaudeOS/Projects/collie/.adr/0008-collie-does-not-run-a-terminal-emulator.md)). |
+| **live** | `bridge/` (Bun backend) · `web/src/` (Vite + React frontend) · `scripts/` · `herdr-plugin.toml` · `.adr/` · `contrib/windows/` (**live on this box** — the ctl bash script delegates `start/stop/restart/update` to `collie-ctl.ps1` on Git Bash) | Active code. Functional changes need a version bump (`CLAUDE.md` → Versioning) and pass `bun test`. |
+| **factory** | `adws/` — claudeSSSF agent-workflow scripts (Python, `uv`) that *operate on* this repo. `adws/adw_data/sssf.db` is what the Traces tab reads. | Not app code. Don't edit `adws/adw_sssf_config/sssf.config.yaml` mid-run. |
+| **historical** | `specs/`, `requests/`, `app_docs/` — the plan/request/doc artefacts those factory runs produced, one file per issue. | Read for background on *why a change was made*; never the source of truth for how the code works now. |
+| **ghost** | Ideas parked in [`ARCHITECTURE.md` §8](./ARCHITECTURE.md) — `herdr terminal session observe`/`control`, a client-side terminal emulator, speech APIs. | **Do not implement.** Closed by ADRs ([0008](./.adr/0008-collie-does-not-run-a-terminal-emulator.md)). |
+| **generated / vendored** | `web/dist`, `web/dist-staging`, `build/`, `node_modules/`, `web/src/components/ui/` (shadcn — regenerate, don't hand-edit) | Don't edit by hand. |
 
-### Name & Concept Collisions
-- **Herdr Workspace vs Collie Space**: Herdr `workspace_id` maps 1:1 to Collie's "Space" route (`/space/:spaceId`). A Space contains multiple Tabs, and each Tab contains Panes.
-- **Herdr Pane vs Agent Chat View**: Herdr manages raw PTY panes (`pane_id`). Collie renders agent-bearing panes through `AgentChat` ([`web/src/components/agent-chat.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/agent-chat.tsx)) with prompt parsing; bare shell panes fallback to raw mirror.
-- **Session Identity**:
-  - *Agent Session UUID*: Agent's on-disk transcript id ([`bridge/journal/`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/)).
-  - *Herdr Session*: The daemon state returned in `session.snapshot`.
-  - *Collie Multi-Session URL*: `?s=<name>` query param scoped in [`web/src/lib/session.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/session.ts).
-- **Idle Lock**: A client-side visual pause ([`web/src/lib/idle.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/idle.ts), [ADR 0007](file:///C:/ClaudeOS/Projects/collie/.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)) that stops polling on unattended screens. **It is NOT a security gate**.
-- **Type Into Terminal**: A transient send mode ([`web/src/components/send-mode-menu.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/send-mode-menu.tsx)) armed per-action, never persisted, disarmed on pane switch.
-- **SSSF Traces**: Single Session Subagent Framework trace visualizer mounted as a sandboxed iframe from `SSSF_VIZ_DIR` ([`bridge/sssf-viz.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts), [ADR 0024](file:///C:/ClaudeOS/Projects/collie/.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)).
+### Names that collide
 
----
-
-## 2. Noun Taxonomy (Object Cards)
-
-```
-                       ┌────────────────────────┐
-                       │   Herdr Unix Socket    │
-                       └───────────┬────────────┘
-                                   │ (NDJSON RPC / Named Pipe)
-                       ┌───────────▼────────────┐
-                       │   HerdrSocketClient    │
-                       └─────┬────────────┬─────┘
-           Snapshot Poll tick│            │events.subscribe (poke)
-                       ┌─────▼────────────▼─────┐
-                       │      StateEngine       │
-                       └───────────┬────────────┘
-                                   │
-                       ┌───────────▼────────────┐
-                       │       HttpServer       │◄─── JournalRegistry & Files
-                       │    (bridge/server)     │◄─── SssfVizMount
-                       └───────────┬────────────┘
-                                   │ (HTTP /api/snapshot poll & mutations)
-                       ┌───────────▼────────────┐
-                       │     React Loaders      │
-                       │    (web/src/lib)       │
-                       └───────────┬────────────┘
-                                   │
-                       ┌───────────▼────────────┐
-                       │    Harness Registry    │
-                       │   (Block AST Parser)   │
-                       └─────┬────────────┬─────┘
-                             │            │
-         ┌───────────────────▼──┐      ┌──▼──────────────────┐
-         │ Prompt/Wizard Blocks │      │ AnsiOutput (Mirror) │
-         └──────────────────────┘      └─────────────────────┘
-```
-
-### Bridge Objects (Backend — `bridge/`)
-
-#### 1. [`HttpServer`](file:///C:/ClaudeOS/Projects/collie/bridge/server.ts#L1-L1694)
-- **Role**: `Bun.serve` daemon binding `127.0.0.1:$COLLIE_PORT` (default 8787).
-- **Why this shape**: Serves static `web/dist` from disk at request time (zero-restart frontend updates) and provides the REST API.
-- **Boundaries & Security**: Enforces loopback check ([`isLoopbackBindHost`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts#L15-L35)), origin validation ([`COLLIE_ALLOWED_ORIGINS`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts#L70-L95)), fail-closed host headers ([ADR 0023](file:///C:/ClaudeOS/Projects/collie/.adr/0023-host-validation-is-fail-closed.md)), trusted user ([`COLLIE_TRUSTED_USER`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts#L100-L120)), and device header auth ([`COLLIE_DEVICE_HEADER`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts#L125-L145)).
-- **Connected to**: [`HerdrClient`](file:///C:/ClaudeOS/Projects/collie/bridge/herdr-client.ts), [`StateEngine`](file:///C:/ClaudeOS/Projects/collie/bridge/state-engine.ts), [`JournalRegistry`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/registry.ts), [`SssfViz`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts), [`Push`](file:///C:/ClaudeOS/Projects/collie/bridge/push.ts).
-
-#### 2. [`HerdrSocketClient`](file:///C:/ClaudeOS/Projects/collie/bridge/herdr-client.ts#L1-L495)
-- **Role**: The **sole** module knowing Herdr's wire protocol and RPC method names (`session.snapshot`, `pane.read`, `pane.send_keys`, `agent.send`, `pane.rename`, `pane.close`, `events.subscribe`).
-- **Why this shape**: Isolates upstream Herdr API changes to a single file. Speaks newline-delimited JSON-RPC over `Bun.connect({unix})` on POSIX and `node:net` on Windows named pipes via [`dial.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/dial.ts#L1-L140). One-shot connection per RPC.
-
-#### 3. [`StateEngine`](file:///C:/ClaudeOS/Projects/collie/bridge/state-engine.ts#L1-L393) & [`EventPoker`](file:///C:/ClaudeOS/Projects/collie/bridge/event-poker.ts#L1-L200)
-- **Role**: Polling orchestrator and status cache.
-- **Why this shape**: Polling Herdr (`session.snapshot`) guarantees eventual consistency without complex resync. `EventPoker` consumes `events.subscribe` and pokes `StateEngine` for an immediate debounced re-poll when agent status changes.
-
-#### 4. [`JournalRegistry`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/registry.ts#L1-L80) & [`Files`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/files.ts#L1-L140)
-- **Role**: Reads conversation history from agent-native log files on disk (Claude JSONL, OpenAI Codex, Pi, OpenCode, Grok).
-- **Security Invariant**: Absolute containment via [`containedRealpath`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/files.ts#L25-L65). Rejects symlink escapes outside configured agent roots.
-
-#### 5. [`SssfVizMount`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts#L1-L750)
-- **Role**: Discovers `adws/adw_data/sssf.db` (scanning ≤2 levels up/down from workspace cwds), matches repos, and serves the SSSF trace visualizer iframe at `/sssf/*`.
+- **Herdr workspace vs Collie space** — same thing. Herdr `workspace_id` ↔ route `/space/:spaceId`. A space holds tabs; a tab holds panes.
+- **Herdr pane vs agent chat** — Herdr's `pane_id` is a raw PTY. Collie renders agent panes through `AgentChat` (`web/src/components/agent-chat.tsx`) with prompt parsing; bare shells fall back to the raw mirror.
+- **Session** means three things: the agent's on-disk transcript id (`bridge/journal/`), Herdr's daemon session (`session.snapshot`), and Collie's multi-session URL `?s=<name>` (`web/src/lib/session.ts`, `bridge/sessions.ts`).
+- **Idle lock** — a pause, not a security gate (`web/src/lib/idle.ts`, [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
+- **Type into terminal** — a per-session send mode armed by the "Type" toggle beside Keys; never persisted. Entry point + reasoning at the toggle in `web/src/components/composer.tsx`; the keystroke pump in `web/src/hooks/use-direct-typing.ts`. (Older docs cite a `send-mode-menu.tsx` — it no longer exists.)
+- **SSSF** = Super Simple Software Factory (the `adws/` universe above). Its trace visualiser is an external Vue app that Collie mounts in an iframe at `/sssf/*` from `SSSF_VIZ_DIR` (`bridge/sssf-viz.ts`, [ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)).
+- **Harness** — a CLI agent Collie can drive (`claude`, `codex`, `pi`, `grok`, `omp`, `opencode`). Two independent adapter sets share the word: **screen grammar** in `web/src/lib/harness/<name>/` (parses the live pane) and **journal adapters** in `bridge/journal/<name>.ts` (read the log on disk). Adding one: [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md).
 
 ---
 
-### Web Objects (Frontend — `web/src/`)
+## 2. Shape — one picture
 
-#### 1. [`Router & Loaders`](file:///C:/ClaudeOS/Projects/collie/web/src/router.tsx#L1-L59) / [`loaders.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/loaders.ts#L1-L412)
-- **Role**: React Router v6 Data Mode router (`createBrowserRouter`). **NO TanStack Query**.
-- **Data Flow**: `rootLoader` (`/api/snapshot`), `paneLoader` (`/api/pane/:paneId`), `historyLoader` (`/api/pane/:paneId/history`). Polling is driven by [`usePolling`](file:///C:/ClaudeOS/Projects/collie/web/src/hooks/use-polling.ts) calling `useRevalidator().revalidate()`.
-
-#### 2. [`HarnessRegistry`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/registry.ts#L1-L34) & [`Block AST`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/blocks.ts#L1-L231)
-- **Role**: Intermediate AST between raw ANSI text and React interactive UI components.
-- **Pipeline**: `parseAnsi(text)` → `StyledLine[]` → `adapter.buildBlocks()` → `Block[]`.
-- **Block Kinds**: `raw`, `prompt-select`, `preview-select`, `wizard`, `menu`, `multi-select`.
-- **Adapters**: [`claudeAdapter`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/claude/), [`grokAdapter`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/grok/), [`ompAdapter`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/omp/).
-
-#### 3. [`AnsiOutput`](file:///C:/ClaudeOS/Projects/collie/web/src/components/ansi-output.tsx#L1-L350)
-- **Role**: Terminal mirror renderer.
-- **Security Invariant**: Renders ANSI as **React text nodes only** (never `innerHTML`). Enforces inverted light theme ([ADR 0002](file:///C:/ClaudeOS/Projects/collie/.adr/0002-invert-the-light-terminal-mirror.md)).
-
-#### 4. [`Composer`](file:///C:/ClaudeOS/Projects/collie/web/src/components/composer.tsx#L1-L950) & [`ReplyGuard`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/reply-action.ts#L1-L300)
-- **Role**: Mobile input box supporting native voice dictation, direct typing, quick actions, and key sequences.
-- **Guards**: Checks prompt binding (`expected_prompt`), validates paste placeholders (`[Pasted text #N +M lines]`, [ADR 0010](file:///C:/ClaudeOS/Projects/collie/.adr/0010-long-sends-are-verified-via-the-paste-placeholder.md)), confirms destructive shell commands (`rm`, `dd`, `sudo` via [`destructive.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/destructive.ts)).
-
----
-
-## 3. Verbs (Core Runtime Processes)
-
-### Process 1: Polling & State Synchronisation
 ```
-Herdr Daemon (Unix Socket / Pipe)
-   │  1. session.snapshot (or workspace.list / pane.list fallback)
-   ▼
-bridge/state-engine.ts (poll loop every COLLIE_POLL_MS / COLLIE_POLL_IDLE_MS)
-   ▲  2. events.subscribe stream pokes immediate debounced re-poll
-   │
-bridge/server.ts (/api/snapshot HTTP endpoint)
-   │  3. GET /api/snapshot (React Router useRevalidator loop)
-   ▼
-web/src/lib/loaders.ts ──► React Router Component Tree
-```
-
-### Process 2: Interaction & Send Action Execution
-```
-User taps Prompt Block / Composer Send
-   │  1. Dialog Guard verifies prompt signature on screen (lib/dialog-guard.ts)
-   ▼
-web/src/lib/api.ts (POST /api/send with text, action, or key sequence)
-   │  2. HTTP Request with expected_prompt & tailnet identity header
-   ▼
-bridge/server.ts
-   │  3. Access gate check (trusted user / device header / loopback)
-   │  4. Prompt binding check (pane.read tail match against expected_prompt)
-   │  5. Audit log line appended (<stateDir>/audit.log mode 0600)
-   ▼
-bridge/herdr-client.ts
-   │  6. One-shot RPC: agent.send + Enter OR pane.send_keys
-   ▼
-Herdr Socket ──► Agent Process in PTY
-```
-
-### Process 3: Journal / Transcript History Retrieval
-```
-User navigates to /pane/:paneId/history
-   │  1. GET /api/pane/:paneId/history
-   ▼
-bridge/server.ts
-   │  2. Identify agent harness from pane snapshot
-   │  3. Resolve transcript path via harness adapter (bridge/journal/registry.ts)
-   │  4. Enforce containedRealpath(root, path) (bridge/journal/files.ts)
-   │  5. Parse JSONL / raw session log into TranscriptEntry[]
-   ▼
-web/src/routes/history.tsx (renders scrollback turns with find & jump-to-turn)
+ Herdr daemon (Unix socket / Windows named pipe, NDJSON JSON-RPC, one request per connection)
+        │
+        │ herdr-client.ts  ← the ONLY file that knows Herdr's method names (via dial.ts + wire.ts)
+        ▼
+ state-engine.ts  ──poll──►  snapshot (agents, shells, spaces, tabs)
+        ▲ poke                              │
+ event-poker.ts (events.subscribe)          │
+                                            ▼
+ server.ts  (Bun.serve on 127.0.0.1:8787)  ── /api/* JSON  +  web/dist static from disk
+   ├─ config.ts (env → Config), guard/checkAccess (same-origin, trusted user, device header, host)
+   ├─ audit.ts (write-level actions → <stateDir>/audit.log)
+   ├─ activity.ts / notifications.ts / notify-prefs.ts / snooze.ts / push.ts / push-endpoint.ts
+   ├─ uploads.ts (images → <stateDir>/uploads), update.ts (newest v* tag), sessions.ts (?s=)
+   ├─ journal/  (transcripts off disk — filesystem reader #1, contained by files.ts)
+   └─ sssf-viz.ts (Traces iframe — filesystem reader #2)
+        │
+        │ HTTP: loaders.ts (React Router data mode) + api.ts mutations + use-polling.ts revalidate
+        ▼
+ web/src/  routes/ → components/ → lib/harness (screen grammar → Block AST) → blocks rendered
+                                    lib/ansi.ts → components/ansi-output.tsx (mirror, text nodes only)
 ```
 
 ---
 
-## 4. Change-Impact Matrix (Effects Waterfall)
+## 3. Bridge — every module, one line
 
-| When you change... | You MUST open & edit... | Do NOT touch... |
-|---|---|---|
-| **Herdr Socket RPC / Wire Methods** | [`bridge/herdr-client.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/herdr-client.ts), [`bridge/types.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/types.ts), [`HERDR_API.md`](file:///C:/ClaudeOS/Projects/collie/HERDR_API.md) | `web/src/`, `bridge/server.ts` |
-| **New Agent Grammar (e.g. Codex, Pi UI)** | [`web/src/lib/harness/registry.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/registry.ts), `web/src/lib/harness/<agent>/`, [`bridge/journal/registry.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/registry.ts) | `web/src/router.tsx`, `bridge/herdr-client.ts` |
-| **Terminal Rendering & Colors** | [`web/src/components/ansi-output.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/ansi-output.tsx), [`web/src/lib/ansi.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/ansi.ts), [`web/src/index.css`](file:///C:/ClaudeOS/Projects/collie/web/src/index.css) | Backend bridge files |
-| **Auth, Ingress, & Network Security** | [`bridge/config.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts), [`bridge/server.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/server.ts), [`DEPLOYMENT.md`](file:///C:/ClaudeOS/Projects/collie/DEPLOYMENT.md), `.adr/0023*` | `web/src/lib/harness/` |
-| **Web Routes & Navigation** | [`web/src/router.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/router.tsx), [`web/src/lib/loaders.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/loaders.ts), `web/src/routes/` | Bridge state engine |
-| **SSSF Visualizer Integration** | [`bridge/sssf-viz.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts), [`web/src/components/sssf-frame.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/sssf-frame.tsx), [`web/src/routes/traces.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/routes/traces.tsx) | `bridge/herdr-client.ts` |
-| **Version & Releases** | [`herdr-plugin.toml`](file:///C:/ClaudeOS/Projects/collie/herdr-plugin.toml), [`package.json`](file:///C:/ClaudeOS/Projects/collie/package.json), [`web/package.json`](file:///C:/ClaudeOS/Projects/collie/web/package.json), [`CHANGELOG.md`](file:///C:/ClaudeOS/Projects/collie/CHANGELOG.md) | Code files |
+`bridge/` is small enough to list in full. Tests sit beside each file as `*.test.ts`.
 
----
-
-## 5. Architectural Invariants & Rules
-
-1. **Mandatory Version Synchronization**:
-   - `herdr-plugin.toml`, `package.json`, `web/package.json`, and the top entry in `CHANGELOG.md` **must always match**.
-   - Validated by running `scripts/check-version.sh`.
-2. **Frontend Rebuild & Disk Serving**:
-   - `web/dist` is served by Bun directly from disk at request time. Web changes do **not** require a systemd daemon restart — just `bun run build`.
-   - Backend changes (`bridge/*.ts`) **always require restarting the service** (`systemctl --user restart collie` or `collie-ctl.ps1 restart`).
-3. **No TanStack Query & No Client-Side Terminal Emulator**:
-   - Data fetching is 100% React Router loaders + `useRevalidator()`.
-   - Collie renders Herdr's pre-computed grid as React text nodes; never run xterm.js or an emulator inside Collie ([ADR 0008](file:///C:/ClaudeOS/Projects/collie/.adr/0008-collie-does-not-run-a-terminal-emulator.md)).
-4. **Security & Ingress Posture**:
-   - Loopback bind only (`127.0.0.1`). Fail-closed origin/host validation.
-   - Single front-door architecture (`tailscale serve` or reverse proxy; **never `tailscale funnel`**).
-   - Strict Content Security Policy (`default-src 'self'`). Zero `innerHTML` on terminal output.
-5. **Path Containment**:
-   - Every file read by the bridge goes through `containedRealpath` ([`bridge/journal/files.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/files.ts)) against allowed root directories.
-
----
-
-## 6. Fast Navigation Directory for LLMs
-
-| Task | Primary Files to Load |
+| File | Role |
 |---|---|
-| **Investigate / Fix Backend Socket RPC** | [`bridge/herdr-client.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/herdr-client.ts) · [`bridge/dial.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/dial.ts) · [`bridge/types.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/types.ts) · [`HERDR_API.md`](file:///C:/ClaudeOS/Projects/collie/HERDR_API.md) |
-| **Investigate / Fix Polling or Transitions** | [`bridge/state-engine.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/state-engine.ts) · [`bridge/event-poker.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/event-poker.ts) · [`web/src/hooks/use-polling.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/hooks/use-polling.ts) |
-| **Investigate / Add Prompt Block Detection** | [`web/src/lib/blocks.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/blocks.ts) · [`web/src/lib/harness/registry.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/registry.ts) · [`web/src/lib/harness/claude/`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/harness/claude/) |
-| **Investigate / Fix Composer & Input Sending** | [`web/src/components/composer.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/composer.tsx) · [`web/src/lib/reply-action.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/reply-action.ts) · [`web/src/lib/dialog-guard.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/dialog-guard.ts) |
-| **Investigate / Fix Session History Logs** | [`bridge/journal/registry.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/registry.ts) · [`bridge/journal/claude.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/claude.ts) · [`bridge/journal/files.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/journal/files.ts) · [`web/src/routes/history.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/routes/history.tsx) |
-| **Investigate / Fix Long-press Actions (rename / close)** | [`web/src/hooks/use-long-press.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/hooks/use-long-press.ts) · [`web/src/components/pane-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/pane-actions-sheet.tsx) · [`web/src/components/tab-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/tab-actions-sheet.tsx) · [`web/src/components/space-actions-sheet.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/space-actions-sheet.tsx) · [`web/src/components/action-sheet-rows.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/action-sheet-rows.tsx) |
-| **Add / Fix Operator Rows (`commands.toml`: `[[commands]]` palette, `[[quick]]` Quick dock)** | [`bridge/operator-commands.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/operator-commands.ts) · [`web/src/lib/agent-commands.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/agent-commands.ts) · [`web/src/lib/quick-replies.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/quick-replies.ts) · [`web/src/lib/operator-commands.ts`](file:///C:/ClaudeOS/Projects/collie/web/src/lib/operator-commands.ts) · [`commands.toml.example`](file:///C:/ClaudeOS/Projects/collie/commands.toml.example) |
-| **Investigate / Fix SSSF Traces Tab** | [`bridge/sssf-viz.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/sssf-viz.ts) · [`web/src/components/sssf-frame.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/components/sssf-frame.tsx) · [`web/src/routes/traces.tsx`](file:///C:/ClaudeOS/Projects/collie/web/src/routes/traces.tsx) |
-| **Investigate Auth / Security / Binding** | [`bridge/server.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/server.ts) · [`bridge/config.ts`](file:///C:/ClaudeOS/Projects/collie/bridge/config.ts) · [`DEPLOYMENT.md`](file:///C:/ClaudeOS/Projects/collie/DEPLOYMENT.md) |
-| **Investigate CLI / Deployment Scripts** | [`scripts/collie-ctl.sh`](file:///C:/ClaudeOS/Projects/collie/scripts/collie-ctl.sh) · [`justfile`](file:///C:/ClaudeOS/Projects/collie/justfile) · [`herdr-plugin.toml`](file:///C:/ClaudeOS/Projects/collie/herdr-plugin.toml) |
+| `index.ts` | Entry point. Loads config, starts state engine, event poker, notifications, push, server. Periodic journal rescan lives here. |
+| `config.ts` | All env → `Config`, resolved once. Loopback-bind check (`isLoopbackBindHost`), `COLLIE_*` parsing, allowed origins/hosts, trusted user, device header. |
+| `server.ts` | `Bun.serve` HTTP handler: every `/api/*` route (table below), access gate (`guard`, `checkAccess`, `isHostAllowed`), prompt-binding check, static serving with CSP, ETag/gzip. 1.7k lines — use the route table to jump. |
+| `herdr-client.ts` | The Herdr socket adapter. Sole owner of RPC method names (`session.snapshot`, `pane.read`, `pane.send_keys`, `agent.send`, rename/close/move, `events.subscribe`). |
+| `dial.ts` | Platform shim: `Bun.connect({unix})` on POSIX, `node:net` named pipe on Windows. |
+| `wire.ts` | Pure NDJSON decoders for the wire protocol. |
+| `write-drain.ts` | Backpressured socket write arithmetic (pure). |
+| `state-engine.ts` | Poll loop (`COLLIE_POLL_MS` / `COLLIE_POLL_IDLE_MS`), builds the snapshot, emits transitions (blocked/done). |
+| `event-poker.ts` | Long-lived `events.subscribe` stream whose only job is to poke the state engine for a debounced re-poll. |
+| `types.ts` | Bridge domain model — our types, decoupled from Herdr's wire shapes. |
+| `activity.ts` | Per-pane "last did something / last seen by you" (Herdr tracks neither). Feeds Herd ordering and the seen header ([ADR 0003](./.adr/0003-one-shared-seen.md)). |
+| `audit.ts` | Append-only audit log of write-level actions, mode 0600. |
+| `notifications.ts` | Coordinator that gives every blocked/done alert one delivery decision (dedupe, escalation). |
+| `notify-prefs.ts` | Which lifecycle events push at all ([ADR 0021](./.adr/0021-notification-settings-are-writes.md)). |
+| `snooze.ts` | Global do-not-disturb deadline for push. |
+| `push.ts` | Web Push (VAPID) sender; optional dependency, no-ops without keys. |
+| `push-endpoint.ts` | Subscription endpoint validation (push-service host allowlist) + caps — closes the SSRF (issue #7). |
+| `prompt-binding.ts` | Normalises a rendered prompt region so `expected_prompt` survives redraws. |
+| `operator-commands.ts` | Reads the operator's `commands.toml` (`[[commands]]`, `[[quick]]`) behind an mtime check; rows replace, never merge ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md)). |
+| `uploads.ts` | Uploaded images → `<stateDir>/uploads/`, referenced by path in the send. Magic-byte checked. |
+| `update.ts` | Update-availability signal on `/api/snapshot.update` — polls this fork's newest `v*` tag (`COLLIE_UPDATE_REPO`). |
+| `sessions.ts` | Multi-session: several named Herdr sessions, `?s=<name>` picks one. |
+| `http-cache.ts` | Pure ETag / conditional GET / gzip helpers. |
+| `sssf-viz.ts` | Discovers `adws/adw_data/sssf.db` near workspace cwds, serves the visualiser at `/sssf/*`. Filesystem reader #2. |
+| `journal/registry.ts` | The single decision site for "which agents have readable history"; maps harness → adapter. |
+| `journal/files.ts` | Filesystem half shared by adapters. **`containedRealpath` is the containment invariant** — every path any adapter reads goes through it. |
+| `journal/store.ts` | Reads + caches parsed journals for whichever adapter the pane's agent selects. |
+| `journal/text.ts` | Shared caps so one pathological log can't balloon a response. |
+| `journal/types.ts` | `TranscriptEntry` and the adapter contract. |
+| `journal/{claude,codex,pi,grok,opencode}.ts` | One adapter per harness — finds the session file, parses it. Probe real logs with `bun scripts/journal-probe.ts`. |
+
+### `/api/*` → handler (all in `server.ts`)
+
+| Route | Method | Handler | Level |
+|---|---|---|---|
+| `/api/snapshot` | GET | inline → `stateEngine.snapshot()` + `update` | read |
+| `/api/config` | GET | inline (`push`, features, build id) | read |
+| `/api/pane/:id` | GET | `readPane` | read |
+| `/api/pane/:id/history` | GET | `paneHistory` → journal store | read |
+| `/api/pane/:id/reply` | POST | `replyPane` → `sendReplySteps` (prompt binding + paste-placeholder verify) | write |
+| `/api/pane/:id/keys` | POST | `keysPane` | write |
+| `/api/pane/:id/upload` | POST | `uploadPane` | write |
+| `/api/pane/:id/close` · `/rename` | POST | `closePane` · `renamePane` | write |
+| `/api/tab` · `/api/tab/:id/rename` · `/close` | POST | `createTab` · `renameTab` · `closeTab` | write |
+| `/api/workspace` · `/api/workspace/:id/rename` | POST | `createWorkspace` · `renameWorkspace` | write |
+| `/api/subscribe` | POST | inline → `push-endpoint.ts` | write ([ADR 0021](./.adr/0021-notification-settings-are-writes.md)) |
+| `/api/notifications/prefs` | GET · POST | inline → `notify-prefs.ts` | read · write |
+| `/api/notifications/snooze` | POST | inline → `snooze.ts` | write |
+| `/api/update/check` | POST | inline → `update.ts` (rate-limited) | read |
+| `/sssf/*` | GET | `sssfViz.handle` | read |
+| `/auth`, `/auth/*` | — | reserved placeholder (`isReservedAuthPath`) | — |
+| everything else | GET | `serveStatic` from `web/dist` | read |
+
+---
+
+## 4. Web — folders, routes, and where the big pieces are
+
+`web/src/` is ~180 files; this lists the folders and the files you'll actually open. Tests sit beside
+each file as `*.test.ts(x)`.
+
+### Folders
+
+| Folder | What's in it |
+|---|---|
+| `routes/` | One file per screen (table below). `root.tsx` = layout, `BottomNav`, boot splash, error boundary. |
+| `components/` | Screen pieces. `ui/` is shadcn (generated). Everything else is Collie's. |
+| `lib/` | Non-React logic: API client, loaders, actions, guards, parsers. |
+| `lib/harness/` | Screen grammar. **Shared models** (`prompt-model.ts`, `wizard-model.ts`, `menu-model.ts`, `multi-select-model.ts`, `preview-model.ts`, `dialog-contract.ts`, `guard.ts`, `conformance.ts`) + **one adapter folder per harness** (`claude/`, `grok/`, `omp/`) registered in `registry.ts`. `types.ts` is the adapter contract. |
+| `lib/harness/claude/` | The most complete adapter: `chrome.ts` (input box, statusline bound), `markers.ts`, `prompt-select.ts`, `preview-select.ts`, `wizard.ts`, `multi-select.ts`, `menu.ts` (generic, runs last), `paste.ts` (placeholder verify). |
+| `lib/grammar/` | Ground-truth notes on Claude's dialogs (`PLAN_FEEDBACK_NOTES.md`, `WIZARD_NOTES.md`, `NOTES_NOTES.md`). Re-read before touching the matching adapter file. |
+| `hooks/` | React hooks — one concern each (`use-polling`, `use-long-press`, `use-direct-typing`, `use-key-queue`, `use-idle-lock`, `use-push`, `use-theme`, …). |
+| `sw.ts` | Service worker (push receive, lazy Nerd Font caching). Registered from `main.tsx`. |
+
+### Route → file
+
+| Path | File | Loader |
+|---|---|---|
+| `/` (Herd) | `routes/home.tsx` | `rootLoader` (`/api/snapshot`, on the layout) |
+| `/spaces` | `routes/spaces.tsx` | — |
+| `/space/:spaceId` | `routes/space.tsx` → `components/space-view.tsx`, `space-overview.tsx` | — |
+| `/traces` · `/traces/:spaceId/:repo` | `routes/traces.tsx` → `components/sssf-frame.tsx` | — |
+| `/settings` | `routes/settings.tsx` | — |
+| `/pane/:paneId` | **`routes/detail.tsx`** → `components/agent-chat.tsx` + `composer.tsx` | `paneLoader` |
+| `/pane/:paneId/history` | `routes/history.tsx` → `components/transcript-view.tsx` | `historyLoader` |
+
+Router: `router.tsx` (module-scoped, keeps location). Loaders: `lib/loaders.ts`. Polling: `hooks/use-polling.ts` → `useRevalidator()`. Mutations: `lib/api.ts` then revalidate. **React Router v7, package `react-router`** (not `react-router-dom`); no TanStack Query.
+
+### Big pieces
+
+| Piece | Files |
+|---|---|
+| Composer (input, send modes, keys dock, quick dock) | `components/composer.tsx` (1k lines) · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` + `components/key-queue-strip.tsx` · `components/quick-actions.tsx` · `lib/quick-replies.ts` |
+| Send pipeline (what happens after tap) | `lib/reply-action.ts` (guard) · `lib/dialog-guard.ts` · `lib/prompt-action.ts` · `lib/preview-action.ts` · `lib/wizard-action.ts` · `lib/multi-select-action.ts` · `lib/menu-action.ts` · `lib/destructive.ts` (rm/dd/sudo confirm) · `lib/api.ts` |
+| Screen → blocks → UI | `lib/ansi.ts` → `lib/blocks.ts` → `lib/harness/*` → `components/{prompt-select,preview-select,wizard,multi-select,menu}-block.tsx` · raw: `components/ansi-output.tsx` |
+| Herd list / cards | `components/agent-list.tsx` · `agent-card.tsx` · `agent-sidebar.tsx` · `lib/triage.ts` (ordering) · `lib/status.ts` |
+| Long-press actions | `hooks/use-long-press.ts` · `components/{pane,tab,space}-actions-sheet.tsx` · `action-sheet-rows.tsx` |
+| Command palette / operator rows | `components/command-palette.tsx` · `lib/agent-commands.ts` · `lib/operator-commands.ts` |
+| Push & notifications (client) | `lib/push.ts` · `lib/push-decision.ts` · `hooks/use-push.ts` · `hooks/use-notify-prefs.ts` · `components/{notify-prefs,snooze}-control.tsx` · `sw.ts` |
+| Update banner / self-update | `lib/self-update.ts` · `lib/build.ts` · `lib/server-build.ts` · `components/update-banner.tsx` · `update-available-banner.tsx` · `update-check-control.tsx` · `build-stamp.tsx` |
+| Connection health | `lib/connection.ts` · `lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `hooks/use-online.ts` · `components/connection-banner.tsx` · `connection-info.tsx` |
+| Drafts (survive reloads) | `lib/drafts.ts` · `hooks/use-terminal-draft.ts` · `components/terminal-draft-preview.tsx` |
+| Idle lock | `lib/idle.ts` · `hooks/use-idle-lock.ts` · `components/idle-lock.tsx` |
+| Theme / display prefs | `hooks/use-theme.ts` · `hooks/use-display-prefs.ts` · `hooks/use-dash-prefs.ts` · `components/theme-control.tsx` · `display-prefs.tsx` |
+| Markdown in transcripts | `lib/markdown.ts` · `components/markdown-text.tsx` · `lib/links.ts` |
+| Multi-session | `lib/session.ts` · `components/session-switcher.tsx` |
+| PWA | `vite.config.ts` (`vite-plugin-pwa`) · `lib/pwa.ts` · `lib/sw-routes.ts` · `lib/reload-guard.ts` |
+
+---
+
+## 5. Three flows
+
+**Poll & sync** — `herdr-client` `session.snapshot` → `state-engine` (interval) ◄ `event-poker` pokes on
+agent status change → `server` `/api/snapshot` → `loaders.ts rootLoader` ◄ `use-polling` revalidates.
+
+**Send** — tap prompt block / composer Send → `lib/dialog-guard.ts` verifies the prompt is still on
+screen → `lib/api.ts` POST `/api/pane/:id/reply` with `expected_prompt` → `server.ts guard` (access
+level) → `checkPromptBinding` (`pane.read` tail vs `expected_prompt`) → `audit.ts` line →
+`herdr-client` `agent.send` / `pane.send_keys` → agent PTY. Long sends verified by the paste
+placeholder ([ADR 0010](./.adr/0010-long-sends-are-verified-via-the-paste-placeholder.md)).
+
+**History** — `/pane/:id/history` → `historyLoader` → GET `/api/pane/:id/history` → `paneHistory` →
+`journal/registry.ts` picks the adapter by harness → adapter resolves the session file →
+`files.ts containedRealpath` → parse → `TranscriptEntry[]` → `routes/history.tsx`.
+
+---
+
+## 6. Change-impact matrix
+
+| When you change… | Also open… | Leave alone |
+|---|---|---|
+| Herdr RPC / wire methods | `bridge/herdr-client.ts`, `bridge/wire.ts`, `bridge/types.ts`, `HERDR_API.md` | `web/src/`, `bridge/server.ts` |
+| A harness's **screen** grammar | `web/src/lib/harness/<name>/`, `registry.ts`, `conformance.ts` fixtures, `lib/grammar/*_NOTES.md` | `bridge/` |
+| A harness's **journal** adapter | `bridge/journal/<name>.ts`, `journal/registry.ts`; run `bun scripts/journal-probe.ts` | `web/src/lib/harness/` |
+| Terminal rendering / colours | `web/src/components/ansi-output.tsx`, `lib/ansi.ts`, `index.css` ([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md)) | `bridge/` |
+| Auth / ingress / host & origin checks | `bridge/config.ts`, `bridge/server.ts` (`guard`, `checkAccess`, `isHostAllowed`), `DEPLOYMENT.md`, [ADR 0023](./.adr/0023-host-validation-is-fail-closed.md) | `web/src/lib/harness/` |
+| Push / notifications | `bridge/notifications.ts`, `notify-prefs.ts`, `snooze.ts`, `push.ts`, `push-endpoint.ts`; `web/src/lib/push.ts`, `sw.ts`, `routes/settings.tsx`; README → Web Push | `state-engine.ts` internals |
+| Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md)) | — |
+| Routes / navigation | `web/src/router.tsx`, `lib/loaders.ts`, `routes/`, `components/app-header.tsx`, `bottom-nav.tsx`, `lib/nav.ts` | `bridge/` |
+| Operator rows (`commands.toml`) | `bridge/operator-commands.ts`, `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts`, `commands.toml.example` | — |
+| SSSF traces | `bridge/sssf-viz.ts`, `web/src/components/sssf-frame.tsx`, `routes/traces.tsx` | `herdr-client.ts` |
+| Windows control path | `contrib/windows/collie-ctl.ps1` (+ `.test.ps1`), `contrib/windows/README.md`, `scripts/collie-ctl.sh` (the delegation) | — |
+| Version / release | `herdr-plugin.toml`, `package.json`, `web/package.json`, `CHANGELOG.md` → `scripts/check-version.sh` | code |
+
+---
+
+## 7. Fast navigation — task → open these first
+
+| Task | Open |
+|---|---|
+| Socket RPC bug | `bridge/herdr-client.ts` · `dial.ts` · `wire.ts` · `HERDR_API.md` |
+| Polling / stale snapshot / transitions | `bridge/state-engine.ts` · `event-poker.ts` · `web/src/hooks/use-polling.ts` |
+| Prompt / dialog not detected or mis-detected | `web/src/lib/blocks.ts` · `lib/harness/registry.ts` · `lib/harness/claude/` · `lib/grammar/*_NOTES.md` |
+| Send didn't land / wrong verification | `web/src/lib/reply-action.ts` · `dialog-guard.ts` · `bridge/server.ts sendReplySteps` · `checkPromptBinding` · `lib/harness/claude/paste.ts` |
+| Composer / keys / type-into-terminal | `web/src/components/composer.tsx` · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` ([ADR 0005](./.adr/0005-a-composed-key-queue-never-outlives-its-dock.md)) |
+| History empty / wrong | `bridge/journal/registry.ts` · `journal/<harness>.ts` · `journal/files.ts` · `web/src/routes/history.tsx` |
+| Long-press rename / close | `web/src/hooks/use-long-press.ts` · `components/*-actions-sheet.tsx` · `action-sheet-rows.tsx` |
+| Operator rows / Quick dock / palette | `bridge/operator-commands.ts` · `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts` · `commands.toml.example` |
+| Push not arriving / notification prefs | `bridge/notifications.ts` · `notify-prefs.ts` · `snooze.ts` · `push.ts` · `web/src/lib/push.ts` · `sw.ts` · `scripts/collie-ctl.sh push-test` |
+| Update banner / update command | `bridge/update.ts` · `web/src/lib/self-update.ts` · `components/update-banner.tsx` · `contrib/windows/collie-ctl.ps1 update` |
+| Image upload | `bridge/uploads.ts` · `server.ts uploadPane` · `web/src/components/composer.tsx` |
+| "Connection lost" banner / offline | `web/src/lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `components/connection-banner.tsx` |
+| Draft lost / restored wrongly | `web/src/lib/drafts.ts` · `hooks/use-terminal-draft.ts` |
+| Traces tab | `bridge/sssf-viz.ts` · `web/src/components/sssf-frame.tsx` · `routes/traces.tsx` |
+| 403 / host / origin / access | `bridge/server.ts guard` · `checkAccess` · `isHostAllowed` · `bridge/config.ts` · `DEPLOYMENT.md` |
+| Start / stop / restart / deploy | `scripts/collie-ctl.sh` · `contrib/windows/collie-ctl.ps1` (this box) · `justfile` · `herdr-plugin.toml` · `systemd/` |
+| Add a new harness | [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md) first |
+| Why was X decided | [`.adr/README.md`](./.adr/README.md) index |
+
+Docs, by question: how to **run** it → `README.md` · how it's **built** → `ARCHITECTURE.md` · the
+Herdr **wire contract** → `HERDR_API.md` · how to **deploy/expose** it → `DEPLOYMENT.md` · what
+**changed** → `CHANGELOG.md` · where the **last session** stopped → `NEXT-SESSION.md`.

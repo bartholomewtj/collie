@@ -6,6 +6,15 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.4] - 2026-08-19
+
+### Added
+- `scripts/check-doc-links.sh` — every relative link and repo path in the entry docs must resolve; the pre-commit hook runs it when one of those docs is staged (78718a4)
+
+### Fixed
+- `CONTEXT.md` rewritten as a complete map: relative links, every bridge module, `/api` route → handler and web route → file tables, nav rows for push/update/uploads/Windows; stale claims corrected (SSSF expansion, React Router v7, `send-mode-menu.tsx`) (ac2641a)
+- `CLAUDE.md`: Type-into-terminal is the toggle beside Keys, subscribe/snooze/prefs are write-level, journal list adds grok/opencode; ADR 0020 marked superseded by 0021 (ac2641a)
+
 ## [0.40.3] - 2026-08-19
 
 ### Fixed

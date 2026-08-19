@@ -1,6 +1,6 @@
 {
   "name": "collie",
-  "version": "0.40.3",
+  "version": "0.40.4",
   "private": true,
   "license": "MIT",
   "description": "Collie — a mobile web UI to monitor and reply to your Herdr agent herd over Tailscale",

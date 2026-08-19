@@ -75,7 +75,7 @@ A superseded ADR is never deleted or edited into agreement with the present. Mar
 | [0017](./0017-recognising-a-password-prompt-changes-what-collie-says.md) | Recognising a password prompt changes what Collie says, never what it sends | Accepted |
 | [0018](./0018-operator-command-rows-replace-the-catalog.md) | The operator's command rows replace the catalog, never merge into it | Accepted |
 | [0019](./0019-update-pins-to-the-newest-release-tag.md) | Update pins to the newest release tag | Accepted |
-| [0020](./0020-subscribe-stays-read-level.md) | Subscribe stays read-level | Accepted |
+| [0020](./0020-subscribe-stays-read-level.md) | Subscribe stays read-level | Superseded by 0021 |
 | [0021](./0021-notification-settings-are-writes.md) | Notification settings are writes | Accepted |
 | [0022](./0022-a-control-key-is-not-a-menu-key.md) | A control key is not a menu key | Accepted |
 | [0023](./0023-host-validation-is-fail-closed.md) | Host validation is fail-closed | Accepted |
