@@ -4,3 +4,4 @@
 # any future one from costing reviewability.
 *.ts diff
 *.tsx diff
+scripts/*.sh text eol=lf

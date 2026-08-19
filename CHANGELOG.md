@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.2] - 2026-08-19
+
+### Fixed
+- Windows: `stop`/`restart`/`start` now stop every bridge running from this checkout (recorded or stray) and wait for the port to come free; `start` refuses — pid on screen — if a foreign listener still holds it, instead of stacking a second bridge on :8787 (#41) (2b2a0a0)
+- `scripts/collie-ctl.sh`: the unsupervised path launched the bridge twice per `start` (a merge kept both sides' `nohup` line) — now one, and a repeat `start` stops the previous bridge first; on Git Bash the lifecycle verbs hand over to `contrib/windows/collie-ctl.ps1` (2b2a0a0)
+
 ## [0.40.1] - 2026-08-19
 
 ### Fixed

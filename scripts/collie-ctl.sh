@@ -198,6 +198,27 @@ have_launchd() { [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null
 launchd_domain() { echo "gui/$(id -u)"; }
 launchd_target() { echo "gui/$(id -u)/${AGENT_LABEL}"; }
 
+# Git Bash / MSYS2 / Cygwin on Windows. There is no supervisor here, and the two facts that make the
+# POSIX pidfile dance work are both false: `$!` is an MSYS pid, not the Windows one `kill` would need
+# for a native bun.exe, and Windows lets a second bridge bind 127.0.0.1:$PORT beside the first, so a
+# missed kill does not fail — it STACKS, and requests round-robin between old and new code (#41).
+is_windows() {
+  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac
+  return 1
+}
+
+# Windows: the lifecycle is contrib/windows/collie-ctl.ps1 (Task Scheduler supervises the bridge, and
+# it is the one that knows how to stop every bridge from this checkout and prove the port is free).
+# Running the POSIX unsupervised path beside it is how bridges stacked (#41): bash started one the
+# scheduler didn't own, and `stop` here signalled an MSYS pid the native bun.exe never saw. So the
+# lifecycle verbs hand over wholesale — one owner of the process, whichever shell you typed in.
+delegate_to_windows_ctl() {
+  local ps1="${PLUGIN_ROOT}/contrib/windows/collie-ctl.ps1"
+  [ -f "$ps1" ] || { echo "error: ${ps1} not found — this checkout has no Windows lifecycle" >&2; exit 1; }
+  echo "windows: delegating to contrib/windows/collie-ctl.ps1 $*" >&2
+  exec powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(cygpath -w "$ps1" 2>/dev/null || printf '%s' "$ps1")" "$@"
+}
+
 # Stop a bridge started by the unsupervised fallback and drop its pidfile. Also the migration path for
 # macOS installs predating launchd support, whose bridge still owns the port when the updated script
 # first bootstraps an agent.
@@ -581,18 +602,19 @@ start_unsupervised() {
   mkdir -p "$CONFIG_DIR"
   harden_config_perms
   [ -n "$BUN" ] || { echo "error: bun not found" >&2; exit 1; }
+  # ONE bridge. A merge once left two `nohup` starts here (5e94351 × 213b024, joined in c39b3b2), so
+  # every unsupervised `start` launched a pair and the pidfile named only the second — the "five
+  # bridges on :8787" of #41. The subshell scopes the secret exports (export_bridge_env) to the child.
   ( export_bridge_env
+    COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}" \
     HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
       nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
     echo $! > "${CONFIG_DIR}/collie.pid" )
-  COLLIE_TAILSCALE_HOSTS="${COLLIE_TAILSCALE_HOSTS:-}" \
-  HERDR_SOCKET_PATH="$SOCKET" COLLIE_PORT="$PORT" HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" \
-    nohup "$BUN" run "${PLUGIN_ROOT}/bridge/index.ts" >>"${CONFIG_DIR}/collie.log" 2>&1 &
-  echo $! > "${CONFIG_DIR}/collie.pid"
   echo "bridge started (pid $(cat "${CONFIG_DIR}/collie.pid"), unsupervised)"
 }
 
 cmd_start() {
+  if is_windows; then delegate_to_windows_ctl start; fi
   harden_config_perms
   ensure_build || true
   COLLIE_TAILSCALE_HOSTS=""
@@ -639,6 +661,9 @@ cmd_start() {
     done
     [ "$supervised" = 0 ] || echo "bridge started (launchd: ${AGENT_LABEL})"
   else
+    # No supervisor means nothing makes `start` idempotent for us: stop what a previous start left,
+    # or every `start` stacks one more bridge on the port (#41).
+    stop_pidfile_process
     start_unsupervised
   fi
   # A front door that won't come up must not abort `start`. The bridge is already running on
@@ -649,6 +674,7 @@ cmd_start() {
 }
 
 cmd_stop() {
+  if is_windows; then delegate_to_windows_ctl stop; fi
   if have_systemd; then
     systemctl --user disable --now "$UNIT" 2>/dev/null || true
   elif have_launchd; then
@@ -663,7 +689,10 @@ cmd_stop() {
   echo "bridge stopped"
 }
 
-cmd_restart() { cmd_stop; cmd_start; }
+cmd_restart() {
+  if is_windows; then delegate_to_windows_ctl restart; fi
+  cmd_stop; cmd_start
+}
 
 # Tear the service down completely (the inverse of `start`): stop + disable it, remove the service
 # definition, remove Collie's tailscale serve mapping, and drop the pidfile. Deliberately leaves your

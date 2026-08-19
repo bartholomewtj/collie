@@ -337,6 +337,43 @@ EOF
 
 # A failed front door must not abort `start` — the bridge is up on loopback and the banner still has
 # to print, which is what the README's troubleshooting flow tells people to read.
+# #41: the unsupervised path launched TWO bridges per `start` (a merge kept both sides' nohup line),
+# and a second `start` never stopped the first. One bun invocation per start, and a restart on the
+# unsupervised path stops the recorded bridge before it starts the next.
+test_unsupervised_start_launches_one_bridge() {
+  setup_case unsupervised-one-bridge
+  local calls="${CASE_DIR}/bun.calls"
+  install_fake_bun "${BIN_DIR}/bun" "$calls"
+  local harness="${CASE_DIR}/harness.sh"
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+ensure_build() { return 0; }
+have_systemd() { return 1; }
+have_launchd() { return 1; }
+is_windows() { return 1; }
+BUN="${BIN_DIR}/bun"
+cmd_serve() { return 0; }
+print_status_banner() { :; }
+kills=0
+kill() { kills=\$((kills+1)); echo "kill \$*" >> "${CASE_DIR}/kills"; }
+ps() { echo "bun run \${PLUGIN_ROOT}/bridge/index.ts"; }
+cmd_start
+[ -f "${CONFIG_DIR}/collie.pid" ] || exit 91
+cmd_start
+EOF
+  bash "$harness" > "${CASE_DIR}/start.out" 2>&1 || fail "unsupervised start failed: $(cat "${CASE_DIR}/start.out")"
+  sleep 1   # the fake bun is nohup'd; let it record itself
+  # Two starts, two bridges launched in total — not four.
+  assert_eq "$(grep -c '|run ' "$calls")" "2"
+  # The second start stopped the first bridge before launching (the fake ps vouches for the pid).
+  [ -s "${CASE_DIR}/kills" ] || fail "a second unsupervised start did not stop the first bridge"
+}
+
 test_serve_failure_does_not_abort_start() {
   setup_case serve-failure-start
   local harness="${CASE_DIR}/harness.sh"
@@ -1540,6 +1577,7 @@ test_missing_tailscale_cli
 test_state_delete_failures
 test_adopts_preexisting_collie_mount
 test_serve_failure_does_not_abort_start
+test_unsupervised_start_launches_one_bridge
 test_launchd_agent_lifecycle
 test_launchd_status_line
 test_tailnet_acl_warning

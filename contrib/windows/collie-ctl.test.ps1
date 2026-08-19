@@ -92,6 +92,40 @@ COLLIE_HOST="127.0.0.1"
   Stop-RecordedCollieProcesses
   Assert-Equal (Test-Path -LiteralPath $script:PidFile) $false "stale launcher PID record is cleared"
 
+  # #41: stop reaches every bridge from this checkout, not just the recorded pair, and proves the port
+  # is free — refusing (with the pids) when a stranger still holds it rather than stacking beside it.
+  $script:stoppedPids = @()
+  $script:killedTrees = @()
+  $script:portPolls = 0
+  function Get-CollieBridgeProcesses {
+    @(
+      [pscustomobject]@{ ProcessId = 4101; CommandLine = "bun.exe run C:\x\bridge\index.ts" },
+      [pscustomobject]@{ ProcessId = 4102; CommandLine = "powershell -File collie-ctl.ps1 _exec-bridge" }
+    )
+  }
+  function Stop-Process { param([int]$Id, [switch]$Force, $ErrorAction) $script:stoppedPids += $Id }
+  function Stop-CollieProcessTree([int]$Id) { $script:killedTrees += $Id }
+  function Get-ColliePortListeners { $script:portPolls++; if ($script:portPolls -lt 3) { @(4101) } else { @() } }
+  function Start-Sleep { param($Milliseconds, $Seconds) }
+  Stop-AllCollieBridges
+  Assert-Equal ($script:stoppedPids -join ",") "4101" "stop kills every stray bridge from this checkout"
+  Assert-Equal ($script:killedTrees -join ",") "4102" "stop kills every stray launcher tree"
+  Assert-Equal ($script:portPolls -ge 3) $true "stop waits for the port to come free"
+
+  $script:portPolls = 0
+  function Get-CollieBridgeProcesses { @() }
+  function Get-ColliePortListeners { @(777) }
+  try {
+    Stop-AllCollieBridges
+    throw "a foreign listener on the port was accepted"
+  } catch {
+    Assert-Contains $_.Exception.Message "777" "port-still-bound refusal names the pid"
+    Assert-Contains $_.Exception.Message "#41" "port-still-bound refusal cites the issue"
+  }
+  function Get-ColliePortListeners { @() }
+  Remove-Item Function:\Start-Sleep
+  Remove-Item Function:\Stop-Process
+
   $script:registered = $null
   $script:enabled = @()
   $script:disabled = @()
