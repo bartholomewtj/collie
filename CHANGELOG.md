@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.1] - 2026-08-19
+
+### Fixed
+
+- Space view: when every tab holds one pane, the tab chips (All / per-tab) are hidden — they filtered nothing and repeated the section headings below; the "+ New tab" button stays. (10160c0)
+
 ## [0.40.0] - 2026-08-19
 
 ### Added
