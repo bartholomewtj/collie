@@ -29,7 +29,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File contrib\windows\collie-c
 ```
 
 `start` registers a Task Scheduler job (`herdr.collie`, override with `COLLIE_TASK_NAME`) that runs
-at logon, restarts after failures, and outlives Herdr. `stop` (and so `restart` and `start`) stops
+at logon, restarts after failures, and outlives Herdr. The task is launched through `wscript.exe` so
+the bridge has no console window and no taskbar button. `stop` (and so `restart` and `start`) stops
 **every** bridge running from this checkout — the recorded one and any stray, e.g. one started by hand
 with `bun run bridge/index.ts` — and waits until nothing listens on the port; if something that isn't
 Collie's bridge still holds it, `start` refuses with the pid instead of stacking a second listener
