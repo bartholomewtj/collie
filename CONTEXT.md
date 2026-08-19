@@ -7,7 +7,8 @@
 >
 > **This checkout runs on Windows** (`C:\ClaudeOS\Projects\collie`, fork of `AltanS/collie`, remote
 > `bartholomewtj/collie`). Upstream and the docs assume Linux + systemd; on this box the bridge is
-> started/stopped by `contrib/windows/collie-ctl.ps1` and the Herdr `update`/`restart` plugin actions
+> started/stopped by `contrib/windows/collie-ctl.ps1` (Task Scheduler job is `wscript.exe` +
+> `exec-bridge.vbs`, no console window) and the Herdr `update`/`restart` plugin actions
 > answer `platform_unsupported`. Current version and session state: [`NEXT-SESSION.md`](./NEXT-SESSION.md).
 
 ---
@@ -207,7 +208,7 @@ placeholder ([ADR 0010](./.adr/0010-long-sends-are-verified-via-the-paste-placeh
 | Routes / navigation | `web/src/router.tsx`, `lib/loaders.ts`, `routes/`, `components/app-header.tsx`, `bottom-nav.tsx`, `lib/nav.ts` | `bridge/` |
 | Operator rows (`commands.toml`) | `bridge/operator-commands.ts`, `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts`, `commands.toml.example` | — |
 | SSSF traces | `bridge/sssf-viz.ts`, `web/src/components/sssf-frame.tsx`, `routes/traces.tsx` | `herdr-client.ts` |
-| Windows control path | `contrib/windows/collie-ctl.ps1` (+ `.test.ps1`), `contrib/windows/README.md`, `scripts/collie-ctl.sh` (the delegation) | — |
+| Windows control path | `contrib/windows/collie-ctl.ps1` (+ `.test.ps1`), generated `exec-bridge.vbs` in the plugin config dir, `contrib/windows/README.md`, `scripts/collie-ctl.sh` (the delegation) | — |
 | Version / release | `herdr-plugin.toml`, `package.json`, `web/package.json`, `CHANGELOG.md` → `scripts/check-version.sh` | code |
 
 ---
