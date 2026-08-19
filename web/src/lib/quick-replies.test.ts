@@ -42,3 +42,32 @@ describe("quickRepliesFor", () => {
     }
   });
 });
+
+describe("the operator's [[quick]] rows", () => {
+  it("replace the shipped set on the panes they address, grouped in declaration order", () => {
+    const mine = [
+      { text: "yes", group: "confirm" },
+      { text: "run the tests", group: "mine" },
+      { text: "no", group: "confirm" },
+    ];
+    expect(quickRepliesFor("claude", false, mine)).toEqual([
+      { title: "confirm", items: ["yes", "no"] },
+      { title: "mine", items: ["run the tests"] },
+    ]);
+  });
+
+  it("a scoped row addresses that agent exactly; a pane none address keeps the shipped set", () => {
+    const mine = [{ agent: "codex", text: "ship it", group: "mine" }];
+    expect(quickRepliesFor("codex", false, mine)).toEqual([{ title: "mine", items: ["ship it"] }]);
+    expect(quickRepliesFor("claude", false, mine)).toEqual(quickRepliesFor("claude", false));
+  });
+
+  it("never reaches a shell — it keeps y/n whatever the operator wrote", () => {
+    const mine = [{ text: "commit and push", group: "mine" }];
+    expect(quickRepliesFor("shell", true, mine)).toEqual(quickRepliesFor("shell", true));
+  });
+
+  it("with no rows is exactly the shipped lookup", () => {
+    expect(quickRepliesFor("claude", false, [])).toEqual(quickRepliesFor("claude", false));
+  });
+});

@@ -7,7 +7,7 @@ import { isLoopbackBindHost, type Config } from "./config.ts";
 import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
-import { createOperatorCommands } from "./operator-commands.ts";
+import { createOperatorCommands, createOperatorQuickReplies } from "./operator-commands.ts";
 import {
   DEFAULT_PROMPT_TAIL_LINES,
   verifyExpectedPrompt,
@@ -173,6 +173,7 @@ export function startServer(opts: {
   // journal/registry.ts, never here.
   // One reader per process; it owns the mtime cache that keeps commands.toml off the hot path.
   const operatorCommands = createOperatorCommands(cfg.commandsFile);
+  const operatorQuickReplies = createOperatorQuickReplies(cfg.commandsFile);
   const journals = cfg.transcript ? buildJournalRegistry(cfg.journalRoots) : null;
   const transcripts = cfg.transcript ? new TranscriptStore() : null;
   // Grok (and any future cwd-keyed harness) can offer history without Herdr naming a session.
@@ -377,6 +378,7 @@ export function startServer(opts: {
         // Re-read per request behind an mtime check, like buildId() — editing commands.toml is live,
         // with no restart. The path is cfg's, never the request's.
         const mine = await operatorCommands();
+        const quick = await operatorQuickReplies();
         return json({
           push: push.enabled,
           vapidPublicKey: push.publicKey,
@@ -384,6 +386,7 @@ export function startServer(opts: {
           // Omitted entirely when there are none, so an operator who never wrote a commands.toml
           // ships the same payload as before.
           ...(mine.length > 0 ? { operatorCommands: mine } : {}),
+          ...(quick.length > 0 ? { operatorQuickReplies: quick } : {}),
         } satisfies BridgeConfig, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/subscribe" && req.method === "POST") {

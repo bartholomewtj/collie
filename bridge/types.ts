@@ -337,6 +337,21 @@ export interface OperatorCommand {
   confirm: boolean;
 }
 
+/**
+ * One operator-declared one-tap reply (a `[[quick]]` row in their `commands.toml`). A pane any of
+ * these rows address shows the operator's groups in the Quick dock INSTEAD of the shipped
+ * yes/no/continue set (same rule as {@link OperatorCommand}, ADR 0018); a pane none address keeps
+ * the shipped set. Shells are never addressed — they keep their y/n.
+ */
+export interface OperatorQuickReply {
+  /** Herdr agent name this applies to, lowercased. Omitted = every agent pane. */
+  agent?: string;
+  /** Sent verbatim, then Enter. Single-spaced, at most 80 chars. */
+  text: string;
+  /** Lowercased section label; rows sharing one render as one grid, in declaration order. */
+  group: string;
+}
+
 /** GET /api/config — bridge capabilities and the build id (push setup + stale-cache detection). */
 export interface BridgeConfig {
   push: boolean;
@@ -345,6 +360,8 @@ export interface BridgeConfig {
   build?: string;
   /** The operator's own palette rows. Absent/empty when there is no `commands.toml`. */
   operatorCommands?: OperatorCommand[];
+  /** The operator's own Quick-dock rows. Absent/empty when `commands.toml` declares none. */
+  operatorQuickReplies?: OperatorQuickReply[];
 }
 
 /** Rank for triage ordering — lower sorts first ("NEEDS YOU" at the top). */

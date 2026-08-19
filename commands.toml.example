@@ -30,3 +30,31 @@
 # command = "/deploy"
 # description = "Deploy staging"
 # confirm = true
+
+# ── Quick replies ─────────────────────────────────────────────────────────────────────────────
+# Your own one-tap replies for the composer's Quick dock — the same file, the same live re-read.
+# Same rule as commands: on a pane any [[quick]] row addresses, YOUR rows are the whole dock (the
+# shipped yes / no / continue / commit and push / retry / skip set is replaced, not added to), so
+# list "yes" and "no" yourself if you still want them. Shells are never addressed — they keep y/n.
+#
+# Fields: `text` (required — sent verbatim, then Enter; one line, at most 80 chars), `group`
+# (optional — rows sharing a group render as one grid, in the order written; default "mine"),
+# `scope` (optional — a herdr agent name; omit it and the row addresses every agent pane).
+
+# [[quick]]
+# text = "yes"
+# group = "confirm"
+#
+# [[quick]]
+# text = "no"
+# group = "confirm"
+#
+# [[quick]]
+# text = "run the tests"
+#
+# [[quick]]
+# text = "commit, push and open a PR"
+#
+# [[quick]]
+# scope = "claude"
+# text = "/handoff"
