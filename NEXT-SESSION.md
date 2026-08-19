@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-19 — main at **0.40.3** (`5489889`, docs merge `414a033`), tag `v0.40.3` pushed, no open PRs. The bridge on this box is running the 0.40.3 build._
+_Last handoff: 2026-08-19 — main at **0.40.4** (`d608896`), tag `v0.40.4` pushed, no open PRs. The bridge on this box is running the 0.40.3 build (0.40.4 changed only docs, a code comment, and scripts — no rebuild needed)._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
@@ -24,6 +24,11 @@ Everything below is merged to `main`, tagged, and running:
   `COLLIE_UPDATE_REPO` overrides and is documented in `.env.example`. README install/clone commands
   name the fork.
 - **PR #56** — earlier handoff doc + a `CONTEXT.md` nav row for operator rows (`[[commands]]` / `[[quick]]`).
+- **0.40.4** (PR #59) — `CONTEXT.md` rewritten as a complete map (every bridge module, `/api` route →
+  handler, web route → file, relative links); `CLAUDE.md` stale rules fixed (Type toggle, subscribe
+  is write-level, journal harness list); ADR 0020 superseded by 0021; new
+  `scripts/check-doc-links.sh` runs from pre-commit when an entry doc is staged. Hooks are **not
+  installed** in this checkout — `bash scripts/install-hooks.sh` once if you want them.
 - **Push notifications are on** bridge-side (VAPID keys in the plugin `.env`; `/api/config` says
   `push: true`). Not yet confirmed enabled on the phone (Settings → Push notifications).
 
