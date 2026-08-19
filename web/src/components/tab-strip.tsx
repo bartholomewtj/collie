@@ -17,6 +17,9 @@ interface TabStripProps {
   onNewTab: (workspaceId: string) => void;
   /** Show the leading "All" chip (home space view); off for the in-pane tab bar. */
   allowAll?: boolean;
+  /** Every tab holds at most one pane (see tabsAreFlat): drop the chips — they filter nothing and
+   *  duplicate the section headings below — and keep just the "+ New tab" button. */
+  flat?: boolean;
   /** Session scope for the long-press tab actions (rename/close); undefined = primary. */
   session?: string;
   /** Drop the long-press write actions when the device isn't authorised (the sheet shows a note). */
@@ -41,6 +44,7 @@ export function TabStrip({
   onSelect,
   onNewTab,
   allowAll = true,
+  flat = false,
   session,
   readOnly,
   onRenamed,
@@ -53,6 +57,22 @@ export function TabStrip({
 
   const wsTabs = tabs.filter((t) => t.workspaceId === workspaceId);
   if (wsTabs.length === 0) return null;
+
+  if (flat) {
+    return (
+      <div className="flex shrink-0 items-center border-t border-border/40 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => onNewTab(workspaceId)}
+          aria-label="New tab"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent active:scale-95"
+        >
+          <Plus className="size-4" />
+          New tab
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -12,6 +12,7 @@ import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
 import { panePath, spacesPath, tracePath } from "@/lib/nav";
+import { tabsAreFlat } from "@/lib/spaces";
 import { setStatus } from "@/lib/status";
 import { isReadOnly, type PaneSssfRun } from "@/lib/types";
 
@@ -39,6 +40,11 @@ export function SpaceRoute() {
   }
 
   const selectedWs = data.workspaces.find((w) => w.workspaceId === spaceId);
+  // One pane per tab: the chips would filter nothing and repeat the section headings, so the strip
+  // shrinks to "+ New tab" and the view is always "All". Forcing null (rather than only hiding the
+  // chips) also covers a space that goes flat while you were filtered to a tab.
+  const flat = tabsAreFlat(spaceId, data.tabs);
+  const activeTab = flat ? null : tab;
 
   const back = () => navigate(spacesPath(data.session));
   const open = (id: string) => navigate(panePath(id, data.session));
@@ -88,7 +94,8 @@ export function SpaceRoute() {
               workspaceId={selectedWs.workspaceId}
               tabs={data.tabs}
               agents={data.agents}
-              selected={tab}
+              selected={activeTab}
+              flat={flat}
               onSelect={setTab}
               onNewTab={newTab}
               session={data.session}
@@ -107,7 +114,7 @@ export function SpaceRoute() {
                 tabs={data.tabs}
                 agents={data.agents}
                 shellPanes={data.shellPanes}
-                selectedTab={tab}
+                selectedTab={activeTab}
                 onOpen={open}
                 onOpenTraces={openTraces}
                 session={data.session}

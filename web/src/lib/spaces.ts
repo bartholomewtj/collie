@@ -3,6 +3,15 @@
 import { bucketOf, TRIAGE_ORDER, type TriageKey } from "./triage";
 import type { AgentView, TabView, WorkspaceView } from "./types";
 
+/**
+ * A space is "flat" when no tab holds more than one pane. Then the tab chips filter nothing (one
+ * card either way) and merely repeat the section headings below them, so the space route hides the
+ * chips and keeps only the "+" — the headings still carry the tab's name, status and long-press.
+ */
+export function tabsAreFlat(workspaceId: string, tabs: TabView[]): boolean {
+  return tabs.filter((t) => t.workspaceId === workspaceId).every((t) => t.paneCount <= 1);
+}
+
 export interface TabGroup {
   tabId: string;
   label: string;

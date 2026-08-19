@@ -1,6 +1,7 @@
 import {
   filterSpaces,
   groupPanesByTab,
+  tabsAreFlat,
   sortSpacesByRecency,
   spaceLastSeenMap,
   spaceTriageMap,
@@ -193,5 +194,17 @@ describe("spaceLastSeenMap", () => {
     expect(sortSpacesByRecency(spaces, panes, spaceLastSeenMap(panes))).toEqual(
       sortSpacesByRecency(spaces, panes),
     );
+  });
+});
+
+describe("tabsAreFlat", () => {
+  const tab = (workspaceId: string, tabId: string, paneCount: number) => ({
+    tabId, workspaceId, number: 1, label: tabId, focused: false, paneCount,
+  });
+  it("is flat when no tab in the space holds more than one pane", () => {
+    expect(tabsAreFlat("w1", [tab("w1", "a", 1), tab("w1", "b", 0), tab("w2", "c", 3)])).toBe(true);
+  });
+  it("is not flat once a tab holds two panes", () => {
+    expect(tabsAreFlat("w1", [tab("w1", "a", 1), tab("w1", "b", 2)])).toBe(false);
   });
 });

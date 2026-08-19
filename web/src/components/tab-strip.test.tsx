@@ -280,3 +280,26 @@ describe("TabStrip — status on the chips", () => {
     }
   });
 });
+
+describe("TabStrip — flat", () => {
+  // One pane per tab: the chips would only repeat the section headings, so only "+ New tab" stays.
+  it("drops All and the tab chips but keeps the new-tab button", async () => {
+    const user = userEvent.setup();
+    const onNewTab = vi.fn();
+    render(
+      <TabStrip
+        workspaceId="w1"
+        tabs={tabs}
+        agents={[]}
+        selected={null}
+        flat
+        onSelect={vi.fn()}
+        onNewTab={onNewTab}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "All" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "2" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /new tab/i }));
+    expect(onNewTab).toHaveBeenCalledWith("w1");
+  });
+});
