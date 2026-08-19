@@ -225,18 +225,41 @@ function Get-CollieTaskRunLevel {
   return "Highest"
 }
 
-function Register-CollieTask {
-  [void](Resolve-Bun)
+function Get-CollieHiddenTaskScriptPath {
+  return Join-Path $script:ConfigDir "exec-bridge.vbs"
+}
+
+# Task Scheduler Interactive tasks show a console for powershell.exe/bun.exe (console-subsystem
+# binaries). wscript.exe is a GUI host, and WshShell.Run(..., 0) starts the child hidden — no
+# window, no taskbar button. The VBS is rewritten on every start so the baked-in paths stay current.
+function Write-CollieHiddenTaskScript {
   $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
   $ctl = Join-Path $PSScriptRoot "collie-ctl.ps1"
-  $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0} -TaskConfigDir {1} -TaskSocketPath {2} _exec-bridge' -f @(
+  $command = '{0} -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {1} -TaskConfigDir {2} -TaskSocketPath {3} _exec-bridge' -f @(
+    (Format-CommandArgument $powershell),
     (Format-CommandArgument $ctl),
     (Format-CommandArgument $script:ConfigDir),
     (Format-CommandArgument $script:SocketPath)
   )
+  $literal = $command.Replace('"', '""')
+  $lines = @(
+    "' Written by collie-ctl.ps1; overwritten on each start."
+    'Set sh = CreateObject("WScript.Shell")'
+    ('WScript.Quit sh.Run("' + $literal + '", 0, True)')
+  )
+  New-Item -ItemType Directory -Force -Path $script:ConfigDir | Out-Null
+  Set-Content -LiteralPath (Get-CollieHiddenTaskScriptPath) -Value $lines -Encoding Ascii
+}
+
+function Register-CollieTask {
+  [void](Resolve-Bun)
+  Write-CollieHiddenTaskScript
+  $wscript = Join-Path $env:SystemRoot "System32\wscript.exe"
+  if (-not (Test-Path -LiteralPath $wscript)) { throw "wscript.exe not found at $wscript" }
+  $arguments = '//nologo {0}' -f (Format-CommandArgument (Get-CollieHiddenTaskScriptPath))
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
-  $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $script:PluginRoot
+  $action = New-ScheduledTaskAction -Execute $wscript -Argument $arguments -WorkingDirectory $script:PluginRoot
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity
   $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel (Get-CollieTaskRunLevel)
   $settings = New-ScheduledTaskSettingsSet `
@@ -379,15 +402,17 @@ function Start-Collie {
 # stayed alive across `stop`. Windows lets a second bridge bind 127.0.0.1:$Port beside the first, so
 # the miss did not fail loud — it stacked, and requests round-robined between old and new code (#41).
 # Ownership is the command line: bridge = bun running "<PluginRoot>\bridge\index.ts" (either slash
-# style, since bash callers pass forward ones); launcher = this script run with _exec-bridge. One
-# widening, for the case that actually stacked: a bridge started by hand from the checkout root runs
-# as `bun run bridge/index.ts` — a RELATIVE path that names no checkout — so a bun whose command line
-# is that relative script AND that is listening on our port is taken as ours too. The port alone never
-# is: an unrelated listener on :$Port is left alone and reported by Wait-ColliePortFree.
+# style, since bash callers pass forward ones); launcher = this script run with _exec-bridge, or the
+# wscript host that hides it (exec-bridge.vbs). One widening, for the case that actually stacked: a
+# bridge started by hand from the checkout root runs as `bun run bridge/index.ts` — a RELATIVE path
+# that names no checkout — so a bun whose command line is that relative script AND that is listening
+# on our port is taken as ours too. The port alone never is: an unrelated listener on :$Port is left
+# alone and reported by Wait-ColliePortFree.
 function Get-CollieBridgeProcesses {
   $bridgeBack = Join-Path $script:PluginRoot "bridge\index.ts"
   $bridgeFwd = $bridgeBack.Replace("\", "/")
   $controlScript = Join-Path $PSScriptRoot "collie-ctl.ps1"
+  $hiddenScript = Get-CollieHiddenTaskScriptPath
   $listeners = @(Get-ColliePortListeners)
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $line = $_.CommandLine
@@ -395,6 +420,7 @@ function Get-CollieBridgeProcesses {
     if ($_.ProcessId -eq $PID) { return $false }
     if ($line.Contains($bridgeBack) -or $line.Contains($bridgeFwd)) { return $true }
     if ($line.Contains($controlScript) -and $line.Contains("_exec-bridge")) { return $true }
+    if ($line.Contains($hiddenScript)) { return $true }
     ($listeners -contains $_.ProcessId) -and ($line -match '(^|[\s"''])bridge[\\/]index\.ts(["'']|\s|$)')
   }
 }
@@ -404,8 +430,9 @@ function Get-CollieBridgeProcesses {
 # is exactly the failure this function exists to remove — better to stop with the pids on screen.
 function Stop-AllCollieBridges {
   Stop-RecordedCollieProcesses
+  $hiddenScript = Get-CollieHiddenTaskScriptPath
   foreach ($proc in @(Get-CollieBridgeProcesses)) {
-    if ($proc.CommandLine.Contains("_exec-bridge")) {
+    if ($proc.CommandLine.Contains("_exec-bridge") -or $proc.CommandLine.Contains($hiddenScript)) {
       Stop-CollieProcessTree $proc.ProcessId
     } else {
       Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
@@ -482,6 +509,10 @@ function Uninstall-Collie {
   Stop-Collie
   if (Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $script:TaskName -Confirm:$false
+  }
+  $hiddenScript = Get-CollieHiddenTaskScriptPath
+  if (Test-Path -LiteralPath $hiddenScript) {
+    Remove-Item -LiteralPath $hiddenScript -Force
   }
   Write-Output "OK uninstalled: task stopped and removed"
   Write-Output "  Tailscale Serve is operator-managed and was left unchanged"

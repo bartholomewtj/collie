@@ -100,7 +100,8 @@ COLLIE_HOST="127.0.0.1"
   function Get-CollieBridgeProcesses {
     @(
       [pscustomobject]@{ ProcessId = 4101; CommandLine = "bun.exe run C:\x\bridge\index.ts" },
-      [pscustomobject]@{ ProcessId = 4102; CommandLine = "powershell -File collie-ctl.ps1 _exec-bridge" }
+      [pscustomobject]@{ ProcessId = 4102; CommandLine = "powershell -File collie-ctl.ps1 _exec-bridge" },
+      [pscustomobject]@{ ProcessId = 4103; CommandLine = "wscript.exe //nologo $(Get-CollieHiddenTaskScriptPath)" }
     )
   }
   function Stop-Process { param([int]$Id, [switch]$Force, $ErrorAction) $script:stoppedPids += $Id }
@@ -109,7 +110,7 @@ COLLIE_HOST="127.0.0.1"
   function Start-Sleep { param($Milliseconds, $Seconds) }
   Stop-AllCollieBridges
   Assert-Equal ($script:stoppedPids -join ",") "4101" "stop kills every stray bridge from this checkout"
-  Assert-Equal ($script:killedTrees -join ",") "4102" "stop kills every stray launcher tree"
+  Assert-Equal ($script:killedTrees -join ",") "4102,4103" "stop kills every stray launcher tree"
   Assert-Equal ($script:portPolls -ge 3) $true "stop waits for the port to come free"
 
   $script:portPolls = 0
@@ -175,9 +176,14 @@ COLLIE_HOST="127.0.0.1"
 
   Register-CollieTask | Out-Null
   Assert-Equal $script:registered.TaskName "herdr.collie-test" "task ownership"
-  Assert-Contains $script:registered.Action.Argument "_exec-bridge" "task action"
+  Assert-Contains $script:registered.Action.Execute "wscript.exe" "task runs via wscript (no console window)"
+  Assert-Contains $script:registered.Action.Argument "exec-bridge.vbs" "task action"
   Assert-Contains $script:registered.Action.Argument $temp "task preserves resolved config dir"
-  Assert-Contains $script:registered.Action.Argument "\\.\pipe\collie-test" "task preserves resolved socket path"
+  $hiddenScript = Get-Content -LiteralPath (Get-CollieHiddenTaskScriptPath) -Raw
+  Assert-Contains $hiddenScript "_exec-bridge" "hidden script launches the bridge"
+  Assert-Contains $hiddenScript $temp "hidden script preserves resolved config dir"
+  Assert-Contains $hiddenScript "\\.\pipe\collie-test" "hidden script preserves resolved socket path"
+  Assert-Contains $hiddenScript ", 0, True)" "hidden script starts the child with SW_HIDE"
   Assert-Equal $script:registered.Trigger.User ([Security.Principal.WindowsIdentity]::GetCurrent().Name) "logon trigger user"
   Assert-Equal $script:registered.Principal.RunLevel "Limited" "task privilege"
   Assert-Equal $script:registered.Settings.ExecutionTimeLimit ([TimeSpan]::Zero) "task execution limit"
