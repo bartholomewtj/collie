@@ -18,7 +18,9 @@ import type { UpdateInfo } from "@/lib/types";
 function describe(update: UpdateInfo | undefined): string {
   if (!update) return "Check whether a new Collie version is available.";
   const checked = update.checkedAt ? ` · checked ${timeAgo(update.checkedAt)}` : "";
-  return `Running v${update.current}${checked}`;
+  // "Bridge", not just "Running": the footer stamp names the APP bundle's version, and after a
+  // rebuild the two legitimately differ until the bridge restarts — label which one this is.
+  return `Bridge running v${update.current}${checked}`;
 }
 
 export function UpdateCheckControl() {

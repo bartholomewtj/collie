@@ -68,7 +68,7 @@ function homeData(update: UpdateInfo | undefined): HomeData {
 
 // The banner reads its `update` from the root loader data, so drive it through a memory router that
 // serves a HomeData with the field set — mirroring the real route nesting.
-function renderBanner(update: UpdateInfo | undefined) {
+function renderBanner(update: UpdateInfo | undefined, detail = false) {
   const router = createMemoryRouter(
     [
       {
@@ -77,7 +77,7 @@ function renderBanner(update: UpdateInfo | undefined) {
         loader: () => homeData(update),
         element: (
           <div data-testid="root">
-            <UpdateBanner />
+            <UpdateBanner detail={detail} />
           </div>
         ),
       },
@@ -95,8 +95,17 @@ describe("UpdateBanner", () => {
     expect(screen.queryByRole("button")).toBeNull(); // no copyable command for the release case
   });
 
-  it("shows the restart line (no link) when the running bridge is stale", async () => {
+  it("off Settings, the stale-bridge case is one line linking to Settings — no command", async () => {
     renderBanner(someUpdate({ bridgeStale: true }));
+    const link = await screen.findByRole("link", { name: /Bridge restart needed/ });
+    expect(link).toHaveAttribute("href", "/settings");
+    // A shell command is for the host, not a phone footer — it lives on Settings only.
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText(/herdr plugin action invoke restart/)).toBeNull();
+  });
+
+  it("on Settings, the stale-bridge case shows the line and the copyable command, with no GitHub link", async () => {
+    renderBanner(someUpdate({ bridgeStale: true }), true);
     expect(await screen.findByText("Bridge restart needed")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull(); // restart isn't a release — no GitHub link
     expect(

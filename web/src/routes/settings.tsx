@@ -125,7 +125,7 @@ export function SettingsRoute() {
 
         {/* Update nudge + build stamp, grouped and pinned to the bottom of the page. */}
         <div className="mt-auto flex flex-col gap-2 pt-4">
-          <UpdateBanner />
+          <UpdateBanner detail />
           <BuildStamp />
         </div>
       </main>

@@ -1,14 +1,20 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { useRouteLoaderData } from "react-router";
+import { Link, useRouteLoaderData } from "react-router";
 
 import { cn } from "@/lib/utils";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
+import { settingsPath } from "@/lib/nav";
 import type { UpdateInfo } from "@/lib/types";
 
 // The footer "update available" chip, sitting next to the build stamp. It reads the snapshot's
 // optional `update` field (surfaced on the root loader data) and, when there's something to do,
-// names it with the one command that fixes it. Everything renders as plain React text nodes.
+// names it. Everything renders as plain React text nodes.
+//
+// Two shapes. On Herd / Spaces / a space it is ONE LINE: the release case links to the release
+// page; the restart case links to Settings. Only Settings (`detail`) shows the restart COMMAND — a
+// shell command is something you run on the host, not something a phone footer can act on, and
+// repeating it on every screen just taught the eye to skip the footer.
 
 export interface UpdateNotice {
   /** The human line, e.g. "Bridge restart needed" / "Collie 0.12.0 available". */
@@ -44,7 +50,7 @@ export function updateNotice(update: UpdateInfo | undefined): UpdateNotice | nul
   return null;
 }
 
-export function UpdateBanner({ className }: { className?: string }) {
+export function UpdateBanner({ className, detail = false }: { className?: string; detail?: boolean }) {
   // Home is the root route; space/settings are its children — so the root loader data (and its
   // `update`) is in scope for all three footers via one read.
   const data = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData | undefined;
@@ -82,12 +88,20 @@ export function UpdateBanner({ className }: { className?: string }) {
         >
           {notice.line}
         </a>
-      ) : (
+      ) : detail ? (
         <span className="font-medium text-status-working">{notice.line}</span>
+      ) : (
+        // The restart case, off Settings: name it and point at the screen that carries the how.
+        <Link
+          to={settingsPath(data?.session)}
+          className="font-medium text-status-working underline decoration-dotted underline-offset-2"
+        >
+          {notice.line} · Settings
+        </Link>
       )}
-      {notice.command ? (
+      {notice.command && detail ? (
         <>
-          {" · "}
+          <span className="block">Run this on the host — Collie can't restart its own bridge from here:</span>
           <button
             type="button"
             onClick={copy}
