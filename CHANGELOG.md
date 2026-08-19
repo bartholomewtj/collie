@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.3] - 2026-08-19
+
+### Fixed
+
+- Update check polls this fork's own tags (`bartholomewtj/collie`) instead of upstream's, matching where `update` pulls from; `COLLIE_UPDATE_REPO` still overrides. README install lines point at the fork. (24ca385)
+
 ## [0.40.2] - 2026-08-19
 
 ### Fixed
