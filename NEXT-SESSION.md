@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-19 — main at **0.40.4** (`d608896`), tag `v0.40.4` pushed, no open PRs. The bridge on this box is running the 0.40.3 build (0.40.4 changed only docs, a code comment, and scripts — no rebuild needed)._
+_Last handoff: 2026-08-20 — main at **0.40.5** (`2bb1933`), tag `v0.40.5` pushed, no open PRs. The bridge on this box is running the 0.40.5 Windows ctl (hidden Task Scheduler job). 0.40.5 changed only `contrib/windows/` — no web rebuild needed._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
@@ -27,10 +27,15 @@ Everything below is merged to `main`, tagged, and running:
 - **0.40.4** (PR #59) — `CONTEXT.md` rewritten as a complete map (every bridge module, `/api` route →
   handler, web route → file, relative links); `CLAUDE.md` stale rules fixed (Type toggle, subscribe
   is write-level, journal harness list); ADR 0020 superseded by 0021; new
-  `scripts/check-doc-links.sh` runs from pre-commit when an entry doc is staged. Hooks are **not
-  installed** in this checkout — `bash scripts/install-hooks.sh` once if you want them.
+  `scripts/check-doc-links.sh` runs from pre-commit when an entry doc is staged.
+- **0.40.5** (PR #61) — Windows Task Scheduler job starts through `wscript.exe` + generated
+  `exec-bridge.vbs`, so the bridge has no console window and no taskbar button. `start` skips this
+  process and its ancestors (and compares process ids as `int` — `Win32_Process.ProcessId` is
+  `UInt32`) so it does not kill the wscript host as it comes up.
 - **Push notifications are on** bridge-side (VAPID keys in the plugin `.env`; `/api/config` says
   `push: true`). Not yet confirmed enabled on the phone (Settings → Push notifications).
+- **Git hooks are installed** in this checkout (pre-push runs typecheck + `bun test`). Windows fails
+  ~34 bridge tests (symlinks/chmod/sockets); push with `SKIP_TESTS=1`. GitHub CI is the real bar.
 
 ## Resume with
 
@@ -50,8 +55,7 @@ powershell -File contrib\windows\collie-ctl.ps1 restart   # after a bridge/*.ts 
 bun run build                                             # after a web/ change — live, no restart
 ```
 
-Clean test bar without WSL (Windows fails ~34 bridge tests on symlinks/chmod/sockets — same set on
-every branch; the ctl bash tests only pass on Linux; GitHub CI is the real bar):
+Clean test bar without WSL:
 
 ```bash
 MSYS_NO_PATHCONV=1 docker run --rm -v "C:\claudeOS\Projects\collie:/src:ro" oven/bun:1 bash -c \
