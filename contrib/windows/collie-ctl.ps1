@@ -401,6 +401,21 @@ function Start-Collie {
 # start whose record was overwritten, `bash scripts/collie-ctl.sh`, a stray `bun run bridge/index.ts`)
 # stayed alive across `stop`. Windows lets a second bridge bind 127.0.0.1:$Port beside the first, so
 # the miss did not fail loud — it stacked, and requests round-robined between old and new code (#41).
+# This process and every parent up to the session. _exec-bridge used to skip only $PID; once the
+# task host became wscript.exe running exec-bridge.vbs, Stop-AllCollieBridges matched that parent
+# and taskkill /T'd it — which killed the bridge it had just started.
+function Get-SelfProcessIds {
+  $ids = New-Object 'System.Collections.Generic.HashSet[int]'
+  $current = $PID
+  for ($i = 0; $i -lt 16; $i++) {
+    if (-not $ids.Add($current)) { break }
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $current" -ErrorAction SilentlyContinue
+    if (-not $proc -or $proc.ParentProcessId -le 0) { break }
+    $current = [int]$proc.ParentProcessId
+  }
+  return $ids
+}
+
 # Ownership is the command line: bridge = bun running "<PluginRoot>\bridge\index.ts" (either slash
 # style, since bash callers pass forward ones); launcher = this script run with _exec-bridge, or the
 # wscript host that hides it (exec-bridge.vbs). One widening, for the case that actually stacked: a
@@ -413,11 +428,12 @@ function Get-CollieBridgeProcesses {
   $bridgeFwd = $bridgeBack.Replace("\", "/")
   $controlScript = Join-Path $PSScriptRoot "collie-ctl.ps1"
   $hiddenScript = Get-CollieHiddenTaskScriptPath
+  $selfIds = Get-SelfProcessIds
   $listeners = @(Get-ColliePortListeners)
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $line = $_.CommandLine
     if (-not $line) { return $false }
-    if ($_.ProcessId -eq $PID) { return $false }
+    if ($selfIds.Contains($_.ProcessId)) { return $false }
     if ($line.Contains($bridgeBack) -or $line.Contains($bridgeFwd)) { return $true }
     if ($line.Contains($controlScript) -and $line.Contains("_exec-bridge")) { return $true }
     if ($line.Contains($hiddenScript)) { return $true }
