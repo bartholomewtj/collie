@@ -104,8 +104,10 @@ export interface WorkspaceSssf {
   state: SssfState;
   /** Per-boot token the iframe URL must carry — see the header on `Origin: null`. */
   token: string;
-  /** Every SSSF repo found near the workspace's panes, by name (never a path). */
-  repos: Array<{ name: string; state: SssfState; running: boolean }>;
+  /** Every SSSF repo found near the workspace's panes, by name (never a path). `lastRun` is the
+   *  newest session — its tracer status word and ISO start — so a list can say "success · 2h ago"
+   *  without opening the visualiser; absent while the repo has no session yet. */
+  repos: Array<{ name: string; state: SssfState; running: boolean; lastRun?: { status: string; startedAt: string } }>;
   /** The repo whose newest run is the most recent (a running one wins), and that run if it's live. */
   attached?: { repo: string; adwId?: string };
 }
@@ -215,6 +217,8 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
     running: boolean;
     /** ISO `started_at` of the newest session, "" when the db has none (or is pending). */
     newest: string;
+    /** The newest session's tracer status word ("running" | "success" | "fail" | …), "" when none. */
+    newestStatus: string;
   }
   interface Found {
     /** "none": scanned, nothing SSSF-shaped near any pane — decorates as nothing. */
@@ -398,11 +402,12 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
   function readSessions(c: SssfCandidate, repoName: string): {
     running: boolean;
     newest: string;
+    newestStatus: string;
     adwId?: string;
     byPane: Map<string, PaneSssfRun[]>;
   } {
     const byPane = new Map<string, PaneSssfRun[]>();
-    if (!c.dbPath || !Db) return { running: false, newest: "", byPane };
+    if (!c.dbPath || !Db) return { running: false, newest: "", newestStatus: "", byPane };
     try {
       const rows = openDb(c.dbPath).sessions(DEFAULT_LIST_LIMIT) as SessionRow[];
       for (const r of rows) {
@@ -419,16 +424,17 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
         else byPane.set(r.pane_id, [run]);
       }
       const [s] = rows;
-      if (!s) return { running: false, newest: "", byPane };
+      if (!s) return { running: false, newest: "", newestStatus: "", byPane };
       return {
         running: s.status === "running",
         newest: typeof s.started_at === "string" ? s.started_at : "",
+        newestStatus: typeof s.status === "string" ? s.status : "",
         ...(typeof s.adw_id === "string" ? { adwId: s.adw_id } : {}),
         byPane,
       };
     } catch (err) {
       log(`cannot read ${c.name}: ${err instanceof Error ? err.message : String(err)}`);
-      return { running: false, newest: "", byPane };
+      return { running: false, newest: "", newestStatus: "", byPane };
     }
   }
 
@@ -449,7 +455,7 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
         for (let n = 2; names.has(name); n++) name = `${c.name}-${n}`;
         names.add(name);
         const { byPane, ...s } = readSessions(c, name);
-        repos.push({ ...c, name, running: s.running, newest: s.newest });
+        repos.push({ ...c, name, running: s.running, newest: s.newest, newestStatus: s.newestStatus });
         for (const [paneId, runs] of byPane) {
           const list = paneRuns.get(paneId);
           if (list) list.push(...runs);
@@ -490,7 +496,12 @@ export function createSssfViz(cfg: Config, h: SssfHelpers, opts: SssfOptions = {
       const sssf: WorkspaceSssf = {
         state: cur.state,
         token,
-        repos: cur.repos.map((r) => ({ name: r.name, state: r.dbPath ? "ready" : "pending", running: r.running })),
+        repos: cur.repos.map((r) => ({
+          name: r.name,
+          state: r.dbPath ? "ready" : "pending",
+          running: r.running,
+          ...(r.newest ? { lastRun: { status: r.newestStatus, startedAt: r.newest } } : {}),
+        })),
         ...(cur.attached ? { attached: cur.attached } : {}),
       };
       return { ...w, sssf };

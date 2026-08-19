@@ -5,7 +5,7 @@ import { LanesIcon, SssfFrame } from "@/components/sssf-frame";
 import { StatusArea } from "@/components/status-area";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
-import { timeAgoShort } from "@/lib/format";
+import { timeAgo, timeAgoShort } from "@/lib/format";
 import { panePath, tracePath, tracesPath } from "@/lib/nav";
 import { paneDisplayName, type AgentView, type PaneSssfRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -24,11 +24,13 @@ export interface TraceRow {
   running: boolean;
   /** This repo is the workspace's attached one and has a live run — open straight on it. */
   liveAdwId?: string;
+  /** The newest run: tracer status word + ISO start. Absent until the repo has one. */
+  lastRun?: { status: string; startedAt: string };
 }
 
 /** Flatten the per-workspace `sssf` stamps into rows, deduped by repo name (a repo parked under
  *  several spaces' panes shows once, under the first space that carries it). Running first, then
- *  ready, then pending. */
+ *  ready — newest run first, so the repo you were just working in sits at the top — then pending. */
 export function traceRows(data: Pick<HomeData, "workspaces">): TraceRow[] {
   const seen = new Set<string>();
   const rows: TraceRow[] = [];
@@ -45,11 +47,33 @@ export function traceRows(data: Pick<HomeData, "workspaces">): TraceRow[] {
         state: r.state,
         running: r.running,
         liveAdwId: attached?.adwId,
+        ...(r.lastRun ? { lastRun: r.lastRun } : {}),
       });
     }
   }
   const rank = (r: TraceRow) => (r.running ? 0 : r.state === "ready" ? 1 : 2);
-  return rows.sort((a, b) => rank(a) - rank(b));
+  const started = (r: TraceRow) => (r.lastRun ? Date.parse(r.lastRun.startedAt) || 0 : 0);
+  return rows.sort((a, b) => rank(a) - rank(b) || started(b) - started(a));
+}
+
+/** The second line of a Traces row: what the newest run did and when — "success · 2h ago" — so the
+ *  list answers "did last night's run pass?" without opening a single visualiser. `null` when the
+ *  repo has no run yet (the first line already says "no traces yet"). */
+export function lastRunLine(row: Pick<TraceRow, "running" | "lastRun">, now = Date.now()): string | null {
+  if (!row.lastRun) return null;
+  const at = Date.parse(row.lastRun.startedAt);
+  const ago = Number.isFinite(at) ? timeAgo(at, now) : "";
+  if (row.running) return ago ? `started ${ago}` : "started";
+  const word = row.lastRun.status || "finished";
+  return ago ? `${word} · ${ago}` : word;
+}
+
+/** The colour of a status word, shared with the pane's run chips. */
+function statusTone(row: Pick<TraceRow, "running" | "lastRun">): string {
+  if (row.running) return "text-emerald-400";
+  if (row.lastRun?.status === "success") return "text-sky-400";
+  if (row.lastRun?.status === "fail") return "text-rose-400";
+  return "text-muted-foreground";
 }
 
 export function TracesRoute() {
@@ -57,6 +81,9 @@ export function TracesRoute() {
   const stalled = useLoadingStalled();
   const navigate = useNavigate();
   const rows = traceRows(data);
+  // The space label carries information only when the list spans more than one space; on a
+  // one-space herd every row would read "Main", eight times over.
+  const showSpace = new Set(rows.map((r) => r.spaceId)).size > 1;
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">
@@ -98,7 +125,14 @@ export function TracesRoute() {
                         )}
                         {pending && <span className="text-[11px] text-muted-foreground">no traces yet</span>}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">{r.spaceLabel}</div>
+                      {(lastRunLine(r) || showSpace) && (
+                        <div className="flex min-w-0 items-baseline gap-1.5 text-xs text-muted-foreground">
+                          {lastRunLine(r) && (
+                            <span className={cn("shrink-0 tabular-nums", statusTone(r))}>{lastRunLine(r)}</span>
+                          )}
+                          {showSpace && <span className="truncate">{r.spaceLabel}</span>}
+                        </div>
+                      )}
                     </div>
                   </button>
                 );

@@ -358,7 +358,13 @@ describe.skipIf(!VIZ || !REPO)("sssf-viz — against the real visualiser db.ts a
       expect(sssf.state).toBe("ready");
       expect(sssf.repos.map((r) => r.name).sort()).toEqual(["fresh", "live", "old", "soon"]);
       expect(sssf.repos.find((r) => r.name === "soon")).toEqual({ name: "soon", state: "pending", running: false });
-      expect(sssf.repos.find((r) => r.name === "live")).toEqual({ name: "live", state: "ready", running: true });
+      expect(sssf.repos.find((r) => r.name === "live")).toEqual({
+        name: "live",
+        state: "ready",
+        running: true,
+        lastRun: { status: "running", startedAt: "2026-08-17T09:00:00+00:00" },
+      });
+      expect(sssf.repos.find((r) => r.name === "old")?.lastRun).toEqual({ status: "success", startedAt: "2026-08-10T10:00:00+00:00" });
       expect(sssf.attached).toEqual({ repo: "live", adwId: "l2" });
       // Names only — no path leaks into the snapshot.
       expect(JSON.stringify(sssf)).not.toContain(tmpdir());

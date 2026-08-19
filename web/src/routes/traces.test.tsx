@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentView, PaneSssfRun, WorkspaceView } from "@/lib/types";
-import { openOnRun, scopedPane, traceRows } from "./traces";
+import { lastRunLine, openOnRun, scopedPane, traceRows } from "./traces";
 
 const ws = (id: string, label: string, sssf?: WorkspaceView["sssf"]): WorkspaceView => ({
   workspaceId: id,
@@ -23,8 +23,9 @@ describe("traceRows — the Traces list is one row per repo across every space",
           state: "ready",
           token: "t",
           repos: [
-            { name: "collie", state: "ready", running: false },
+            { name: "collie", state: "ready", running: false, lastRun: { status: "success", startedAt: "2026-08-10T10:00:00+00:00" } },
             { name: "soon", state: "pending", running: false },
+            { name: "newer", state: "ready", running: false, lastRun: { status: "fail", startedAt: "2026-08-12T10:00:00+00:00" } },
           ],
         }),
         ws("w2", "lab", {
@@ -40,9 +41,24 @@ describe("traceRows — the Traces list is one row per repo across every space",
     });
     expect(rows.map((r) => [r.repo, r.spaceLabel, r.running, r.liveAdwId])).toEqual([
       ["gene", "lab", true, "run9"],
+      ["newer", "home", false, undefined], // ready rows: newest run first
       ["collie", "home", false, undefined],
       ["soon", "home", false, undefined],
     ]);
+    expect(rows[2]?.lastRun).toEqual({ status: "success", startedAt: "2026-08-10T10:00:00+00:00" });
+  });
+});
+
+describe("lastRunLine — the second line says what the newest run did and when", () => {
+  const now = Date.parse("2026-08-10T12:00:00+00:00");
+  it("names the status and the age, or how long a live run has been going", () => {
+    expect(lastRunLine({ running: false, lastRun: { status: "success", startedAt: "2026-08-10T10:00:00+00:00" } }, now)).toBe("success · 2h ago");
+    expect(lastRunLine({ running: false, lastRun: { status: "fail", startedAt: "2026-08-10T11:59:50+00:00" } }, now)).toBe("fail · just now");
+    expect(lastRunLine({ running: true, lastRun: { status: "running", startedAt: "2026-08-10T11:55:00+00:00" } }, now)).toBe("started 5m ago");
+  });
+  it("is silent for a repo with no run yet, and survives a start it cannot parse", () => {
+    expect(lastRunLine({ running: false }, now)).toBeNull();
+    expect(lastRunLine({ running: false, lastRun: { status: "success", startedAt: "" } }, now)).toBe("success");
   });
 });
 
