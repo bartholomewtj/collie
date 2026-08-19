@@ -148,7 +148,8 @@ the unit name; the Herdr action runs from anywhere.
   sits in `web/src/components/send-mode-menu.tsx`'s header.
 - **The operator's rows in `commands.toml` replace the shipped command catalog on the panes they
   address, never merge into it** ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md));
-  the bridge re-reads the file behind an mtime check, so edits are live and need no restart.
+  the bridge re-reads the file behind an mtime check, so edits are live and need no restart. The
+  file's `[[quick]]` rows do the same to the Quick dock's shipped replies (shells excepted).
 - **PWA** via `vite-plugin-pwa` (`web/vite.config.ts`): manifest + `sw.js`, registered manually
   from `virtual:pwa-register` in `main.tsx` (bundled = CSP-safe). Install/SW need a **secure
   context** — over plain HTTP they no-op silently (Chrome insecure-origin flag, or HTTPS, to test).

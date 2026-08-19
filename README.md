@@ -371,6 +371,26 @@ A pane your rows match shows only your rows (narrowest row wins,
 two-tap confirm. No restart — edits are live. Verify: open a pane, tap **/**, your rows are on the
 first screen. Syntax error? `journalctl --user -u collie -n 20` names the line.
 
+### Your own quick replies
+
+The composer's **Quick** dock ships yes / no / continue / commit and push / retry / skip. Put your
+own one-tap replies in the same `commands.toml`:
+
+```toml
+[[quick]]
+text = "run the tests"       # sent verbatim, then Enter — one line, up to 80 chars
+group = "mine"               # optional; rows sharing a group render as one grid (default "mine")
+scope = "claude"             # optional; omit for every agent pane
+
+[[quick]]
+text = "yes"
+group = "confirm"
+```
+
+Same rule as commands: on a pane any of your rows address, the dock is **your rows only** — so keep
+"yes" / "no" if you still want them (`commands.toml.example` does). Shells always keep y / n. Live,
+no restart; reload the page to see them.
+
 ### Multi-session
 
 `COLLIE_MULTI_SESSION=on` (the default) discovers and serves every named Herdr session under your

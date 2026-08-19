@@ -6,6 +6,21 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.0] - 2026-08-19
+
+### Added
+- Your own one-tap replies: `[[quick]]` rows in `commands.toml` replace the shipped Quick dock on the panes they address, grouped by `group`; live, no restart (14f2550)
+- Traces list shows each repo's newest run — "success · 2h ago", "started 5m ago" — and orders ready repos newest-run first (16f2ed3)
+
+### Changed
+- "Bridge restart needed" is one line linking to Settings on Herd / Spaces / a space; only Settings shows the copyable host command (094f02c)
+- Settings → Updates says "Bridge running vX" and the footer stamp says "app vY", so the two versions read as two things (094f02c)
+- Keys pad: the Shift / Ctrl / Alt row sits above the key grid, keeping Esc, Ctrl C and the arrows nearest the thumb (c441a3e)
+- Traces list drops the space label when every row is in the same space (16f2ed3)
+
+### Fixed
+- Herd rows no longer repeat the tab or project as the second line ("Main · Collie" over "Collie"); the cwd rule takes over (a06806b)
+
 ## [0.39.0] - 2026-08-19
 
 ### Added

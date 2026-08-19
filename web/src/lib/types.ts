@@ -120,7 +120,13 @@ export interface WorkspaceView {
   sssf?: {
     state: "ready" | "pending";
     token: string;
-    repos: Array<{ name: string; state: "ready" | "pending"; running: boolean }>;
+    repos: Array<{
+      name: string;
+      state: "ready" | "pending";
+      running: boolean;
+      /** The newest run — tracer status word + ISO start. Absent until the repo has one. */
+      lastRun?: { status: string; startedAt: string };
+    }>;
     attached?: { repo: string; adwId?: string };
   };
 }
@@ -311,6 +317,18 @@ export interface OperatorCommand {
   confirm?: boolean;
 }
 
+/**
+ * One operator-declared one-tap reply (a `[[quick]]` table in their `commands.toml`). Mirrors
+ * OperatorQuickReply in bridge/types.ts. Resolved by `quickRepliesFor()`, which hands a pane the
+ * operator's groups instead of the shipped set when any of these rows address it.
+ */
+export interface OperatorQuickReply {
+  /** Herdr agent name this applies to, lowercased. Omitted = every agent pane. */
+  agent?: string;
+  text: string;
+  group: string;
+}
+
 export interface BridgeConfig {
   push: boolean;
   vapidPublicKey: string;
@@ -318,6 +336,8 @@ export interface BridgeConfig {
   build?: string;
   /** The operator's own palette rows. Absent when there is no `commands.toml`. */
   operatorCommands?: OperatorCommand[];
+  /** The operator's own Quick-dock rows. Absent when `commands.toml` declares none. */
+  operatorQuickReplies?: OperatorQuickReply[];
 }
 
 /**

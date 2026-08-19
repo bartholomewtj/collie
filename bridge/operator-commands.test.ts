@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { createOperatorCommands, validateOperatorCommands, type CommandsFileIo } from "./operator-commands.ts";
+import {
+  createOperatorCommands,
+  createOperatorQuickReplies,
+  validateOperatorCommands,
+  validateOperatorQuickReplies,
+  type CommandsFileIo,
+} from "./operator-commands.ts";
 
 // The palette's escape hatch: an operator-declared row for a command the shipped catalog cannot
 // vouch for (a plugin's, or their own). The validator is pure, so it is driven with parsed TOML
@@ -228,6 +234,101 @@ describe("createOperatorCommands", () => {
   test("a file that never parsed serves empty rather than failing", async () => {
     const { io } = fakeIo({ mtime: 100, text: "nonsense = [" });
     const read = createOperatorCommands("/cfg/commands.toml", io, quiet);
+    expect(await read()).toEqual([]);
+  });
+});
+
+/** The Quick-dock half of the same file, parsed the same way. */
+function quick(toml: string) {
+  return validateOperatorQuickReplies(Bun.TOML.parse(toml), quiet);
+}
+
+describe("validateOperatorQuickReplies", () => {
+  test("nothing declared yields nothing, and [[commands]] rows are not quick replies", () => {
+    expect(quick("")).toEqual([]);
+    expect(quick("quick = []")).toEqual([]);
+    expect(quick(`[[commands]]
+command = "/a"`)).toEqual([]);
+    expect(validateOperatorQuickReplies(undefined, quiet)).toEqual([]);
+  });
+
+  test("a row keeps its text, defaults its group, and carries no agent when unscoped", () => {
+    const out = quick(`[[quick]]
+text = "run the tests"`);
+    expect(out).toEqual([{ text: "run the tests", group: "mine" }]);
+    expect("agent" in out[0]!).toBe(false);
+  });
+
+  test("scope and group are lowercased and trimmed", () => {
+    expect(quick(`[[quick]]
+text = " ship it "
+scope = " Claude "
+group = "Review"`)).toEqual([
+      { agent: "claude", text: "ship it", group: "review" },
+    ]);
+  });
+
+  test("whitespace runs collapse — a multi-line string cannot send half a reply", () => {
+    expect(quick(`[[quick]]
+text = """fix the
+  failing test"""`)).toEqual([
+      { text: "fix the failing test", group: "mine" },
+    ]);
+  });
+
+  test("drops empty, over-long, and mis-typed rows, and an empty scope or group, keeping the rest", () => {
+    const warned: string[] = [];
+    const out = validateOperatorQuickReplies(
+      Bun.TOML.parse(`
+        [[quick]]
+        text = ""
+        [[quick]]
+        text = "${"x".repeat(81)}"
+        [[quick]]
+        text = "ok"
+        scope = ""
+        [[quick]]
+        text = "ok"
+        group = " "
+        [[quick]]
+        text = 42
+        [[quick]]
+        text = "kept"
+      `),
+      (m) => warned.push(m),
+    );
+    expect(out).toEqual([{ text: "kept", group: "mine" }]);
+    expect(warned).toHaveLength(5);
+  });
+
+  test("a later row with the same scope and text replaces the earlier one in place", () => {
+    expect(
+      quick(`
+        [[quick]]
+        text = "yes"
+        group = "confirm"
+        [[quick]]
+        text = "no"
+        group = "confirm"
+        [[quick]]
+        text = "yes"
+        group = "mine"
+      `),
+    ).toEqual([
+      { text: "yes", group: "mine" },
+      { text: "no", group: "confirm" },
+    ]);
+  });
+
+  test("the reader serves quick rows from the same file, cached on mtime like commands", async () => {
+    const { io, state } = fakeIo({ mtime: 100, text: `[[quick]]
+text = "a"` });
+    const read = createOperatorQuickReplies("/cfg/commands.toml", io, quiet);
+    expect(await read()).toEqual([{ text: "a", group: "mine" }]);
+    expect(await read()).toEqual([{ text: "a", group: "mine" }]);
+    expect(state.reads).toBe(1);
+    state.text = ONE_ROW;
+    state.mtime = 200;
     expect(await read()).toEqual([]);
   });
 });

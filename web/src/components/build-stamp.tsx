@@ -50,7 +50,9 @@ export function BuildStamp({ className }: { className?: string }) {
         className,
       )}
     >
-      <span className="font-mono">{buildLabel()}</span>
+      {/* "app": this is the bundle the browser runs; the bridge's own version sits in Settings →
+          Updates. Two unlabelled versions on one screen read as a contradiction. */}
+      <span className="font-mono">app {buildLabel()}</span>
       {stale && (
         <>
           {" · "}

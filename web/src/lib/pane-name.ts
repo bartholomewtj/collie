@@ -50,6 +50,10 @@ function informativeCwd(cwd: string, project: string): string | null {
   return shortCwd(cwd);
 }
 
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 /** The parts of a herd-list row title, unjoined — see {@link PaneParts}. */
 export function paneParts(pane: AgentView): PaneParts {
   const project = pane.workspaceLabel || pane.workspaceId;
@@ -58,10 +62,16 @@ export function paneParts(pane: AgentView): PaneParts {
   // exists to untangle (several agents in ONE project) the cwd is identical on every row, so it
   // discriminates nothing.
   const own = pane.paneLabel || pane.sessionName || pane.terminalTitle;
+  const tab = pane.tabLabel ?? null;
+  // A name that merely repeats the title says nothing twice: Herdr names a new tab after its pane
+  // and Claude titles the terminal after the project, so "Main · Collie" over "Collie" was the
+  // common case, not the edge. Then the second line falls through to the cwd rule like a pane with
+  // no name at all.
+  const repeatsTitle = !!own && [tab, project].some((t) => t != null && sameName(t, own));
   return {
     project,
-    tab: pane.tabLabel ?? null,
-    secondary: own || informativeCwd(pane.cwd, project),
+    tab,
+    secondary: (repeatsTitle ? "" : own) || informativeCwd(pane.cwd, project),
   };
 }
 

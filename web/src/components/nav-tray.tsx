@@ -223,6 +223,19 @@ export function NavTray({ onSend, onQueueChange, disabled }: NavTrayProps) {
 
       {tab === "keys" ? (
         <>
+          {/* Modifiers (checkboxes that cycle off → once → locked → off): arm any subset and the
+              next key composes as their combined chord. Locked (Lock glyph) stays armed across
+              presses and Sends. Same pressed styling as everything else (default = armed, outline =
+              idle). Display order Shift · Ctrl · Alt; compose order is canonical regardless of taps.
+              They sit ABOVE the key grid: you arm, then you tap, so reading top-down matches doing —
+              and it keeps the bottom rows, where the thumb rests on a phone, for the keys you reach
+              for under pressure (Esc, Ctrl C, the arrows) rather than three modifiers you tap once. */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {modBtn("shift", "⇧ Shift")}
+            {modBtn("ctrl", "Ctrl")}
+            {modBtn("alt", "Alt")}
+          </div>
+
           {/* Same physical-keyboard geometry as the composer's inline quick keys, for muscle memory:
               Esc top-left, Tab directly below it, arrows as an inverted-T on the right. The Esc/Up
               gap holds a quick Ctrl+C — the one interrupt chord worth a single tap, without opening
@@ -252,16 +265,6 @@ export function NavTray({ onSend, onQueueChange, disabled }: NavTrayProps) {
           >
             {echo.phaseOf("Space") === "done" ? <Check className="size-4" /> : "Space"}
           </Button>
-
-          {/* Modifiers (checkboxes that cycle off → once → locked → off): arm any subset and the
-              next key composes as their combined chord. Locked (Lock glyph) stays armed across
-              presses and Sends. Same pressed styling as everything else (default = armed, outline =
-              idle). Display order Shift · Ctrl · Alt; compose order is canonical regardless of taps. */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {modBtn("shift", "⇧ Shift")}
-            {modBtn("ctrl", "Ctrl")}
-            {modBtn("alt", "Alt")}
-          </div>
 
           {/* Ctrl presets (collapsed by default; expanding keeps everything inline, never covering
               the mirror). On the immediate path Ctrl-D / Ctrl-Z need a second tap; while composing a

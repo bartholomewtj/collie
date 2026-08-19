@@ -1,12 +1,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { fetchConfig } from "@/lib/api";
-import type { OperatorCommand } from "@/lib/types";
+import type { OperatorCommand, OperatorQuickReply } from "@/lib/types";
 
-// The operator's own palette rows (their `commands.toml`), read from /api/config and held in
-// module state. Modelled on the lib/server-build.ts store idiom: plain module state + subscribe +
-// a useSyncExternalStore hook, so the composer participates without prop-drilling through the route
-// tree.
+// The operator's own palette rows AND Quick-dock rows (their `commands.toml`), read from
+// /api/config in one round trip and held in module state. Modelled on the lib/server-build.ts store
+// idiom: plain module state + subscribe + a useSyncExternalStore hook, so the composer participates
+// without prop-drilling through the route tree.
 //
 // THE CONTRACT: one SUCCESSFUL read is cached for the life of the page; a failed attempt is not
 // cached, so a later mount tries again. Never polled, and deliberately not folded into the 1.5s
@@ -23,6 +23,7 @@ import type { OperatorCommand } from "@/lib/types";
 // snapshot, so a render-phase kick would turn one refusal into a request per tick, forever.
 
 let current: readonly OperatorCommand[] = [];
+let currentQuick: readonly OperatorQuickReply[] = [];
 let inflight: Promise<void> | null = null;
 let loaded = false;
 const listeners = new Set<() => void>();
@@ -38,6 +39,7 @@ export function loadOperatorCommands(): Promise<void> {
   inflight = fetchConfig()
     .then((cfg) => {
       current = cfg.operatorCommands ?? [];
+      currentQuick = cfg.operatorQuickReplies ?? [];
       loaded = true;
       emit();
     })
@@ -52,6 +54,10 @@ export function loadOperatorCommands(): Promise<void> {
 
 export function getOperatorCommands(): readonly OperatorCommand[] {
   return current;
+}
+
+export function getOperatorQuickReplies(): readonly OperatorQuickReply[] {
+  return currentQuick;
 }
 
 export function subscribeOperatorCommands(cb: () => void): () => void {
@@ -70,9 +76,18 @@ export function useOperatorCommands(): readonly OperatorCommand[] {
   return useSyncExternalStore(subscribeOperatorCommands, getOperatorCommands, getOperatorCommands);
 }
 
+/** The Quick-dock half of the same read — same one-shot fetch, same store, same retry rule. */
+export function useOperatorQuickReplies(): readonly OperatorQuickReply[] {
+  useEffect(() => {
+    void loadOperatorCommands();
+  }, []);
+  return useSyncExternalStore(subscribeOperatorCommands, getOperatorQuickReplies, getOperatorQuickReplies);
+}
+
 /** Test helper — reset module state between cases. */
 export function __resetOperatorCommands(): void {
   current = [];
+  currentQuick = [];
   inflight = null;
   loaded = false;
   listeners.clear();

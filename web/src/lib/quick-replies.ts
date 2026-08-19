@@ -13,6 +13,8 @@
 // is keyed per agent anyway so a real divergence (a harness that wants "approve" over "yes") is a
 // one-line addition rather than a restructuring.
 
+import type { OperatorQuickReply } from "@/lib/types";
+
 export interface QuickReplyGroup {
   /** Lowercase section label shown above the grid. */
   title: string;
@@ -49,8 +51,36 @@ const CATALOG: Record<string, readonly QuickReplyGroup[]> = {};
 export function quickRepliesFor(
   agent: string | undefined | null,
   isShell: boolean,
+  mine: readonly OperatorQuickReply[] = [],
 ): readonly QuickReplyGroup[] {
   if (isShell) return SHELL;
+  const own = operatorGroups(agent, mine);
+  if (own) return own;
   if (agent != null && Object.hasOwn(CATALOG, agent)) return CATALOG[agent];
   return AGENT;
+}
+
+/**
+ * The operator's `[[quick]]` rows, as groups, when any of them address this pane — else null.
+ *
+ * Same rule as the palette (ADR 0018): your rows REPLACE the shipped set on the panes they name,
+ * never merge into it, so the dock is exactly what you wrote. A scoped row (`scope = "claude"`)
+ * addresses that agent string exactly; an unscoped row addresses every agent pane. Both kinds
+ * render together, grouped by `group` in declaration order.
+ */
+function operatorGroups(
+  agent: string | undefined | null,
+  mine: readonly OperatorQuickReply[],
+): readonly QuickReplyGroup[] | null {
+  if (mine.length === 0) return null;
+  const key = agent?.toLowerCase().trim() ?? "";
+  const groups = new Map<string, string[]>();
+  for (const row of mine) {
+    if (row.agent !== undefined && row.agent !== key) continue;
+    const list = groups.get(row.group);
+    if (list) list.push(row.text);
+    else groups.set(row.group, [row.text]);
+  }
+  if (groups.size === 0) return null;
+  return [...groups].map(([title, items]) => ({ title, items }));
 }

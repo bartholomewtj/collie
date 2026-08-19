@@ -192,7 +192,9 @@ app. Closing this needs the server-side blocking-message capture described above
 - **The operator's slash-command rows ride `/api/config`** too, read from their `commands.toml`
   behind an mtime check (`bridge/operator-commands.ts`), so editing the file is live like a web
   rebuild. On a pane they address they **replace** the shipped catalog rather than merging into it —
-  [ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md).
+  [ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md). The same file's `[[quick]]`
+  rows ride the same payload (`operatorQuickReplies`) under the same replace rule and feed the
+  composer's Quick dock (`web/src/lib/quick-replies.ts`).
 
 ## 6. Security model
 

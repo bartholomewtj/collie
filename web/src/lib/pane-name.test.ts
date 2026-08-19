@@ -104,6 +104,17 @@ describe("paneParts — the second line", () => {
     expect(join(t)).toBe("moonward_os · fix-auth");
     expect(t.secondary).toBe("oauth-refactor");
   });
+
+  it("does not repeat the tab or project as the second line — 'Main · Collie' over 'Collie'", () => {
+    // Herdr names a new tab after its pane, so the terminal title and the tab label coincide.
+    const t = paneParts(pane({ tabLabel: "Collie", terminalTitle: "collie" }));
+    expect(join(t)).toBe("moonward_os · Collie");
+    expect(t.secondary).toBe("~/dev/moonward"); // falls through to the cwd rule
+    // A hand-set name equal to the project is the same repetition.
+    expect(paneParts(pane({ paneLabel: "moonward_os", cwd: "" })).secondary).toBeNull();
+    // Only an EXACT repeat is dropped — a name that adds a word still shows.
+    expect(paneParts(pane({ tabLabel: "Collie", terminalTitle: "Collie: fixing nav" })).secondary).toBe("Collie: fixing nav");
+  });
 });
 
 describe("paneParts — shell panes", () => {
