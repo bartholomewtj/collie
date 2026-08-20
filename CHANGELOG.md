@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.43.2] - 2026-08-20
+
+### Fixed
+- `scripts/check-doc-links.test.ts` runs on Windows: it now resolves Git bash directly instead of picking the System32 WSL stub from PATH (which dies with no distro installed), and skips when no usable bash exists (#66)
+
 ## [0.43.1] - 2026-08-20
 
 ### Fixed

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,26 @@ import { join } from "node:path";
 
 const SCRIPT = join(import.meta.dir, "check-doc-links.sh");
 
+const GIT_BASH_CANDIDATES = [
+  "C:\\Program Files\\Git\\bin\\bash.exe",
+  "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+];
+
+/**
+ * The bash to run the script with. On win32 PATH's first `bash` is the System32 WSL stub — with
+ * no distro installed every spawn dies with `execvpe(/bin/bash) failed: No such file or directory`
+ * (#66). Prefer Git bash's well-known locations; if none exists, skip rather than invoke the stub.
+ */
+function resolveBash(): string | null {
+  if (process.platform !== "win32") return "bash";
+  for (const p of GIT_BASH_CANDIDATES) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+const BASH = resolveBash();
+
 async function docWith(body: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "collie-doclinks-"));
   const file = join(dir, "doc.md");
@@ -22,7 +43,7 @@ async function docWith(body: string): Promise<string> {
 
 /** Run the gate over one doc; returns its exit code and both streams. */
 async function check(file: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["bash", SCRIPT, file], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([BASH!, SCRIPT, file], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -30,7 +51,7 @@ async function check(file: string): Promise<{ code: number; stdout: string; stde
   return { code: await proc.exited, stdout, stderr };
 }
 
-describe("check-doc-links.sh", () => {
+describe.skipIf(BASH === null)("check-doc-links.sh", () => {
   test("passes a doc whose links all resolve", async () => {
     // A link to the script itself, which necessarily exists.
     const file = await docWith(`# Doc\n\nSee [it](${SCRIPT}).\n`);
