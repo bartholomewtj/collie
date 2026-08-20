@@ -89,7 +89,7 @@ export function DisplayPrefsContent({
       />
       <Row
         label="Raw terminal"
-        hint="Shows the plain mirror — no tappable prompt buttons, no chrome or status strips. Use it when a dialog renders wrong and you want to drive it by hand from Keys."
+        hint="On by default. Shows the plain mirror — no tappable prompt buttons, no chrome or status strips. Off restores those."
         htmlFor="pref-raw"
         control={
           <Switch

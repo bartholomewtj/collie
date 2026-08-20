@@ -2,14 +2,14 @@ import { renderHook, act } from "@testing-library/react";
 import { useDisplayPrefs } from "./use-display-prefs";
 
 // Minimal localStorage stub — Vitest/jsdom includes a real one but this ensures it's clean per test.
-const STORAGE_KEY = "collie:display-prefs:v4";
+const STORAGE_KEY = "collie:display-prefs:v5";
 
 describe("useDisplayPrefs", () => {
   beforeEach(() => localStorage.clear());
 
   it("returns defaults when localStorage is empty", () => {
     const { result } = renderHook(() => useDisplayPrefs());
-    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: false, tapToFocus: true });
+    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: true, tapToFocus: true });
   });
 
   it("persists wrap=true and reloads it on mount", () => {
@@ -32,14 +32,14 @@ describe("useDisplayPrefs", () => {
     expect(result.current.prefs).toEqual({ wrap: false, fontSize: 14, rawTerminal: true, tapToFocus: false });
   });
 
-  it("persists rawTerminal and reloads it on mount (the escape hatch survives a reload)", () => {
+  it("persists rawTerminal and reloads it on mount (the choice survives a reload)", () => {
     const { result } = renderHook(() => useDisplayPrefs());
-    expect(result.current.prefs.rawTerminal).toBe(false);
-    act(() => result.current.setRawTerminal(true));
     expect(result.current.prefs.rawTerminal).toBe(true);
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).rawTerminal).toBe(true);
+    act(() => result.current.setRawTerminal(false));
+    expect(result.current.prefs.rawTerminal).toBe(false);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).rawTerminal).toBe(false);
     const { result: reloaded } = renderHook(() => useDisplayPrefs());
-    expect(reloaded.current.prefs.rawTerminal).toBe(true);
+    expect(reloaded.current.prefs.rawTerminal).toBe(false);
   });
 
   it("persists tapToFocus and reloads it on mount", () => {
@@ -92,12 +92,12 @@ describe("useDisplayPrefs", () => {
   it("falls back to defaults on malformed JSON", () => {
     localStorage.setItem(STORAGE_KEY, "not-json{{{");
     const { result } = renderHook(() => useDisplayPrefs());
-    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: false, tapToFocus: true });
+    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: true, tapToFocus: true });
   });
 
   it("falls back to defaults when stored value is not an object", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(42));
     const { result } = renderHook(() => useDisplayPrefs());
-    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: false, tapToFocus: true });
+    expect(result.current.prefs).toEqual({ wrap: true, fontSize: 12, rawTerminal: true, tapToFocus: true });
   });
 });

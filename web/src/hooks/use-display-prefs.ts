@@ -12,10 +12,9 @@ export interface DisplayPrefs {
   /** Font size in px for the mirror pre (default: 12, range: 9–16). */
   fontSize: number;
   /**
-   * Raw-terminal escape hatch (default: false). When on, the mirror renders the PLAIN terminal —
+   * Raw-terminal mode (default: true). When on, the mirror renders the PLAIN terminal —
    * every Claude grammar (chrome stripping, native prompt-select buttons, the status strip) is
-   * bypassed, so a misdetected/mis-rendered dialog can always be driven manually with the keys pad.
-   * The universal fallback, made user-controllable.
+   * bypassed. Turn it off in Display settings to get tappable prompt buttons and chrome stripping.
    */
   rawTerminal: boolean;
   /**
@@ -32,13 +31,13 @@ export interface DisplayPrefs {
   tapToFocus: boolean;
 }
 
-// NOT bumped for `tapToFocus`: loadPrefs defaults each field independently, so a v4 payload written
-// before it existed simply reads the default. Bumping would silently reset everyone's wrap, size and
-// raw-terminal choice to buy nothing.
-const STORAGE_KEY = "collie:display-prefs:v4";
+// v5: rawTerminal default flipped to true. A v4 payload already has `rawTerminal: false` written in
+// (any wrap/font/tap save stored the old default), so only a key bump gives existing installs the
+// new first-open view. Wrap / font / tapToFocus reset to DEFAULTS with it.
+const STORAGE_KEY = "collie:display-prefs:v5";
 export const FONT_MIN = 9;
 export const FONT_MAX = 16;
-const DEFAULTS: DisplayPrefs = { wrap: true, fontSize: 12, rawTerminal: false, tapToFocus: true };
+const DEFAULTS: DisplayPrefs = { wrap: true, fontSize: 12, rawTerminal: true, tapToFocus: true };
 
 function clampFont(n: number): number {
   return Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(n)));
@@ -80,7 +79,7 @@ export interface UseDisplayPrefsReturn {
   setFontSize: (size: number) => void;
   /** Step font size by delta (positive = larger), clamped to 9–16. */
   stepFontSize: (delta: number) => void;
-  /** Toggle or explicitly set the raw-terminal escape hatch. */
+  /** Toggle or explicitly set raw-terminal mode. */
   setRawTerminal: (raw: boolean) => void;
   /** Toggle or explicitly set whether a mirror tap focuses the composer. */
   setTapToFocus: (tapToFocus: boolean) => void;
