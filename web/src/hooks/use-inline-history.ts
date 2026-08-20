@@ -25,6 +25,10 @@ export const INLINE_HISTORY_STEP = 120;
 export const INLINE_GROW_THRESHOLD = 800;
 /** How often the newest page is refetched while the agent is working, in ms. */
 export const INLINE_REFRESH_MS = 30_000;
+/** Extra refetch after working → idle/done, so the last turn is in the journal before the pane
+ *  hides the live tail. Claude writes the jsonl line as the turn completes; the status flip can
+ *  beat that write by a beat. */
+export const INLINE_IDLE_RETRY_MS = 2000;
 
 export type InlineHistoryUnavailable = "disabled" | "no-session" | "no-log" | "error";
 
@@ -188,13 +192,24 @@ export function useInlineHistory({
   const lastStatus = useRef(status);
   useEffect(() => {
     if (!enabled) return;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     if (lastStatus.current !== status) {
       lastStatus.current = status;
       void refreshNewest();
+      if (status === "idle" || status === "done") {
+        retry = setTimeout(() => void refreshNewest(), INLINE_IDLE_RETRY_MS);
+      }
     }
-    if (status !== "working") return;
+    if (status !== "working") {
+      return () => {
+        if (retry) clearTimeout(retry);
+      };
+    }
     const id = setInterval(() => void refreshNewest(), INLINE_REFRESH_MS);
-    return () => clearInterval(id);
+    return () => {
+      if (retry) clearTimeout(retry);
+      clearInterval(id);
+    };
   }, [enabled, status, refreshNewest]);
 
   /**

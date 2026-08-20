@@ -588,3 +588,73 @@ describe("AgentChat — top-of-mirror history affordance", () => {
     expect(await screen.findByText("what changed today?")).toBeInTheDocument();
   });
 });
+
+// Idle panes hide the live TUI once the transcript already holds the newest turn — otherwise the
+// same message reads twice, once as markdown and once as a wrapped CLI snapshot. Working / blocked
+// / a missing overlap keep the tail, and Show live peels it back.
+describe("AgentChat — collapsed live tail", () => {
+  const LAST =
+    "Three things stand out after the sweep across every repo I could reach this morning and afternoon. Nothing else is broken — services are up, the tests all pass, and the context map is current now.";
+  const MIRROR_ONLY = "MIRRORONLYTOKEN that the journal never wrote down at all";
+
+  function idleWithOverlap(status: "idle" | "working" | "blocked" = "idle") {
+    server.use(
+      http.get(/\/api\/pane\/[^/]+\/history/, () =>
+        HttpResponse.json({
+          paneId: "w1:p1",
+          available: true,
+          entries: [
+            {
+              uuid: "t-ask",
+              ts: "2026-08-20T00:00:00.000Z",
+              role: "user",
+              parts: [{ kind: "text", text: "what stands out?" }],
+            },
+            {
+              uuid: "t-last",
+              ts: "2026-08-20T00:00:01.000Z",
+              role: "assistant",
+              parts: [{ kind: "text", text: LAST }],
+            },
+          ],
+          hasMore: false,
+          total: 2,
+          fileTruncated: false,
+        }),
+      ),
+    );
+    const agent = { ...fixtureAgents[0]!, hasSession: true, status };
+    renderChat({
+      agent,
+      agents: [agent],
+      text: `lead-in words so the probe skips the first token.\n${LAST}\n${MIRROR_ONLY}`,
+    });
+  }
+
+  it("hides the live tail on an idle pane whose transcript already holds the newest turn", async () => {
+    idleWithOverlap("idle");
+    expect(await screen.findByRole("button", { name: /show live terminal/i })).toBeInTheDocument();
+    expect(screen.getByText(/nothing else is broken/i)).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    expect(screen.queryByText(MIRROR_ONLY)).not.toBeInTheDocument();
+  });
+
+  it("keeps the live tail while the agent is working, even when the transcript overlaps", async () => {
+    idleWithOverlap("working");
+    expect(await screen.findByText(/nothing else is broken/i)).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText(MIRROR_ONLY)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show live terminal/i })).not.toBeInTheDocument();
+  });
+
+  it("Show live peels the tail back, Hide live puts it away", async () => {
+    const user = userEvent.setup();
+    idleWithOverlap("idle");
+    await user.click(await screen.findByRole("button", { name: /show live terminal/i }));
+    expect(screen.getByText(MIRROR_ONLY)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hide live terminal/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /hide live terminal/i }));
+    expect(screen.queryByText(MIRROR_ONLY)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show live terminal/i })).toBeInTheDocument();
+  });
+});

@@ -8,6 +8,7 @@ import type { TranscriptEntry } from "@/lib/types";
 import {
   INLINE_HISTORY_PAGE,
   INLINE_HISTORY_STEP,
+  INLINE_IDLE_RETRY_MS,
   mergeNewest,
   useInlineHistory,
 } from "./use-inline-history";
@@ -209,6 +210,27 @@ describe("useInlineHistory refresh", () => {
     rerender({ status: "working" });
     await waitFor(() => expect(result.current.entries.map((e) => e.uuid)).toEqual(["n1"]));
     expect(result.current.hasMore).toBe(false);
+  });
+
+  it("refetches again shortly after going idle so a last turn the first fetch missed still lands", async () => {
+    let hits = 0;
+    server.use(
+      http.get(/\/api\/pane\/[^/]+\/history/, () => {
+        hits += 1;
+        return hits < 3 ? page(fixtureTranscript) : page([...fixtureTranscript, olderTurn("t3")]);
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ status }: { status: string }) =>
+        useInlineHistory({ paneId: "w1:p1", enabled: true, status, getScrollElement }),
+      { initialProps: { status: "working" } },
+    );
+    await waitFor(() => expect(result.current.entries.map((e) => e.uuid)).toEqual(["t1", "t2"]));
+    rerender({ status: "idle" });
+    await waitFor(() => expect(hits).toBe(2));
+    await waitFor(() => expect(result.current.entries.map((e) => e.uuid)).toEqual(["t1", "t2", "t3"]), {
+      timeout: INLINE_IDLE_RETRY_MS + 1000,
+    });
   });
 
   it("does not refetch when the status is unchanged on rerender", async () => {

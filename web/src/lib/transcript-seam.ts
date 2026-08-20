@@ -1,4 +1,4 @@
-import type { TranscriptEntry, TranscriptPart } from "./types";
+import type { AgentStatus, TranscriptEntry, TranscriptPart } from "./types";
 
 // Where the transcript ends and the live mirror begins.
 //
@@ -7,6 +7,10 @@ import type { TranscriptEntry, TranscriptPart } from "./types";
 // they always do — the viewport still holds the tail of the turn the transcript just rendered, so
 // the newest message reads twice (once as markdown, once as raw terminal). This finds the seam and
 // cuts the transcript there, so each line of the conversation appears exactly once.
+//
+// When the newest transcript turn is already on screen and the TUI has nothing to tap or stream,
+// the live tail is the worse copy of that turn — hide it and leave the markdown. liveMirrorNeeded
+// is that decision; newestTurnInViewport is the "journal has caught the viewport" half of it.
 //
 // Matching is fuzzy by necessity. The terminal hard-wraps to the pane width and renders markdown
 // rather than echoing it, so the same sentence differs on the two sides by line breaks and by the
@@ -155,4 +159,54 @@ export function trimAtSeam(entries: TranscriptEntry[], mirrorText: string): Tran
   }
   if (parts.length > 0) kept.push({ ...entry, parts });
   return kept;
+}
+
+/**
+ * True when the live viewport is showing the newest transcript turn (the one the journal most
+ * recently wrote), not an older one still sitting at the top of the 50-row window.
+ *
+ * Hide-live uses this as the safety latch: if the newest turn is not on screen, the TUI is still
+ * the only copy of what just happened (journal lag, or a turn still streaming), so the tail stays.
+ * A last turn that is only tool parts never matches — those are Collie's summaries, not screen
+ * text — and the tail stays for the same reason.
+ */
+export function newestTurnInViewport(entries: TranscriptEntry[], mirrorText: string): boolean {
+  if (entries.length === 0) return false;
+  const last = entries.length - 1;
+  if (!entries[last]!.parts.some((p) => p.kind === "text" && p.text.trim() !== "")) return false;
+  const seam = findSeam(entries, mirrorText);
+  return seam !== null && seam.entry === last;
+}
+
+/** Inputs to {@link liveMirrorNeeded}. Kept as a type so the pane and the tests share one shape. */
+export interface LiveMirrorNeed {
+  kind?: "agent" | "shell";
+  status?: AgentStatus;
+  dialogPresent: boolean;
+  rawTerminal: boolean;
+  findOpen: boolean;
+  hasTranscript: boolean;
+  newestTurnInViewport: boolean;
+  pinned: boolean;
+}
+
+/**
+ * Whether the pane should paint the live terminal tail.
+ *
+ * Always on for a shell (the terminal IS the conversation), a dialog (the buttons live in the
+ * tail), a working/blocked/unknown agent (tokens and "needs you" are only on the TUI), find-in-
+ * output (it searches the buffer), raw-terminal (the operator asked for the TUI), or a pin (they
+ * tapped Show live). Off only when an idle/done agent pane has the newest turn in the transcript
+ * already — then the tail is a worse copy of the markdown above it.
+ */
+export function liveMirrorNeeded(opts: LiveMirrorNeed): boolean {
+  if (opts.pinned) return true;
+  if (opts.rawTerminal) return true;
+  if (opts.findOpen) return true;
+  if (opts.kind === "shell") return true;
+  if (!opts.hasTranscript) return true;
+  if (opts.dialogPresent) return true;
+  const status = opts.status ?? "unknown";
+  if (status === "working" || status === "blocked" || status === "unknown") return true;
+  return !opts.newestTurnInViewport;
 }
