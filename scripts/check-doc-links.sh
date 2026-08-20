@@ -14,7 +14,7 @@ cd "$ROOT"
 
 files=("$@")
 if [ ${#files[@]} -eq 0 ]; then
-  files=(CLAUDE.md CONTEXT.md AGENTS.md README.md ARCHITECTURE.md DEPLOYMENT.md HARNESS_CONTRIBUTING.md HERDR_API.md NEXT-SESSION.md .adr/README.md)
+  files=(CLAUDE.md CONTEXT.md README.md ARCHITECTURE.md DEPLOYMENT.md HARNESS_CONTRIBUTING.md HERDR_API.md NEXT-SESSION.md .adr/README.md)
 fi
 
 fail=0

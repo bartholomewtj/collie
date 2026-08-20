@@ -1,13 +1,34 @@
 # Next session
 
-_Last handoff: 2026-08-20 — main at **0.41.0** (`4ee4fef`), tag `v0.41.0` pushed, no open PRs. The
-bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the Task Scheduler
-job `herdr.collie`, and was restarted after the last change._
+_Last handoff: 2026-08-20 — main at **0.41.2**, tags `v0.41.1` and `v0.41.2` pushed, no open PRs.
+The bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the Task
+Scheduler job `herdr.collie`. The frontend was rebuilt after the last change; the bridge picked it
+up live (no restart)._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
 
 ## Where this stopped
+
+**0.41.1 (PR #71) — the phone was crashing on every pane, and the source was innocent.** Tapping a
+space or a tab gave "Something went wrong / Cannot read properties of undefined (reading 'length')".
+The cause was a **stale `web/dist`**: it held a build from `357832a`, the first commit of the
+spaces-tree work, whose `routes/detail.tsx` does not pass `AgentChat` its required `text` prop. The
+fix for that (`b42a1b5`) landed six minutes later and `bun run build` was never re-run, so for an
+hour the phone served a broken bundle while `main` was correct. `undefined` reached
+`parseAnsi(display)` and threw at `input.length`. Rebuilding fixed it. Two guards went in with it:
+`parseAnsi` now returns `[]` for a non-string input, so a missing mirror reads as an empty pane
+rather than a full-screen error boundary, and **`bun run test` typechecks first on both sides**
+(#68) — the pre-push hook already did, but `bun run test` did not, which is how the ADW quality gate
+reported green on the tree that shipped this.
+
+**0.41.2 — `AGENTS.md` and `GEMINI.md` are gone.** They were the two dirty files the last handoff
+left undecided: some agent tool had overwritten `AGENTS.md` with a generic template and created
+`GEMINI.md` with the same body, both linking `../../config/CLAUDE.md` and `../../IDENTITY.md` —
+paths that point a **public** repo at the private claudeOS layout, and that broke on the move into
+`Projects/tools/` anyway. Deleted rather than fixed. `CLAUDE.md` is the only working agreement.
+`AGENTS.md` was dropped from the entry-doc list in `scripts/check-doc-links.sh` and from the
+staged-docs pattern in `scripts/git-hooks/pre-commit`.
 
 **0.41.0 (PR #67) replaced the Herd dashboard and the `/space/:spaceId` screen with one tree.**
 `/` now renders `components/space-tree.tsx`: space → tab → pane, where a row with exactly one child
@@ -36,8 +57,9 @@ pi 0.83.0's bundled catalog and is registered as a custom model in that same fil
 ```bash
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
-git branch --show-current && git status --short      # expect main; AGENTS.md/GEMINI.md still dirty
+git branch --show-current && git status --short      # expect main, clean
 netstat -ano | findstr :8787                          # expect ONE listener
+cat web/dist/build-info.json                          # the bundle actually being served
 ```
 
 Update / restart on **this Windows box** (the Herdr `update`/`restart` plugin actions are
@@ -49,22 +71,20 @@ powershell -File contrib\windows\collie-ctl.ps1 restart   # after a bridge/*.ts 
 bun run build                                             # after a web/ change — live, no restart
 ```
 
-Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. **Run `bun run typecheck` as
-well — it is not in `test`, and that is issue #68.**
+Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typecheck first as of
+0.41.1, so there is no longer a separate `bun run typecheck` step to remember.
 
 ## Next thing to do
 
-1. **#68 — fold typecheck into `test`.** One line of config, and it is the gate that actually caught
-   the 0.41.0 regression. Do this before the next ADW run, so the factory inherits it.
-2. **Decide on the two dirty files.** `AGENTS.md` is modified and `GEMINI.md` is new, neither by a
-   session that wrote a handoff — some agent tool rewrote them. Both are wrong as they stand: their
-   links `../../config/CLAUDE.md` and `../../IDENTITY.md` need one more `../` after the move, and the
-   rewrite dropped `@CLAUDE.md`, the line that actually imports the rules into Claude Code. They also
-   point a **public** repo at your private claudeOS layout. Fix or discard; do not commit as-is.
-3. **#70 — reshoot the README screenshots.** `assets/dashboard.png` and `assets/space-detail.png`
+1. **Close the `web/dist` staleness gap.** Nothing warns when the deployed bundle is older than
+   `web/src`, and a hand-run `git pull` doesn't rebuild — only `bun run build` and
+   `collie-ctl.ps1 update` do. That gap is what let a five-minute-old broken build sit deployed for
+   an hour (0.41.1 above). An mtime comparison in the ctl script, or a startup warning in the
+   bridge, would have caught it in seconds. No issue filed yet.
+2. **#70 — reshoot the README screenshots.** `assets/dashboard.png` and `assets/space-detail.png`
    both show screens 0.41.0 deleted. One shot of the tree with a blocked space expanded at the top
    covers what the two of them used to split.
-4. **Phone: turn on push** (Settings → Push notifications), then
+3. **Phone: turn on push** (Settings → Push notifications), then
    `bash scripts/collie-ctl.sh push-test`. Then write your real quick replies:
    `cp commands.toml.example "$(herdr plugin config-dir herdr.collie)/commands.toml"`, uncomment the
    `[[quick]]` rows, reload.
@@ -73,7 +93,9 @@ well — it is not in `test`, and that is issue #68.**
 
 - **#70** — README screenshots show the removed Herd/space screens (new).
 - **#69** — ADW agents can rewrite files the request put out of scope; nothing stops them (new).
-- **#68** — nothing typechecks before a commit, only CI does, after the fact (new).
+- **#68** — the gate itself landed in 0.41.1 (`bun run test` typechecks first, both sides). Left
+  open for the rest of the issue: a sweep for other gates that report green while checking less than
+  they appear to (#60, #66 and this one make three in a row).
 - **#66** — doc-link gate reports failures but exits 0.
 - **#60** — the SDLC test gate has been a placeholder for every run; the security fixes were never
   actually tested.
@@ -96,6 +118,11 @@ well — it is not in `test`, and that is issue #68.**
   `AgentChat` away so the suite stayed green. **Do not trust an ADW's own success line.** Run
   `bun run typecheck`, the real suites, and read the diff's file list against the request. (#60, #68,
   #69.)
+- **The source being right tells you nothing about what the phone runs.** The bridge serves
+  `web/dist` from disk, and its build stamp is `web/dist/build-info.json`. When a UI bug won't
+  reproduce in the source, check what is actually deployed *before* reading more code:
+  `curl -H "Tailscale-User-Login: $COLLIE_TRUSTED_USER" http://127.0.0.1:8787/api/config` — the
+  `build` field names the commit being served. This cost an hour on 2026-08-20.
 - **ADW cost lines read `$0.0000` and are false.** The custom-registered models in
   `~/.pi/agent/models.json` carry `cost: 0`, so only agents on pi's bundled catalog bill correctly.
   Real spend is on openrouter.ai, not in `just runs`.
@@ -110,7 +137,7 @@ well — it is not in `test`, and that is issue #68.**
   `SKIP_VERSION_CHECK=1` is the intended escape hatch.
 - **Every release commit gets a `v*` tag pushed with it** (`git tag -a vX.Y.Z <sha> -m "Collie X.Y.Z"
   && git push origin vX.Y.Z`). The update banner and `update` both read tags, so an untagged release
-  is invisible to the phone. `v0.41.0` is pushed.
+  is invisible to the phone. `v0.41.0`, `v0.41.1` and `v0.41.2` are pushed.
 - **SSSF discovery is bounded at three levels below a pane cwd** (`MAX_DOWN`, `bridge/sssf-viz.ts`).
   Nest a repo deeper than that and its traces vanish with no error. Discovery is also async and
   caches for 30s, so give a restarted bridge ~30s before concluding a repo is missing.
@@ -131,3 +158,6 @@ well — it is not in `test`, and that is issue #68.**
   deleting a branch another PR targets auto-closes that PR (#15 died that way).
 - Don't edit `adws/adw_sssf_config/sssf.config.yaml` while an ADW run is going.
 - Never `taskkill /IM bun.exe` — it takes the live bridge and every agy run with it.
+- **If `AGENTS.md` or `GEMINI.md` reappear, an agent tool wrote them, not you.** They were deleted in
+  0.41.2 on purpose. Delete again rather than fixing — `CLAUDE.md` is the single working agreement,
+  and the template those tools write links a public repo at the private claudeOS layout.
