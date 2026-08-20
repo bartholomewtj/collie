@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.46.1] - 2026-08-20
+
+### Fixed
+- Windows: .env and config dir ACLs hardened with icacls (inheritance stripped, current user Full Control) instead of a chmod that never takes effect on NTFS; Git Bash no longer warns ".env is mode 644" on every command
+
 ## [0.46.0] - 2026-08-20
 
 ### Added

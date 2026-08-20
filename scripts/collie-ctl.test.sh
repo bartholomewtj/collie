@@ -1506,6 +1506,49 @@ EOF
   assert_eq "$final_dir_mode" "700"
 }
 
+test_windows_acl_hardening_stubs_icacls() {
+  setup_case windows-acl
+  local harness="${CASE_DIR}/harness.sh"
+  local icacls_log="${CASE_DIR}/icacls.log"
+
+  cat > "${CONFIG_DIR}/.env" <<'EOF'
+COLLIE_PORT=8787
+COLLIE_VAPID_PRIVATE=secret
+EOF
+  chmod 600 "${CONFIG_DIR}/.env" 2>/dev/null || true
+
+  cat > "${BIN_DIR}/icacls" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo "\$*" >> "${icacls_log}"
+if [ "\$#" -gt 1 ]; then
+  exit 0
+fi
+echo "\$1 \${USERNAME:-\$(id -un)}:(F)"
+exit 0
+EOF
+  chmod +x "${BIN_DIR}/icacls"
+
+  cat > "$harness" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="$HOME_DIR"
+export HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR"
+export PATH="$BIN_DIR:$BASE_PATH"
+source "$CTL"
+is_windows() { return 0; }
+harden_config_perms
+EOF
+
+  bash "$harness" > "${CASE_DIR}/run.out" 2> "${CASE_DIR}/run.err" || fail "harness failed"
+  local stderr; stderr="$(cat "${CASE_DIR}/run.err")"
+  assert_eq "$stderr" ""
+
+  local log; log="$(cat "$icacls_log")"
+  assert_contains "$log" "$CONFIG_DIR /inheritance:r"
+  assert_contains "$log" "${CONFIG_DIR}/.env /inheritance:r"
+}
+
 # The pidfile outlives its process and pids get recycled, so `start` re-checks before killing.
 # The check used to match any `bridge/index.ts` — a second checkout, a dev shell — and would kill
 # a bystander. It must match THIS checkout's absolute path and nothing else.
@@ -1649,6 +1692,7 @@ test_env_parsing_grammar
 test_env_malformed_line_warns_without_leaking
 test_env_secrets_do_not_reach_build_children
 test_env_permissions_are_hardened_on_start
+test_windows_acl_hardening_stubs_icacls
 test_pidfile_kill_requires_our_checkout
 
 echo "collie-ctl lifecycle tests: passed"

@@ -42,8 +42,53 @@ fi
 # and every caller treats that as "say nothing".
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true; }
 
+# Git Bash / MSYS2 / Cygwin on Windows. There is no supervisor here, and the two facts that make the
+# POSIX pidfile dance work are both false: `$!` is an MSYS pid, not the Windows one `kill` would need
+# for a native bun.exe, and Windows lets a second bridge bind 127.0.0.1:$PORT beside the first, so a
+# missed kill does not fail — it STACKS, and requests round-robin between old and new code (#41).
+is_windows() {
+  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac
+  return 1
+}
+
+# NTFS has no POSIX modes — `stat -c %a` through MSYS reports fiction and `chmod` does nothing, so
+# the POSIX 600/700 dance can neither tighten nor verify anything. The Windows analogue is an ACL:
+# strip inheritance (/inheritance:r) and grant only the current user Full Control (/grant:r).
+windows_user_principal() {
+  if [ -n "${USERDOMAIN:-}" ] && [ -n "${USERNAME:-}" ]; then
+    printf '%s\\%s' "$USERDOMAIN" "$USERNAME"
+  else
+    printf '%s' "${USERNAME:-$(id -un)}"
+  fi
+}
+
+harden_windows_acl() {
+  command -v icacls >/dev/null 2>&1 || return 0
+  icacls "$1" /inheritance:r /grant:r "$(windows_user_principal):F" >/dev/null 2>&1 || true
+}
+
+# True when `icacls <path>` shows the current user with (F) and no inherited ACEs. That is the
+# checkable form of "mode 600": one principal, full control, nothing inherited.
+windows_acl_ok() {
+  command -v icacls >/dev/null 2>&1 || return 0   # can't check → say nothing
+  local out
+  out="$(icacls "$1" 2>/dev/null || true)"
+  [ -n "$out" ] || return 0
+  if printf '%s' "$out" | grep -i "(I)" >/dev/null 2>&1; then return 1; fi
+  printf '%s' "$out" | grep -i "${USERNAME:-$(id -un)}:(F)" >/dev/null 2>&1
+}
+
 harden_config_perms() {
   [ -d "$CONFIG_DIR" ] || return 0
+  if is_windows; then
+    harden_windows_acl "$CONFIG_DIR"
+    if [ -f "${CONFIG_DIR}/.env" ]; then
+      harden_windows_acl "${CONFIG_DIR}/.env"
+      windows_acl_ok "${CONFIG_DIR}/.env" || \
+        echo "warn: ${CONFIG_DIR}/.env ACL still allows other users; rotate COLLIE_VAPID_PRIVATE if other users have accounts on this host." >&2
+    fi
+    return 0
+  fi
   chmod 700 "$CONFIG_DIR" 2>/dev/null || true
   if [ -f "${CONFIG_DIR}/.env" ]; then
     local mode; mode="$(file_mode "${CONFIG_DIR}/.env")"
@@ -69,14 +114,23 @@ load_env() {
   local env_file="${CONFIG_DIR}/.env"
   [ -f "$env_file" ] || return 0
 
-  local mode; mode="$(file_mode "$env_file")"
-  if [ -n "$mode" ]; then
-    case "$mode" in
-      600|400|0600|0400) ;;
-      *)
-        echo "warn: ${env_file} is mode ${mode} (expected 600); it may be readable by other users." >&2
-        ;;
-    esac
+  if is_windows; then
+    # stat -c %a through MSYS is fiction on NTFS; tighten + verify with icacls instead.
+    if ! windows_acl_ok "$env_file"; then
+      harden_windows_acl "$env_file"
+      windows_acl_ok "$env_file" || \
+        echo "warn: ${env_file} is readable by other users (tightened ACL to current user only); rotate COLLIE_VAPID_PRIVATE if this host has other accounts." >&2
+    fi
+  else
+    local mode; mode="$(file_mode "$env_file")"
+    if [ -n "$mode" ]; then
+      case "$mode" in
+        600|400|0600|0400) ;;
+        *)
+          echo "warn: ${env_file} is mode ${mode} (expected 600); it may be readable by other users." >&2
+          ;;
+      esac
+    fi
   fi
 
   local line_no=0 raw_line line key val
@@ -197,15 +251,6 @@ have_systemd() { command -v systemctl >/dev/null && systemctl --user show-enviro
 have_launchd() { [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1; }
 launchd_domain() { echo "gui/$(id -u)"; }
 launchd_target() { echo "gui/$(id -u)/${AGENT_LABEL}"; }
-
-# Git Bash / MSYS2 / Cygwin on Windows. There is no supervisor here, and the two facts that make the
-# POSIX pidfile dance work are both false: `$!` is an MSYS pid, not the Windows one `kill` would need
-# for a native bun.exe, and Windows lets a second bridge bind 127.0.0.1:$PORT beside the first, so a
-# missed kill does not fail — it STACKS, and requests round-robin between old and new code (#41).
-is_windows() {
-  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac
-  return 1
-}
 
 # Windows: the lifecycle is contrib/windows/collie-ctl.ps1 (Task Scheduler supervises the bridge, and
 # it is the one that knows how to stop every bridge from this checkout and prove the port is free).
