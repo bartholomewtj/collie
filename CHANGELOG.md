@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.9] - 2026-08-20
+
+### Fixed
+- The pane screen renders its terminal output again. 0.40.8 rewrote `routes/detail.tsx` — a file that change had no reason to touch — and stopped passing `text`, `requestedLines` and `revision` (the mirror content from the pane loader) plus `bridge`/`error`/`stalled` (the header's connection state) to `AgentChat`, and passed an `onClosed` prop that does not exist on it. It also dropped the `seenPaneId` ref, re-introducing the "create a tab from inside an open pane sends me home" bug that ref was written to fix. Reverted to the 0.40.7 file, then given only the one change the tree actually needs: "up" from a pane is now `from` or home, since there is no per-space screen left to land on.
+
 ## [0.40.8] - 2026-08-20
 
 ### Changed

@@ -312,7 +312,6 @@ export function SpaceTree({
                       const tabBucketKey = worstBucket(tabPanes);
                       const tabStatus = tabBucketKey ? TRIAGE_STATUS[tabBucketKey] : null;
                       const isMultiPane = tabPanes.length >= 2;
-                      const isSinglePane = tabPanes.length === 1;
                       const isEmptyTab = tabPanes.length === 0;
 
                       const isTabExpanded = isMultiPane && prefs.expandedTabs.includes(group.tabId);

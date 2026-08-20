@@ -1,50 +1,66 @@
-import { useEffect } from "react";
-import { useLocation, useNavigate, useParams, useRouteLoaderData } from "react-router";
+import { useEffect, useRef } from "react";
+import { useLoaderData, useLocation, useNavigate, useParams, useRouteLoaderData } from "react-router";
 
 import { AgentChat } from "@/components/agent-chat";
-import { setStatus } from "@/lib/status";
+import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
 import { homePath, panePath } from "@/lib/nav";
+import { setStatus } from "@/lib/status";
 import type { AgentView } from "@/lib/types";
 
-// The full-screen terminal mirror + composer for one agent.
+// Pane detail route. Pane output comes from this route's loader; the pane's metadata comes from the
+// shared snapshot (root loader). The pane may be an agent OR a bare shell. A just-created shell
+// isn't in the snapshot yet, so we fall back to the `freshPane` passed via navigation state — the
+// composer stays live immediately while polling catches the snapshot up. Keyed by paneId so
+// switching panes remounts the composer fresh.
 export function DetailRoute() {
-  const { paneId = "" } = useParams();
+  const pane = useLoaderData() as PaneData;
   const root = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData;
+  const { paneId = "" } = useParams();
+  // The session this pane belongs to (undefined = primary), read from the pane loader so every
+  // navigation and write below stays scoped to it.
+  const session = pane.session;
   const navigate = useNavigate();
   const location = useLocation();
+  const stalled = useLoadingStalled();
 
-  // Read the active session from the live URL search (loader doesn't own it).
-  const session = new URLSearchParams(location.search).get("s") ?? undefined;
-
-  // Track the route the user came from (e.g. "/" or "/pane/xyz"). Stamped into router state by the
-  // navigation that opened this pane.
-  const from = (location.state as { from?: string } | null)?.from;
-
-  // Bootstrap an agent record before the next snapshot poll lands:
-  //  - when a new tab/pane was JUST created in the UI, the caller passes its optimistic AgentView in
-  //    router state (`freshPane`).
-  //  - we only use `freshPane` for the very pane it was created for, and only until that pane
-  //    actually appears in a snapshot (once seen, a later absence means the pane was closed).
-  const fresh = (location.state as { freshPane?: AgentView } | null)?.freshPane;
-  const seenInSnapshot =
+  const navState = location.state as { freshPane?: AgentView; from?: string } | null;
+  const fresh = navState?.freshPane;
+  // The screen that opened this pane (Herd sets it; a deep link / notification / Spaces drill-in
+  // doesn't). "‹" returns there, so the header back and the phone's back gesture agree.
+  const from = navState?.from;
+  const inSnapshot =
     root.agents.some((a) => a.paneId === paneId) ||
     root.shellPanes.some((p) => p.paneId === paneId);
+  // The freshPane is a bootstrap only — used before a just-created pane first appears in a snapshot.
+  // Once it's been seen, retire it; otherwise the stale copy masks a pane that has since closed
+  // (e.g. you ran `exit` in its shell), stranding you on a dead view.
+  //
+  // Track *which* pane has been seen, not just a boolean: DetailRoute doesn't remount on a pane→pane
+  // navigation (only `key={paneId}` on AgentChat does), so a lifetime boolean would carry the prior
+  // pane's "seen" state onto a freshly-created one — disabling its freshPane fallback before the
+  // snapshot catches up, so `gone` flips true and the effect below bounces you Home. That's the
+  // "create a tab from inside an open pane sends me home" bug.
+  const seenPaneId = useRef<string | null>(null);
+  if (inSnapshot) seenPaneId.current = paneId;
+  const seen = seenPaneId.current === paneId;
 
-  // Find the agent in the live snapshot — agents first, then bare shells. Fall back to the freshPane
-  // state only while the pane has not yet appeared in any snapshot.
-  const agent: AgentView | undefined =
+  const agent =
     root.agents.find((a) => a.paneId === paneId) ??
     root.shellPanes.find((p) => p.paneId === paneId) ??
-    (fresh && fresh.paneId === paneId && !seenInSnapshot ? fresh : undefined);
+    (fresh && fresh.paneId === paneId && !seen ? fresh : undefined);
   const tabLabel = root.tabs.find((t) => t.tabId === agent?.tabId)?.label;
   const gone = !agent;
 
-  // "Up" from a pane is where you came from when we know it (`from`), else home (the Spaces tree).
+  // "Up" from a pane is where you came from when we know it (`from`), else home — which IS the
+  // spaces tree now, so the native stack shape survives the loss of the space detail route. The
+  // `lastWorkspace` ref that used to remember a space for a just-closed pane went with that route:
+  // there is no longer a per-space screen for it to land on.
   const upPath = () => from ?? homePath(session);
   const up = () => navigate(upPath());
 
-  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up to home
+  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up (to `from`, or
+  // home)
   // instead of leaving you on a dead "agent gone" view. Guarded on a connected, non-stale snapshot
   // so a transient poll failure or reconnect doesn't evict a still-valid pane.
   useEffect(() => {
@@ -60,13 +76,19 @@ export function DetailRoute() {
       paneId={paneId}
       session={session}
       agent={agent}
-      tabLabel={tabLabel}
       agents={root.agents}
       shellPanes={root.shellPanes}
+      tabLabel={tabLabel}
+      text={pane.text}
+      requestedLines={pane.requestedLines}
+      revision={pane.revision}
       device={root.device}
+      bridge={root.bridge}
+      error={root.error}
+      stalled={stalled}
       onBack={up}
+      // A pane→pane switch keeps `from`, so "‹" still returns to the screen you started from.
       onSelect={(id) => navigate(panePath(id, session), { state: { from } })}
-      onClosed={up}
     />
   );
 }
