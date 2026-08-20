@@ -37,6 +37,7 @@ import type { MenuBlockAction } from "@/components/menu-block";
 import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
 import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
 import { TranscriptView } from "@/components/transcript-view";
+import { trimAtSeam } from "@/lib/transcript-seam";
 import { shortCwd } from "@/lib/format";
 import { historyPath, spacePath, tracePath } from "@/lib/nav";
 import { isReadOnly } from "@/lib/types";
@@ -270,6 +271,20 @@ export function AgentChat({
     status: agent?.status,
     getScrollElement,
   });
+
+  // The transcript and the mirror below it are two views of ONE conversation, and between turns the
+  // viewport still holds the tail of the turn the transcript just rendered — so the newest message
+  // used to read twice, once as markdown and once as raw terminal. Cut the transcript where the
+  // mirror picks it up, so the Live divider is a real seam. Memoised on the frozen `display`, so a
+  // scrolled-up reader's cut stays put with their text instead of sliding under them.
+  const mirrorPlain = useMemo(
+    () => parseAnsi(display).map((seg) => seg.text).join(""),
+    [display],
+  );
+  const visibleEntries = useMemo(
+    () => trimAtSeam(inline.entries, mirrorPlain),
+    [inline.entries, mirrorPlain],
+  );
 
   // Load older scrollback: raise the per-pane requested line count and refetch. The enlarged buffer
   // prepends older lines at the top, so we adopt it into the frozen display and re-anchor the scroll
@@ -777,7 +792,7 @@ export function AgentChat({
               {/* Agent panes: last transcript turns sit above the live tail so a swipe up reads
                   the conversation. Shells (primary screen, real scrollback ring) still page the
                   terminal buffer with Load older. The two are never both possible. */}
-              {inline.entries.length > 0 && (
+              {visibleEntries.length > 0 && (
                 <div className="mb-3">
                   {inline.loading && (
                     <div className="mb-2 flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground">
@@ -785,7 +800,7 @@ export function AgentChat({
                       Loading…
                     </div>
                   )}
-                  <TranscriptView entries={inline.entries} agent={agent?.agent} />
+                  <TranscriptView entries={visibleEntries} agent={agent?.agent} />
                   {display ? (
                     <div className="mt-3 flex items-center gap-2">
                       <div className="h-px flex-1 bg-border" />
@@ -826,7 +841,7 @@ export function AgentChat({
                   onMenuAction={handleMenuAction}
                   promptDisabled={readOnly || gone}
                 />
-              ) : inline.entries.length === 0 ? (
+              ) : visibleEntries.length === 0 ? (
                 <div className="py-16 text-center text-sm text-muted-foreground">(no recent output)</div>
               ) : null}
             </>
