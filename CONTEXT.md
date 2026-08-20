@@ -91,6 +91,7 @@
 | `update.ts` | Update-availability signal on `/api/snapshot.update` — polls this fork's newest `v*` tag (`COLLIE_UPDATE_REPO`). |
 | `sessions.ts` | Multi-session: several named Herdr sessions, `?s=<name>` picks one. |
 | `http-cache.ts` | Pure ETag / conditional GET / gzip helpers. |
+| `platform-support.ts` | What the host OS can do (`POSIX_MODES`, `CAN_SYMLINK`, the latter probed). Test-only: the two POSIX facilities Windows lacks, so tests that need them skip with a reason rather than fail. |
 | `sssf-viz.ts` | Discovers `adws/adw_data/sssf.db` near workspace cwds, serves the visualiser at `/sssf/*`. Filesystem reader #2. |
 | `journal/registry.ts` | The single decision site for "which agents have readable history"; maps harness → adapter. |
 | `journal/files.ts` | Filesystem half shared by adapters. **`containedRealpath` is the containment invariant** — every path any adapter reads goes through it. |

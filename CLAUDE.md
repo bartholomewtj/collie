@@ -105,6 +105,22 @@ the unit name; the Herdr action runs from anywhere.
   every push — override once with `SKIP_TESTS=1 git push`. The bits that genuinely need `Bun.serve` /
   `Bun.connect` (HTTP handlers, the socket client) stay unit-untested — Vitest-on-Node can't run them,
   so keep new backend logic pure/injectable enough for `bun test`, or exercise it through `web/`.
+- **Tests on Windows** (since 0.40.7) pass, so the hook needs no override there. Two POSIX facilities
+  are missing and `bridge/platform-support.ts` is where that is written down: `POSIX_MODES` (no file
+  mode bits — a file written 0600 reads back 0666) and `CAN_SYMLINK` (needs Developer Mode or
+  elevation), the second **probed, not assumed**, so a box with Developer Mode on runs those tests
+  like any other host. Nine tests assert one of the two and skip; nothing else gets a pass, and CI's
+  skip count is unchanged. When a shared fixture is what needs the symlink, plant it conditionally so
+  one `EPERM` doesn't take the whole file down with it.
+- **The lifecycle suite is per-platform, because the lifecycle is.** `bash scripts/collie-ctl.test.sh`
+  refuses to run on Windows: `collie-ctl.sh` delegates every verb to `contrib/windows/collie-ctl.ps1`
+  there, so the suite would leave its sandbox and drive the real Task Scheduler job and the real port —
+  it can stop the bridge it is testing. The hook runs `contrib/windows/collie-ctl.test.ps1` in its
+  place (scheduler cmdlets stubbed, registers nothing); CI is Linux and always takes the bash branch.
+- **Build fixture paths with `join()`, never by interpolating `/`.** 25 backend tests once looked
+  green on Windows while asserting nothing: their fake filesystems keyed on `${root}/sessions/…`
+  strings the code under test never produced, and `resolveStaticPath`'s fixture root was rejected by
+  its own containment check. A test that can't match its subject fails silently, not loudly.
 - Service: `systemd --user` unit `collie` on the deployment host; logs `journalctl --user -u collie -f`.
 - **Dependencies must be 7 days old to install** (`bunfig.toml` + `web/bunfig.toml`, mirrored in
   `.npmrc` for npm users) — a compromised release is usually pulled within hours. A brand-new
