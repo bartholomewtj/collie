@@ -15,7 +15,9 @@ An adapter is a [`HarnessAdapter`](./web/src/lib/harness/types.ts) —
 `{ agent, buildBlocks, extractStatusLines, extractInputDraft }` — registered by its Herdr `agent`
 string in [`web/src/lib/harness/registry.ts`](./web/src/lib/harness/registry.ts). The registry is the
 single decision site for "which agents get grammars"; every agent absent from it keeps the universal
-raw terminal mirror. Claude is the reference adapter, under
+raw terminal mirror. **Even a registered adapter is bypassed while Raw terminal is on** (the pane
+default — composer ⚙ → Display). Turn it off before you test a detector in the phone UI. Claude is
+the reference adapter, under
 [`web/src/lib/harness/claude/`](./web/src/lib/harness/claude/): its detectors (prompt-select, wizard,
 preview-select, chrome, markers) are **pure functions over `StyledLine[]`** — no pane access, no
 network. Detection only says "this dialog is on screen"; the keystroke recipes and the race-guard

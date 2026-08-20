@@ -83,8 +83,9 @@ Deliberately **not** full terminal mirroring. The loop:
 agent goes blocked
    → PUSH notification  (which agent, which workspace — see the gap below)
    → tap → app opens to that agent
-   → the pane, with recognised prompts parsed into tappable blocks
-       (prompt-select · preview-select · wizard)   ← structured, not a raw screenful
+   → the pane — **raw terminal by default** (plain mirror). Composer ⚙ → Display
+     → Raw terminal off parses recognised prompts into tappable blocks
+       (prompt-select · preview-select · wizard)
    → reply:  plain text box (Android's keyboard handles voice dictation for free)
              + quick actions + a special-key strip
    → explicit Send button  → agent.send + Enter
@@ -93,10 +94,10 @@ agent goes blocked
 
 Product details that shaped the loop:
 
-- **Don't show a raw screenful.** A "last screenful" is often a mid-stack-trace — the actual
-  question is lines above. Collie parses recognised prompts out of the pane text into interactive
-  blocks (`web/src/lib/blocks.ts`), so answering a permission dialog or a menu is a tap, not a
-  transcription exercise. The raw pane stays below for context.
+- **Raw terminal is the default view.** A first open is the TUI, not tappable buttons. The grammars
+  still exist — turn **Raw terminal** off in Display settings (composer ⚙) to parse recognised
+  prompts into interactive blocks (`web/src/lib/blocks.ts`). With grammars on, answering a permission
+  dialog or a menu is a tap; the raw pane stays below for context.
   - **Where this stops short of the design.** The original intent was for the *bridge* to capture the
     output chunk at the moment Herdr says an agent went blocked, and hand the client a structured
     `BlockingMessage`. That was never built: parsing is client-side and pattern-based, over whatever
