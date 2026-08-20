@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.43.1] - 2026-08-20
+
+### Fixed
+- `scripts/check-doc-links.sh` exits non-zero when a link is broken. It printed the failures, printed its own ✓ and exited 0: `grep -q` short-circuits and closes the pipe, the producer takes SIGPIPE, and `pipefail` turns the matched pipeline into a failed one, so the flag assignment never ran. Only misfired with enough output to outlive grep, so one dead link failed correctly and several passed (#66)
+- ADW quality blocks run the real suites instead of the placeholder echoes they shipped with — `bun test ./bridge ./scripts`, `bun run typecheck`, `bun run --cwd web test`. `lint` dropped (no linter here) and `build` dropped deliberately: it rewrites `web/dist`, which is the live deployment on a host serving from this tree (#60)
+
 ## [0.43.0] - 2026-08-20
 
 ### Changed

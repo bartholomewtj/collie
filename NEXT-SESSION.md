@@ -1,12 +1,40 @@
 # Next session
 
-_Last handoff: 2026-08-20 — main at **0.43.0**, tags through `v0.43.0` pushed, no open PRs. The
+_Last handoff: 2026-08-20 — main at **0.43.1**, tags through `v0.43.1` pushed, no open PRs. The
 bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the Task Scheduler
 job `herdr.collie`, and was restarted at 0.42.0 (the last change that touched `bridge/`). The
-frontend was rebuilt after 0.43.0._
+frontend was rebuilt after 0.43.1._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
+
+**0.43.1 — two of the blind gates actually fixed, and the third one exonerated.**
+
+**#66 — the doc-link gate was decorative, and only on realistic input.** It printed every broken
+link and then printed its own ✓ and exited 0. Mechanism: the loop ended `done | grep -q fail &&
+fail=1`; `grep -q` exits on its FIRST match and closes the pipe, the still-writing producer takes
+SIGPIPE, and `pipefail` reports the matched pipeline as *failed*, so `fail=1` never ran. It only
+misbehaved with enough output to keep the producer alive past grep's exit — which is why a doc with
+one dead link failed correctly and the real `AGENTS.md`, with one good link and two dead ones,
+sailed through. Now captures the loop's output and tests that. `scripts/check-doc-links.test.ts`
+pins both shapes; the three multi-link cases fail against the old script.
+
+**#60 — the ADW quality blocks were still the shipped placeholders.** `adws/adw_modules/quality.py`
+is repo-owned and arrives from the skill with every block as an `echo` that exits 0 and says it is
+fake. Nobody replaced them, so every run's quality phase printed "Placeholder quality check for
+test" and passed. Wired now: `bun test ./bridge ./scripts`, `bun run typecheck`, and
+`bun run --cwd web test` (which typechecks both web tsconfigs first, as of 0.41.1). `lint` is gone —
+no linter in this repo — and **`build` is gone on purpose**: it rewrites `web/dist`, which IS the
+deployment on a host serving from this tree, so a gate that ran it would publish the builder's
+mid-run working tree. Verified the blocks fail: a deliberate type error in `web/src/lib/build.ts`
+takes `web_test` to exit 2.
+
+**The bump guard was never broken — the earlier handoff said otherwise and was wrong.** The trace
+for run `32708014` settles it: the pre-commit hook fired at 08:13:44 UTC, refused the commit
+("functional code changed but the version is still 0.42.0"), and the ADW then failed honestly —
+`session 32708014 fail · 7/8 phases · 905,555 tokens`. `858d950` was committed two minutes later, by
+hand, past the guard. So the gate worked and the bypass was human. `core.hooksPath` is set to
+`scripts/git-hooks` in this checkout and the guard still blocks correctly when tested directly.
 
 **0.43.0 — the release commit for PR #74 (an ADW run), which shipped without one.** The run moved
 the spaces filter into a header icon beside New space and took the traces buttons off the space and
@@ -122,9 +150,10 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
 - **#68** — the gate itself landed in 0.41.1 (`bun run test` typechecks first, both sides). Left
   open for the rest of the issue: a sweep for other gates that report green while checking less than
   they appear to (#60, #66 and this one make three in a row).
-- **#66** — doc-link gate reports failures but exits 0.
-- **#60** — the SDLC test gate has been a placeholder for every run; the security fixes were never
-  actually tested.
+- **#66** — fixed in 0.43.1 (SIGPIPE + `pipefail` ate the failure flag). Close after a look.
+- **#60** — the placeholder blocks are wired as of 0.43.1, so future runs are gated. The other half
+  of the issue stands: **the security fixes from those earlier runs were never actually tested**, and
+  nothing has re-tested them since. That is the reason to keep this open.
 - **#55** — Windows `.env` is mode 644 and the ctl warns every run; needs an `icacls` path.
 - Carried over, no issue filed: the in-app update banner tells you to run the Herdr `update` action,
   which fails on Windows — either add `windows` to the actions' `platforms` in `herdr-plugin.toml`
@@ -152,14 +181,15 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   same response carries `staleBuild`, the bridge logs it, and the phone footer says so — but the
   guard only fires once the bridge has *noticed*, and it caches for 30s, so on a fresh rebuild give
   it half a minute before trusting a quiet footer.
-- **An ADW shipped a functional change past a pushed tag, and the bump guard didn't fire.** PR #74
-  changed `web/src/` while leaving the version at 0.42.0 — already tagged — so `main` and `v0.42.0`
-  disagreed until 0.43.0 was cut by hand. `scripts/git-hooks/pre-commit` lists `web/src/` as a
-  functional path and compares against HEAD, so it should have blocked the commit. Find out whether
-  the run set `SKIP_VERSION_CHECK=1` or simply ran without `core.hooksPath` pointing at
-  `scripts/git-hooks` — a sandbox that clones or copies the tree gets neither the hook path nor the
-  hooks. **Check `git describe --exact-match HEAD` after any ADW run**; if it errors, main is past
-  its newest tag and needs a release commit.
+- **An ADW will burn a full run and then die on the version bump.** Run `32708014` did exactly
+  that: 7/8 phases, 905,555 tokens, then the pre-commit guard refused the commit because the version
+  was unchanged, and the run ended `fail`. The guard was right; the run had simply never been told
+  to bump. Nothing in the harness prompts for it — the requests that *do* mention it say so by hand
+  (`requests/spaces-tree-single-pane.md` carries "Bump 0.40.7→0.40.8 … + CHANGELOG entry" in its
+  notes). **Put the bump instruction in the request**, or expect to finish the commit yourself.
+  Finishing it by hand is what happened here, and the bump got skipped, which is how `main` ended up
+  past a pushed tag. **`git describe --exact-match HEAD` after any ADW run** — if it errors, main is
+  past its newest tag and needs a release commit.
 - **ADW cost lines read `$0.0000` and are false.** The custom-registered models in
   `~/.pi/agent/models.json` carry `cost: 0`, so only agents on pi's bundled catalog bill correctly.
   Real spend is on openrouter.ai, not in `just runs`.
@@ -174,7 +204,7 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   `SKIP_VERSION_CHECK=1` is the intended escape hatch.
 - **Every release commit gets a `v*` tag pushed with it** (`git tag -a vX.Y.Z <sha> -m "Collie X.Y.Z"
   && git push origin vX.Y.Z`). The update banner and `update` both read tags, so an untagged release
-  is invisible to the phone. Tags through `v0.43.0` are pushed. `git describe --exact-match HEAD`
+  is invisible to the phone. Tags through `v0.43.1` are pushed. `git describe --exact-match HEAD`
   on `main` is the one-command check that a release was actually tagged.
 - **SSSF discovery is bounded at three levels below a pane cwd** (`MAX_DOWN`, `bridge/sssf-viz.ts`).
   Nest a repo deeper than that and its traces vanish with no error. Discovery is also async and
