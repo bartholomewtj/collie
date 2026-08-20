@@ -28,7 +28,7 @@ Merged the stacked ADW PRs onto `main` and tagged **0.46.2**:
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main, clean
-git describe --exact-match HEAD                      # expect v0.46.2
+git describe --tags --abbrev=0                        # expect v0.46.2 (tag sits on the release, not this docs commit)
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
