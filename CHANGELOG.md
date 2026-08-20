@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.6] - 2026-08-20
+
+### Fixed
+- Agent pane: the transcript is cut where the live mirror picks it up, so the newest message no longer reads twice (once as markdown above the "Live" divider, once as raw terminal below it) (a4a936d)
+
 ## [0.40.5] - 2026-08-20
 
 ### Fixed
