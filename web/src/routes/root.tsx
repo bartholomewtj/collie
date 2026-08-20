@@ -14,7 +14,7 @@ import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import type { HomeData } from "@/lib/loaders";
 
 // The data root: owns the snapshot loader, drives polling, and fans the herd out to the child
-// routes (home + pane detail) via the router's loader data. Mounted only while unlocked (the
+// routes via the router's loader data. Mounted only while unlocked (the
 // idle-lock in App swaps the whole RouterProvider out), so polling pauses when the app is locked.
 export function RootLayout() {
   const data = useLoaderData() as HomeData;
@@ -31,18 +31,12 @@ export function RootLayout() {
   useAgentTransitions(data.agents, paneId ?? null);
   usePushSetup();
 
-  // The bottom bar shows on the top-level destinations and on a space (still a list you browse);
+  // The bottom bar shows on the top-level destinations (Spaces tree, Traces, Settings);
   // a pane, one repo's traces, and history are leaf screens that own the bottom edge (composer,
   // frame) and get a header back button instead.
   const { pathname } = useLocation();
-  const showNav =
-    pathname === "/" ||
-    pathname === "/spaces" ||
-    pathname.startsWith("/space/") ||
-    pathname === "/traces" ||
-    pathname === "/settings";
+  const showNav = pathname === "/" || pathname === "/traces" || pathname === "/settings";
   const anyTraces = data.workspaces.some((w) => w.sssf);
-  const attention = data.agents.some((a) => a.status === "blocked");
 
   // A viewport-height flex column: the top banners (when shown) are in-flow rows at the top and the
   // active route fills the rest (each route root is `min-h-0 flex-1`). This is what keeps a banner
@@ -59,7 +53,7 @@ export function RootLayout() {
           same shared-clock signals as the header dog, so the two always agree. */}
       <ConnectionBanner bridge={data.bridge} error={data.error} authError={data.authError} />
       <Outlet />
-      {showNav && <BottomNav session={data.session} traces={anyTraces} attention={attention} />}
+      {showNav && <BottomNav session={data.session} traces={anyTraces} />}
     </div>
   );
 }

@@ -1,32 +1,37 @@
+import { describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
-import { describe, expect, it, vi } from "vitest";
 
+import { DetailRoute } from "./detail";
 import { ROOT_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
 import { panePath } from "@/lib/nav";
 import type { AgentView } from "@/lib/types";
-import { DetailRoute } from "./detail";
 
-// Stub the heavy terminal view: this test is about DetailRoute's routing/freshPane logic, not the
-// composer. The stub reports which pane it was handed and whether an agent resolved for it.
+// Mock the heavy AgentChat so we're testing DetailRoute's wrapper logic (loaders, state, recovery).
 vi.mock("@/components/agent-chat", () => ({
-  AgentChat: ({ paneId, agent }: { paneId: string; agent?: AgentView }) => (
-    <div data-testid="chat">{`pane:${paneId}:${agent ? "live" : "gone"}`}</div>
+  AgentChat: ({
+    paneId,
+    agent,
+    tabLabel,
+  }: {
+    paneId: string;
+    agent?: AgentView;
+    tabLabel?: string;
+  }) => (
+    <div data-testid="chat">
+      pane:{paneId}:{agent ? "live" : "missing"}:{tabLabel ?? "notab"}
+    </div>
   ),
 }));
 
-// The stall indicator has its own unit test; here it's noise (and would leave a pending timer), so
-// pin it idle.
-vi.mock("@/hooks/use-loading-stalled", () => ({ useLoadingStalled: () => false }));
-
-function agentView(paneId: string, kind: "agent" | "shell"): AgentView {
+function agentView(paneId: string, kind?: "agent" | "shell"): AgentView {
   return {
     paneId,
     workspaceId: "w1",
-    workspaceLabel: "proj",
-    workspaceNumber: 1,
     tabId: "w1:t1",
-    agent: kind === "agent" ? "claude" : "shell",
+    workspaceLabel: "ws",
+    workspaceNumber: 1,
+    agent: "claude",
     status: "unknown",
     cwd: "/home",
     focused: false,
@@ -59,7 +64,6 @@ function makeRouter(initialPath: string, homeLoader: () => HomeData) {
         element: <Outlet />,
         children: [
           { index: true, element: <div data-testid="home">HOME</div> },
-          { path: "space/:spaceId", element: <div data-testid="space">SPACE</div> },
           {
             path: "pane/:paneId",
             loader: ({ params }): PaneData => ({
@@ -115,10 +119,7 @@ describe("DetailRoute — freshPane bootstrap", () => {
     expect(screen.queryByTestId("home")).not.toBeInTheDocument();
   });
 
-  it("goes up to the pane's space when a seen pane disappears from a connected snapshot", async () => {
-    // The flip side: once a pane has actually appeared in a snapshot, its freshPane is retired, so a
-    // later snapshot that no longer lists it (you ran `exit`) must bounce up to its space (the
-    // pane's parent in the nav stack) rather than strand you.
+  it("goes up to home when a seen pane disappears from a connected snapshot", async () => {
     const paneA = agentView("w1:p1", "agent");
     let home = connected([paneA]);
     const router = makeRouter(panePath("w1:p1"), () => home);
@@ -131,7 +132,7 @@ describe("DetailRoute — freshPane bootstrap", () => {
       await router.revalidate();
     });
 
-    await screen.findByTestId("space");
-    expect(router.state.location.pathname).toBe("/space/w1");
+    await screen.findByTestId("home");
+    expect(router.state.location.pathname).toBe("/");
   });
 });

@@ -39,7 +39,8 @@ import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-hist
 import { TranscriptView } from "@/components/transcript-view";
 import { trimAtSeam } from "@/lib/transcript-seam";
 import { shortCwd } from "@/lib/format";
-import { historyPath, spacePath, tracePath } from "@/lib/nav";
+import { historyPath, tracePath } from "@/lib/nav";
+import { useOpenSpace } from "@/hooks/use-open-space";
 import { isReadOnly } from "@/lib/types";
 import type { AgentView, BridgeStatus, DeviceAuth } from "@/lib/types";
 import type {
@@ -575,11 +576,13 @@ export function AgentChat({
     if (id !== paneId) onSelect(id);
   }
 
-  // Open a space from the nav hub — go to its detail route (its tabs + panes, incl. shells). A step
-  // back up out of the pane, so it slides backward.
+  const openSpaceNav = useOpenSpace(session);
+
+  // Open a space from the nav hub — expand it in the tree and navigate home. A step back up out of
+  // the pane, so it slides backward.
   function openSpace(workspaceId: string) {
     closeDrawer();
-    navigate(spacePath(workspaceId, session));
+    openSpaceNav(workspaceId);
   }
 
   // Tapping the terminal mirror focuses the composer so you can start typing right away. Three bails:

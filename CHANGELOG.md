@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.8] - 2026-08-20
+
+### Changed
+- Herd and the space detail screen replaced by one Spaces tree at `/`: everything spaces-and-tabs collapses into a 3-level folder tree with one-child shortcuts, triage dots, and persisted expansion state; `/spaces` and `/space/:spaceId` redirect to `/` with the space expanded.
+
 ## [0.40.7] - 2026-08-20
 
 ### Fixed

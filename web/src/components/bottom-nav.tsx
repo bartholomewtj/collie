@@ -1,32 +1,29 @@
-import { Activity, LayoutGrid, PawPrint, Settings } from "lucide-react";
+import { Activity, LayoutGrid, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { cn } from "@/lib/utils";
-import { homePath, settingsPath, spacesPath, tracesPath } from "@/lib/nav";
+import { homePath, settingsPath, tracesPath } from "@/lib/nav";
 
 interface BottomNavProps {
   session?: string;
   /** Show the Traces destination — true when any workspace advertises SSSF traces. */
   traces: boolean;
-  /** A dot on Herd: something needs you (worst triage across the herd is "blocked"). */
-  attention?: boolean;
 }
 
 // The bottom tab bar: the app's top-level destinations, always one tap away — the way a phone app
 // keeps its main sections reachable without a stack of back-taps. Screens BELOW a destination (a
-// space, a pane, one repo's traces) don't render this; they get a "‹" back in the header instead
+// pane, one repo's traces) don't render this; they get a "‹" back in the header instead
 // (AppHeader.onBack). Which destination is lit is read from the URL, so a deep link is right too.
-export function BottomNav({ session, traces, attention }: BottomNavProps) {
+export function BottomNav({ session, traces }: BottomNavProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const items = [
-    { key: "herd", label: "Herd", icon: PawPrint, to: homePath(session), on: pathname === "/" },
     {
       key: "spaces",
       label: "Spaces",
       icon: LayoutGrid,
-      to: spacesPath(session),
-      on: pathname === "/spaces" || pathname.startsWith("/space/"),
+      to: homePath(session),
+      on: pathname === "/",
     },
     ...(traces
       ? [{ key: "traces", label: "Traces", icon: Activity, to: tracesPath(session), on: pathname.startsWith("/traces") }]
@@ -55,9 +52,6 @@ export function BottomNav({ session, traces, attention }: BottomNavProps) {
         >
           <it.icon className="size-5" strokeWidth={it.on ? 2.25 : 1.75} />
           {it.label}
-          {it.key === "herd" && attention && (
-            <span aria-hidden="true" className="absolute right-[calc(50%-1rem)] top-1.5 size-2 rounded-full bg-red-500" />
-          )}
         </button>
       ))}
     </nav>

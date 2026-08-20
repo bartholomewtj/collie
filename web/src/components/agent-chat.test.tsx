@@ -82,13 +82,6 @@ describe("AgentChat — reply flow", () => {
   });
 });
 
-// Echoes the space passed via navigation state, so a test can assert the header lands on the space
-// overview ("/") for the right workspace.
-function SpaceOverviewSentinel() {
-  const { spaceId } = useParams();
-  return <div>overview:{spaceId ?? "none"}</div>;
-}
-
 describe("AgentChat — header title block", () => {
   it("leads with the space, puts the directory on the subline, and drops the redundant agent name", () => {
     renderChat(); // claude @ /home/you/webapp → ~/webapp
@@ -99,12 +92,13 @@ describe("AgentChat — header title block", () => {
     expect(screen.getByRole("button", { name: /open webapp overview/i })).toBeInTheDocument();
   });
 
-  it("opens the space overview (all tabs + panes) when the title block is tapped", async () => {
+  it("opens the space overview (navigates home with space expanded) when the title block is tapped", async () => {
+    localStorage.clear();
     const user = userEvent.setup();
     const agent = fixtureAgents[0]!; // workspaceId w1
     const router = createMemoryRouter(
       [
-        { path: "/space/:spaceId", element: <SpaceOverviewSentinel /> },
+        { path: "/", element: <div data-testid="home">HOME</div> },
         {
           path: "/pane/:paneId",
           element: (
@@ -125,7 +119,10 @@ describe("AgentChat — header title block", () => {
     render(<RouterProvider router={router} />);
 
     await user.click(screen.getByRole("button", { name: /open webapp overview/i }));
-    expect(await screen.findByText("overview:w1")).toBeInTheDocument();
+    expect(await screen.findByTestId("home")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/");
+    const saved = JSON.parse(localStorage.getItem("collie:dash-prefs:v2") ?? "{}");
+    expect(saved.spaceOpen?.w1).toBe(true);
   });
 });
 
