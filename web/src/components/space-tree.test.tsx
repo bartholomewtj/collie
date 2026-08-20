@@ -242,7 +242,7 @@ describe("SpaceTree — triage ordering and auto-expand vs explicit collapse", (
     localStorage.clear();
   });
 
-  it("blocked spaces sort first and start expanded by default", () => {
+  it("blocked spaces render in snapshot order, show blocked state, and start expanded by default", () => {
     const wNormal = ws("w1", "normal-space", { paneCount: 1, tabCount: 1 });
     const wBlocked = ws("w2", "blocked-space", { paneCount: 1, tabCount: 1 });
     const t1 = tab("w1:t1", "w1", "tab-norm", 1);
@@ -256,6 +256,13 @@ describe("SpaceTree — triage ordering and auto-expand vs explicit collapse", (
       agents: [pNormal, pBlocked],
     });
 
+    // Renders in snapshot order: normal-space listed first renders before blocked-space
+    const normal = screen.getByText("normal-space").closest("div")!;
+    const blocked = screen.getByText("blocked-space").closest("div")!;
+    expect(
+      normal.compareDocumentPosition(blocked) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
     // Blocked space chevron indicates it is expanded
     expect(screen.getByRole("button", { name: /collapse space blocked-space/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /expand space normal-space/i })).toBeInTheDocument();
@@ -264,6 +271,9 @@ describe("SpaceTree — triage ordering and auto-expand vs explicit collapse", (
     expect(screen.getByText("tab-block")).toBeInTheDocument();
     // Normal space is not expanded by default
     expect(screen.queryByText("tab-norm")).not.toBeInTheDocument();
+
+    // Blocked state shows in place
+    expect(screen.getByLabelText(/1 space needs you/i)).toBeInTheDocument();
   });
 
   it("explicit collapse beats the auto-expand rule and persists", async () => {

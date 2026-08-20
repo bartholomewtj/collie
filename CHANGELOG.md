@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.45.1] - 2026-08-20
+
+### Fixed
+- Spaces list keeps Herdr's workspace order — no more recency jumps or blocked-first reshuffling; blocked spaces still tint and auto-expand in place
+
 ## [0.45.0] - 2026-08-20
 
 ### Changed
