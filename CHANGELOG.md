@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.41.2] - 2026-08-20
+
+### Removed
+- `AGENTS.md` and `GEMINI.md`. Both were written by an agent tool rather than a session, and both carried the same generic body linking `../../config/CLAUDE.md` and `../../IDENTITY.md` — paths that point this public repo at a private local layout, and that stopped resolving when the checkout moved into `Projects/tools/`. The `AGENTS.md` rewrite had also dropped `@CLAUDE.md`, the line that made it do anything. Deleted rather than repaired: `CLAUDE.md` is the one working agreement, and a pointer file that has to be re-fixed after every agent run is not worth the maintenance. `AGENTS.md` is correspondingly dropped from the entry-doc list in `scripts/check-doc-links.sh` and from the staged-docs pattern in `scripts/git-hooks/pre-commit`.
+
 ## [0.41.1] - 2026-08-20
 
 ### Fixed
