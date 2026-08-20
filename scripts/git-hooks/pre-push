@@ -59,7 +59,7 @@ fi
 case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*)
     echo "pre-push: running Windows control-script suite (collie-ctl.test.ps1)…" >&2
-    if ! (cd "$ROOT" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File contrib\windows\collie-ctl.test.ps1); then
+    if ! (cd "$ROOT" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File contrib/windows/collie-ctl.test.ps1); then
       cat >&2 <<'EOF'
 ✗ pre-push: Windows control-script tests failed — push aborted.
   Fix the failing tests, or override once with: SKIP_TESTS=1 git push
