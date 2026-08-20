@@ -31,7 +31,23 @@ beforeAll(() => {
   // jsdom doesn't implement scrollTo; the terminal mirror's auto-scroll calls it.
   if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => {};
 });
-beforeEach(() => clearStatus());
+beforeEach(() => {
+  clearStatus();
+  localStorage.clear();
+});
+
+const DISPLAY_PREFS_KEY = "collie:display-prefs:v5";
+
+/** Persist display prefs. Defaults to grammars on (raw terminal off) — the tests that lift menus
+ *  and collapse the live tail need that, now that raw terminal is the empty-storage default. */
+function writeDisplayPrefs(
+  partial: Partial<{ wrap: boolean; fontSize: number; rawTerminal: boolean; tapToFocus: boolean }> = {},
+) {
+  localStorage.setItem(
+    DISPLAY_PREFS_KEY,
+    JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true, ...partial }),
+  );
+}
 
 function renderChat(overrides: Partial<ComponentProps<typeof AgentChat>> = {}) {
   const agent = fixtureAgents[0]!; // a blocked claude agent
@@ -147,26 +163,21 @@ describe("AgentChat — read-only device", () => {
   });
 });
 
-describe("AgentChat — raw-terminal escape hatch", () => {
-  afterEach(() => localStorage.clear());
+describe("AgentChat — raw-terminal mode", () => {
+  it("shows the plain mirror by default (no buttons, menu as raw text)", () => {
+    renderChat({ text: MENU_TEXT });
+    // No native prompt buttons — raw terminal bypasses the block grammars entirely…
+    expect(screen.queryByRole("button", { name: "Yes" })).not.toBeInTheDocument();
+    // …and the menu is rendered verbatim in the mirror, drivable by the keys pad.
+    expect(screen.getByText(/1\. Yes/)).toBeInTheDocument();
+  });
 
-  it("lifts a tail menu into buttons by default (grammars on)", async () => {
+  it("lifts a tail menu into buttons when raw terminal is off", async () => {
+    writeDisplayPrefs({ rawTerminal: false });
     renderChat({ text: MENU_TEXT });
     expect(await screen.findByRole("button", { name: "Yes" })).toBeInTheDocument();
     // The raw option row is consumed into the button, not shown as text.
     expect(screen.queryByText(/❯ 1\. Yes/)).not.toBeInTheDocument();
-  });
-
-  it("shows the plain mirror (no buttons, menu as raw text) when raw terminal is on", () => {
-    localStorage.setItem(
-      "collie:display-prefs:v4",
-      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: true }),
-    );
-    renderChat({ text: MENU_TEXT });
-    // No native prompt buttons — the escape hatch bypasses the block grammars entirely…
-    expect(screen.queryByRole("button", { name: "Yes" })).not.toBeInTheDocument();
-    // …and the menu is rendered verbatim in the mirror, drivable by the keys pad.
-    expect(screen.getByText(/1\. Yes/)).toBeInTheDocument();
   });
 
   // "Tap to type" — on, the mirror is one big "start typing" target; off, it is a document. The
@@ -180,10 +191,7 @@ describe("AgentChat — raw-terminal escape hatch", () => {
   });
 
   it("leaves focus alone on a mirror tap when Tap to type is off", async () => {
-    localStorage.setItem(
-      "collie:display-prefs:v4",
-      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: false }),
-    );
+    writeDisplayPrefs({ tapToFocus: false });
     renderChat({ text: "just some output\n" });
     const before = document.activeElement;
     fireEvent.click(screen.getByText(/just some output/));
@@ -192,32 +200,26 @@ describe("AgentChat — raw-terminal escape hatch", () => {
   });
 
   it("still lifts a menu into buttons with Tap to type off — it gates focus, not the grammars", async () => {
-    localStorage.setItem(
-      "collie:display-prefs:v4",
-      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: false }),
-    );
+    writeDisplayPrefs({ rawTerminal: false, tapToFocus: false });
     renderChat({ text: MENU_TEXT });
     expect(await screen.findByRole("button", { name: "Yes" })).toBeInTheDocument();
   });
 
-  it("lifts a multi-question wizard into native controls by default (grammars on)", async () => {
-    renderChat({ text: WIZARD_TEXT });
-    expect(await screen.findByRole("button", { name: /Parser/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next step" })).toBeInTheDocument();
-    // The stepper header row is consumed into the wizard block, not mirrored as text.
-    expect(screen.queryByText(/☐ Focus area/)).not.toBeInTheDocument();
-  });
-
-  it("raw terminal bypasses the wizard too — the dialog shows verbatim, keys-pad drivable", () => {
-    localStorage.setItem(
-      "collie:display-prefs:v4",
-      JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: true }),
-    );
+  it("raw terminal bypasses the wizard by default — the dialog shows verbatim, keys-pad drivable", () => {
     renderChat({ text: WIZARD_TEXT });
     expect(screen.queryByRole("button", { name: /Parser/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Next step" })).not.toBeInTheDocument();
     expect(screen.getByText(/1\. Parser/)).toBeInTheDocument();
     expect(screen.getByText(/☐ Focus area/)).toBeInTheDocument();
+  });
+
+  it("lifts a multi-question wizard into native controls when raw terminal is off", async () => {
+    writeDisplayPrefs({ rawTerminal: false });
+    renderChat({ text: WIZARD_TEXT });
+    expect(await screen.findByRole("button", { name: /Parser/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next step" })).toBeInTheDocument();
+    // The stepper header row is consumed into the wizard block, not mirrored as text.
+    expect(screen.queryByText(/☐ Focus area/)).not.toBeInTheDocument();
   });
 });
 
@@ -261,6 +263,7 @@ const WIZARD_TEXT = [
 describe("AgentChat — prompt-select race guard wiring (frozen {text, revision} pair)", () => {
   const mockSubmit = vi.mocked(submitPromptOption);
   beforeEach(() => {
+    writeDisplayPrefs({ rawTerminal: false });
     mockSubmit.mockReset();
     mockSubmit.mockResolvedValue({ status: "sent" });
   });
@@ -372,6 +375,7 @@ describe("AgentChat — block-grammar scoping (an agent with no adapter)", () =>
   });
 
   it("re-surfaces EVERY row of the Claude input-box statusline as an app strip above the composer", () => {
+    writeDisplayPrefs({ rawTerminal: false });
     renderChat({ text: STATUS_TEXT }); // default claude agent
     const strip = screen.getByText("[Opus 4.8] ~/webapp · main");
     expect(strip.closest("pre")).toBeNull(); // the strip is app chrome, not <pre> mirror text
@@ -409,6 +413,7 @@ describe("AgentChat — mirror tap must not pop the keyboard on option taps", ()
   });
 
   it("does NOT focus the composer when a native prompt option is tapped", async () => {
+    writeDisplayPrefs({ rawTerminal: false });
     const user = userEvent.setup();
     renderChat({ text: MENU_TEXT });
     const box = screen.getByPlaceholderText(/type a reply/i);
@@ -598,6 +603,8 @@ describe("AgentChat — collapsed live tail", () => {
   const MIRROR_ONLY = "MIRRORONLYTOKEN that the journal never wrote down at all";
 
   function idleWithOverlap(status: "idle" | "working" | "blocked" = "idle") {
+    // Collapse is for the parsed chat view. Raw terminal always keeps the live tail.
+    writeDisplayPrefs({ rawTerminal: false });
     server.use(
       http.get(/\/api\/pane\/[^/]+\/history/, () =>
         HttpResponse.json({

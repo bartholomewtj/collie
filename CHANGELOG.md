@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.45.0] - 2026-08-20
+
+### Changed
+- Raw terminal is on by default. A first open shows the plain mirror, not tappable prompt buttons; ⚙ still turns the grammars back on. Existing phones pick this up too (display-prefs storage key bumped to v5, so wrap/font/tap reset to defaults with it) (a675d90)
+
 ## [0.44.0] - 2026-08-20
 
 ### Added
