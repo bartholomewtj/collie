@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.47.0] - 2026-08-21
+
+### Changed
+- Pane view is live-terminal-only: the stitched transcript above the tail, the Live seam, and swipe-up transcript paging are removed; History (header button, unchanged) is the one transcript surface
+- History page now stays current while open: new turns appear in place (a scrolled-up reader keeps their place), and /clear / session swaps are reflected
+
 ## [0.46.2] - 2026-08-20
 
 ### Fixed

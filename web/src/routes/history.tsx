@@ -25,7 +25,9 @@ import type { TranscriptEntry } from "@/lib/types";
 // already in memory, so growing it is instant and needs no network.
 //
 // The loader is deliberately not revalidated (`shouldRevalidate: false` in router.tsx), so the 1.5 s
-// poll never re-pulls a several-hundred-turn transcript out from under the reader.
+// poll never re-pulls a several-hundred-turn transcript out from under the reader. Freshness is
+// maintained in-view: status transitions (and a periodic tick while working) fetch the newest page
+// and splice it in place, preserving reading position when scrolled up and reflecting session swaps.
 
 /** Why the strip is empty, in the user's terms. Each is an ordinary state, not an error. */
 const UNAVAILABLE_COPY: Record<NonNullable<HistoryData["unavailable"]>, string> = {
@@ -41,6 +43,28 @@ const INITIAL_RENDER = 60;
 const RENDER_STEP = 120;
 /** Distance from the top of the scroller that triggers growth, in px. */
 const GROW_THRESHOLD = 800;
+/** Turns fetched per newest-end refresh. */
+export const HISTORY_TAIL_PAGE = 80;
+/** How often the newest page is refetched while the agent is working, in ms. */
+export const HISTORY_REFRESH_MS = 30_000;
+/** Extra refetch after working → idle/done, so the last turn is in the journal. */
+export const HISTORY_IDLE_RETRY_MS = 2000;
+
+/**
+ * Splice a freshly fetched newest page into the turns already held. Pure, exported for tests.
+ *
+ * Overlapping turns (same uuid) take the fresh copy; turns after the overlap append. When nothing
+ * overlaps the pane is on a different session (or has moved further than a page since the last
+ * look), and the fresh page replaces everything — stitching would show two conversations as one.
+ */
+export function mergeNewest(prev: TranscriptEntry[], fresh: TranscriptEntry[]): TranscriptEntry[] {
+  if (prev.length === 0) return fresh;
+  const freshIds = new Set(fresh.map((e) => e.uuid));
+  const firstOverlap = prev.findIndex((e) => freshIds.has(e.uuid));
+  if (firstOverlap === -1) return fresh;
+  const k = fresh.findIndex((e) => e.uuid === prev[firstOverlap]!.uuid);
+  return [...prev.slice(0, firstOverlap), ...fresh.slice(k)];
+}
 
 export function HistoryRoute() {
   const data = useLoaderData() as HistoryData;
@@ -55,11 +79,21 @@ export function HistoryRoute() {
 
   // Pages walked back beyond the first request (only reachable on a log longer than HISTORY_PAGE_SIZE).
   const [older, setOlder] = useState<TranscriptEntry[]>([]);
+  const [tail, setTail] = useState<TranscriptEntry[]>(data.entries);
   const [hasMore, setHasMore] = useState(data.hasMore);
+  const [total, setTotal] = useState(data.total);
+  const [fileTruncated, setFileTruncated] = useState(data.fileTruncated);
+  const [unavailable, setUnavailable] = useState(data.unavailable);
   const [loading, setLoading] = useState(false);
+  const [following, setFollowing] = useState(true);
+
+  const loadingRef = useRef(false);
+  const followingRef = useRef(following);
+  followingRef.current = following;
+
   const entries = useMemo(
-    () => (older.length ? [...older, ...data.entries] : data.entries),
-    [older, data.entries],
+    () => (older.length ? [...older, ...tail] : tail),
+    [older, tail],
   );
 
   // How many of the NEWEST turns are rendered. Everything else is held in memory, unrendered.
@@ -94,8 +128,9 @@ export function HistoryRoute() {
   /** Fetch turns older than everything held — only for logs beyond the initial request. */
   const loadOlder = useCallback(async () => {
     const oldest = entries[0]?.uuid;
-    if (loading || !hasMore || !oldest) return;
+    if (loadingRef.current || !hasMore || !oldest) return;
     captureAnchor();
+    loadingRef.current = true;
     setLoading(true);
     try {
       const res = await fetchHistory(paneId, { limit: HISTORY_PAGE_SIZE, before: oldest }, session);
@@ -109,9 +144,72 @@ export function HistoryRoute() {
     } catch {
       setStatus("Couldn't load older history", "error");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
-  }, [entries, hasMore, loading, paneId, session]);
+  }, [entries, hasMore, paneId, session]);
+
+  /** Refetch the newest page and splice in place without disturbing a scrolled-up reader. */
+  const refreshNewest = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      const res = await fetchHistory(paneId, { limit: HISTORY_TAIL_PAGE }, session);
+      if (!res.available) return;
+      setTail((prevTail) => {
+        const merged = mergeNewest(prevTail, res.entries);
+        if (merged === res.entries && prevTail.length > 0) {
+          // No overlap with previous tail -> new session / wholesale replacement
+          setOlder([]);
+          setHasMore(res.hasMore);
+          setTotal(res.total);
+          setFileTruncated(res.fileTruncated);
+          setUnavailable(undefined);
+          setRenderCount(INITIAL_RENDER);
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToBottom();
+          });
+          return res.entries;
+        }
+        // Overlap or prevTail was empty
+        const appended = merged.length - prevTail.length;
+        if (appended > 0 && !followingRef.current) {
+          // Grow renderCount by appended so the top of the rendered slice doesn't shift
+          setRenderCount((c) => c + appended);
+        }
+        setTotal(res.total);
+        setUnavailable(undefined);
+        return merged;
+      });
+    } catch {
+      // Failed refresh keeps the current page; next trigger will try again.
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [paneId, session]);
+
+  const status = agent?.status;
+  const lastStatus = useRef(status);
+  useEffect(() => {
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    if (lastStatus.current !== status) {
+      lastStatus.current = status;
+      void refreshNewest();
+      if (status === "idle" || status === "done") {
+        retry = setTimeout(() => void refreshNewest(), HISTORY_IDLE_RETRY_MS);
+      }
+    }
+    if (status !== "working") {
+      return () => {
+        if (retry) clearTimeout(retry);
+      };
+    }
+    const id = setInterval(() => void refreshNewest(), HISTORY_REFRESH_MS);
+    return () => {
+      if (retry) clearTimeout(retry);
+      clearInterval(id);
+    };
+  }, [status, refreshNewest]);
 
   /** Reveal more of what we already hold; only hit the network once nothing is left in memory. */
   const growUpward = useCallback(() => {
@@ -181,6 +279,13 @@ export function HistoryRoute() {
     listRef.current?.scrollToBottom();
   }, []);
 
+  // Follow newest turns to the bottom when the reader is already at the bottom.
+  useLayoutEffect(() => {
+    if (following) {
+      listRef.current?.scrollToBottom();
+    }
+  }, [tail, following]);
+
   const title = agent?.paneLabel ?? agent?.sessionName ?? agent?.workspaceLabel ?? paneId;
   const matchCursor = matches.indexOf(cursor);
 
@@ -215,9 +320,9 @@ export function HistoryRoute() {
             >
               <Search className="size-4" />
             </button>
-            {data.total > 0 && (
+            {total > 0 && (
               <span className="text-xs text-muted-foreground tabular-nums">
-                {shown.length}/{data.total}
+                {shown.length}/{total}
               </span>
             )}
           </>
@@ -233,10 +338,10 @@ export function HistoryRoute() {
       </AppHeader>
 
       <div className="relative min-h-0 min-w-0 flex-1">
-        <ChatMessageList ref={listRef} className="px-3 py-3">
+        <ChatMessageList ref={listRef} onAtBottomChange={setFollowing} className="px-3 py-3">
           {entries.length === 0 ? (
             <div className="px-2 py-16 text-center text-sm text-muted-foreground">
-              {UNAVAILABLE_COPY[data.unavailable ?? "no-log"]}
+              {UNAVAILABLE_COPY[unavailable ?? "no-log"]}
             </div>
           ) : (
             <>
@@ -258,7 +363,7 @@ export function HistoryRoute() {
                 </button>
               ) : (
                 <div className="mb-3 text-center text-[11px] text-muted-foreground">
-                  {data.fileTruncated
+                  {fileTruncated
                     ? "Start of the readable transcript (the log was clipped at the read cap)"
                     : "Start of the conversation"}
                 </div>

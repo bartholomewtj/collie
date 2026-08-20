@@ -35,9 +35,6 @@ import type { PromptBlockAction } from "@/components/prompt-select-block";
 import type { PreviewBlockAction } from "@/components/preview-select-block";
 import type { MenuBlockAction } from "@/components/menu-block";
 import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
-import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
-import { TranscriptView } from "@/components/transcript-view";
-import { commandsOnlyTurn, liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "@/lib/transcript-seam";
 import { shortCwd } from "@/lib/format";
 import { historyPath, tracePath } from "@/lib/nav";
 import { useOpenSpace } from "@/hooks/use-open-space";
@@ -83,19 +80,16 @@ interface AgentChatProps {
 // sheets are separate and live inside <Composer>.)
 type Drawer = "switcher" | null;
 
-// The detail view is a chat thread with a live terminal tail, not a terminal that happens to have
-// history. Between turns the tail is a worse copy of the newest markdown message, so it hides once
-// the journal has that turn and nothing in the TUI needs a tap or a token paint. Working / blocked
-// / a dialog / Show live peel it back. The pane's output comes from the route loader (`text`);
-// polling revalidates it. Replies/keys are confirmed via the header status line (`setStatus`), then
-// a revalidation pulls the fresh output.
+// The detail view is a live terminal mirror with a composer. The pane's output comes from the route
+// loader (`text`); polling revalidates it. Replies/keys are confirmed via the header status line
+// (`setStatus`), then a revalidation pulls the fresh output.
 //
 // This shell owns the pane frame: the header (the find bar takes it over while find is open), the
-// terminal mirror (freeze, find highlighting, transcript above the live tail, load-older scrollback
-// on shells), and navigation (the nav hub + swipe-up switcher). The composer cluster — draft, send,
-// keys, quick actions, slash-commands, image upload, display prefs, and the find-in-output trigger —
-// lives in <Composer>; it reaches back here only to re-follow the tail after a send, focus on a
-// mirror tap, and open find (which freezes the tail).
+// terminal mirror (freeze, find highlighting, load-older scrollback on shells), and navigation (the
+// nav hub + swipe-up switcher). The composer cluster — draft, send, keys, quick actions,
+// slash-commands, image upload, display prefs, and the find-in-output trigger — lives in <Composer>;
+// it reaches back here only to re-follow the tail after a send, focus on a mirror tap, and open find
+// (which freezes the tail).
 export function AgentChat({
   paneId,
   session,
@@ -253,71 +247,13 @@ export function AgentChat({
     setFindQuery("");
   }
 
-  // What the top of the buffer can offer — see the JSX for why these are mutually exclusive.
-  // `historyAvailable`: the pane reported an agent session, so a transcript exists to open.
   // `moreScrollback`: Herdr says this pane can still yield lines beyond the window we've asked for,
   // AND we're under the cap Herdr's own read clamp imposes. `readableLines` is undefined on an older
   // bridge/Herdr; treat that as "no idea" and stay hidden rather than offer a tap that fetches nothing.
-  const historyAvailable = Boolean(agent?.hasSession);
   const moreScrollback =
     agent?.readableLines !== undefined &&
     requestedLines < agent.readableLines &&
     canGrowRequestedLines(paneId, session);
-
-  // Prefetch the last transcript turns above the live tail so a swipe up reads the conversation
-  // instead of bouncing off a 50-row alternate-screen viewport, and keep that end fresh as the agent
-  // works (keyed on its status). Header History still opens the dedicated page (find / jump-to-turn).
-  const getScrollElement = useCallback(() => listRef.current?.getScrollElement() ?? null, []);
-  const inline = useInlineHistory({
-    paneId,
-    session,
-    enabled: historyAvailable,
-    status: agent?.status,
-    getScrollElement,
-  });
-
-  // The transcript and the mirror below it are two views of ONE conversation, and between turns the
-  // viewport still holds the tail of the turn the transcript just rendered — so the newest message
-  // used to read twice, once as markdown and once as raw terminal. Cut the transcript where the
-  // mirror picks it up, so the Live divider is a real seam. Memoised on the frozen `display`, so a
-  // scrolled-up reader's cut stays put with their text instead of sliding under them.
-  //
-  // When the newest turn is already in the transcript and the TUI has nothing to tap or stream, the
-  // tail IS that worse copy — hide it (and do not trim: the markdown is then the only copy). Pinning
-  // peels the tail back; a pane change drops the pin so a newly opened idle pane starts as chat.
-  const mirrorPlain = useMemo(
-    () => parseAnsi(display).map((seg) => seg.text).join(""),
-    [display],
-  );
-  const caughtUp = useMemo(
-    () => newestTurnInViewport(inline.entries, mirrorPlain),
-    [inline.entries, mirrorPlain],
-  );
-  const commandsOnly = useMemo(
-    () => commandsOnlyTurn(inline.entries),
-    [inline.entries],
-  );
-  const [livePinned, setLivePinned] = useState(false);
-  const [pinnedFor, setPinnedFor] = useState(paneId);
-  if (pinnedFor !== paneId) {
-    setPinnedFor(paneId);
-    setLivePinned(false);
-  }
-  const showLive = liveMirrorNeeded({
-    kind: agent?.kind,
-    status: agent?.status,
-    dialogPresent,
-    rawTerminal: prefs.rawTerminal,
-    findOpen,
-    hasTranscript: inline.entries.length > 0,
-    newestTurnInViewport: caughtUp,
-    pinned: livePinned,
-    commandsOnly,
-  });
-  const visibleEntries = useMemo(
-    () => (showLive ? trimAtSeam(inline.entries, mirrorPlain) : inline.entries),
-    [showLive, inline.entries, mirrorPlain],
-  );
 
   // Load older scrollback: raise the per-pane requested line count and refetch. The enlarged buffer
   // prepends older lines at the top, so we adopt it into the frozen display and re-anchor the scroll
@@ -362,19 +298,6 @@ export function AgentChat({
     olderAnchor.current = null;
   }, [display]);
 
-  // Swipe toward the top pages older transcript turns. Shells still use the Load older tap —
-  // each grow is a bigger Herdr read, and auto-firing those from a restore would cascade.
-  useEffect(() => {
-    const el = listRef.current?.getScrollElement();
-    if (!el) return;
-    const onScroll = () => {
-      if (el.scrollTop >= INLINE_GROW_THRESHOLD) return;
-      if (historyAvailable) inline.growUpward();
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [historyAvailable, inline.growUpward]);
-
   // Opening / switching into this pane must land on the live tail. Stickiness usually handles it,
   // but the first flex layout + AnsiOutput paint can race; pin once after mount so a tab/pane open
   // never strands you at the oldest scrollback.
@@ -382,18 +305,8 @@ export function AgentChat({
     listRef.current?.scrollToBottom();
   }, []);
 
-  // Prefetch inserts turns ABOVE the live tail. If the mirror didn't overflow, scrollTop was 0
-  // and stays 0, so without a re-pin the reader lands on the oldest turn. Stay on the tail
-  // while following; the hook re-anchors once they've scrolled up.
-  useLayoutEffect(() => {
-    if (following && inline.entries.length > 0) listRef.current?.scrollToBottom();
-  }, [inline.entries, following]);
-
   // After a successful send, snap the mirror back to the live tail so the reply's result is visible.
-  // A context wipe (`/clear`, or `/new` on agents that spell it that way) also drops the inline
-  // history right away — those turns belong to the session that just ended.
-  const onSent = (text: string) => {
-    if (/^\/(clear|new)(\s|$)/.test(text.trim())) inline.reset();
+  const onSent = () => {
     setFollowing(true);
     revalidator.revalidate();
     listRef.current?.scrollToBottom();
@@ -676,10 +589,8 @@ export function AgentChat({
         // composer's old View row, which put the button at the bottom of the screen and its UI at the
         // top. Offered only when there's buffered output to search; opening it freezes the tail.
         //
-        // History still opens the dedicated transcript page (find / jump-to-turn). The last turns
-        // now also sit above the live tail so a swipe up reads the conversation without leaving
-        // the pane. Offered only when the pane reported an agent session id, so the button never
-        // leads to an empty screen.
+        // History opens the dedicated transcript page (find / jump-to-turn). Offered only when the
+        // pane reported an agent session id, so the button never leads to an empty screen.
         //
         // Traces (the lanes mark) opens the SSSF visualiser scoped to the ADW runs THIS pane
         // launched — the tracer wrote the pane's HERDR_PANE_ID on each run, so this is attribution,
@@ -828,50 +739,7 @@ export function AgentChat({
             className="px-2 py-3"
           >
             <>
-              {/* Agent panes: last transcript turns sit above the live tail so a swipe up reads
-                  the conversation. Shells (primary screen, real scrollback ring) still page the
-                  terminal buffer with Load older. The two are never both possible. */}
-              {visibleEntries.length > 0 && (
-                <div className="mb-3">
-                  {inline.loading && (
-                    <div className="mb-2 flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin" />
-                      Loading…
-                    </div>
-                  )}
-                  <TranscriptView entries={visibleEntries} agent={agent?.agent} />
-                  {showLive && display ? (
-                    <div className="mt-3 flex items-center gap-2">
-                      <div className="h-px flex-1 bg-border" />
-                      {livePinned ? (
-                        <button
-                          type="button"
-                          onClick={() => setLivePinned(false)}
-                          aria-label="Hide live terminal"
-                          className="text-[11px] font-medium text-muted-foreground"
-                        >
-                          Hide live
-                        </button>
-                      ) : (
-                        <span className="text-[11px] font-medium text-muted-foreground">Live</span>
-                      )}
-                      <div className="h-px flex-1 bg-border" />
-                    </div>
-                  ) : !showLive ? (
-                    <button
-                      type="button"
-                      onClick={() => setLivePinned(true)}
-                      aria-label="Show live terminal"
-                      className="mt-3 flex w-full items-center gap-2"
-                    >
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-[11px] font-medium text-muted-foreground">Show live</span>
-                      <div className="h-px flex-1 bg-border" />
-                    </button>
-                  ) : null}
-                </div>
-              )}
-              {!historyAvailable && moreScrollback ? (
+              {moreScrollback ? (
                 <button
                   type="button"
                   onClick={loadOlder}
@@ -886,7 +754,7 @@ export function AgentChat({
                   {loadingOlder ? "Loading…" : "Load older"}
                 </button>
               ) : null}
-              {showLive && display ? (
+              {display ? (
                 <AnsiOutput
                   text={display}
                   wrap={prefs.wrap}
@@ -902,9 +770,9 @@ export function AgentChat({
                   onMenuAction={handleMenuAction}
                   promptDisabled={readOnly || gone}
                 />
-              ) : visibleEntries.length === 0 ? (
+              ) : (
                 <div className="py-16 text-center text-sm text-muted-foreground">(no recent output)</div>
-              ) : null}
+              )}
             </>
           </ChatMessageList>
         </div>
