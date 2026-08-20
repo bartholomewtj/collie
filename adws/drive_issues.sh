@@ -8,9 +8,10 @@
 # Run it detached (PowerShell Start-Process) — the Claude Code Bash tool kills jobs after 10 min.
 set -u
 export PYTHONUTF8=1
-cd /c/ClaudeOS/Projects/collie || exit 1
-LOG=/c/ClaudeOS/Projects/collie/adws/adw_data/run_rest.log
-SUMMARY=/c/ClaudeOS/Projects/collie/adws/adw_data/run_rest_summary.txt
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$REPO" || exit 1
+LOG=$REPO/adws/adw_data/run_rest.log
+SUMMARY=$REPO/adws/adw_data/run_rest_summary.txt
 touch "$SUMMARY"
 prev=main
 

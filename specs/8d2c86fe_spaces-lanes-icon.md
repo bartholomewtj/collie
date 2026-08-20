@@ -266,7 +266,7 @@ disambiguate with the pane-count text rather than loosening the query.
 
 ## Verify
 
-Run from the repo root (`C:\claudeOS\Projects\collie`):
+Run from the repo root (`C:\claudeOS\Projects\tools\collie`):
 
 ```sh
 cd web && bun run test

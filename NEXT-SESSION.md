@@ -40,7 +40,7 @@ Everything below is merged to `main`, tagged, and running:
 ## Resume with
 
 ```bash
-cd C:\claudeOS\Projects\collie
+cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main, clean
 netstat -ano | findstr :8787                          # expect ONE listener
@@ -58,7 +58,7 @@ bun run build                                             # after a web/ change 
 Clean test bar without WSL:
 
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "C:\claudeOS\Projects\collie:/src:ro" oven/bun:1 bash -c \
+MSYS_NO_PATHCONV=1 docker run --rm -v "C:\claudeOS\Projects\tools\collie:/src:ro" oven/bun:1 bash -c \
   'cp -r /src /w && cd /w && apt-get update -qq >/dev/null && apt-get install -y -qq git >/dev/null 2>&1; rm -rf node_modules web/node_modules && bun install --frozen-lockfile >/dev/null; bun test bridge | tail -3; bash scripts/collie-ctl.test.sh 2>&1 | tail -1'
 ```
 
