@@ -42,8 +42,8 @@ if [ "${SKIP_TESTS:-}" = "1" ]; then
   exit 0
 fi
 
-echo "pre-push: running backend test suite (bun test ./bridge)…" >&2
-if ! (cd "$ROOT" && bun test ./bridge); then
+echo "pre-push: running backend test suite (bun test ./bridge ./scripts)…" >&2
+if ! (cd "$ROOT" && bun test ./bridge ./scripts); then
   cat >&2 <<'EOF'
 ✗ pre-push: backend tests failed — push aborted.
   Fix the failing tests, or override once with: SKIP_TESTS=1 git push
