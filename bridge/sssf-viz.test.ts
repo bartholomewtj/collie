@@ -22,7 +22,7 @@ import type { WorkspaceView } from "./types.ts";
 // SSSF_TEST_REPO set (a git checkout with adws/adw_data/sssf.db). That is exactly the "a skill update
 // changed db.ts" tripwire the module's startup contract check exists for — run it after re-installing
 // the sssf skill:
-//   SSSF_VIZ_DIR=~/.claude/skills/sssf/apps/visualizer SSSF_TEST_REPO=~/Projects/claudeSSSF bun test bridge/sssf-viz.test.ts
+//   SSSF_VIZ_DIR=~/.claude/skills/sssf/apps/visualizer SSSF_TEST_REPO=~/Projects/tools/claudeSSSF bun test bridge/sssf-viz.test.ts
 
 function cfg(overrides: Partial<Config> = {}): Config {
   return {

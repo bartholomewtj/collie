@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 
 import {
   deriveConfigRoot,
@@ -57,34 +58,45 @@ describe("herdTagFor", () => {
   });
 });
 
+/**
+ * A session socket path, built the way sessions.ts builds it. These fakes stand in for the
+ * filesystem, and the code under test looks paths up with join() — write them out with "/" and the
+ * `exists`/`listSessionDirs` predicates simply never match on a platform whose separator differs.
+ */
+// join(), so the root itself is shaped like the platform: sessionNameFor compares dirname(socket)
+// against this string, and a "/" literal would never equal a joined path on Windows.
+const ROOT = join("/cfg", "herdr");
+const sock = (name?: string) =>
+  name === undefined ? join(ROOT, "herdr.sock") : join(ROOT, "sessions", name, "herdr.sock");
+
 describe("discoverSessionSockets", () => {
-  const root = "/cfg/herdr";
+  const root = ROOT;
 
   test("finds the default socket plus each sessions/<name>/herdr.sock that exists", () => {
     const present = new Set([
-      `${root}/herdr.sock`,
-      `${root}/sessions/alpha/herdr.sock`,
+      sock(),
+      sock("alpha"),
       // 'zeta' dir exists but its socket does not (session cleanly stopped → socket removed).
     ]);
     const found = discoverSessionSockets(
       root,
-      (dir) => (dir === `${root}/sessions` ? ["alpha", "zeta"] : []),
+      (dir) => (dir === join(root, "sessions") ? ["alpha", "zeta"] : []),
       (p) => present.has(p),
     );
     expect(found).toEqual([
-      { name: "default", socketPath: `${root}/herdr.sock` },
-      { name: "alpha", socketPath: `${root}/sessions/alpha/herdr.sock` },
+      { name: "default", socketPath: sock() },
+      { name: "alpha", socketPath: sock("alpha") },
     ]);
   });
 
   test("omits the default when its socket is absent (default session not running)", () => {
-    const present = new Set([`${root}/sessions/only/herdr.sock`]);
+    const present = new Set([sock("only")]);
     const found = discoverSessionSockets(
       root,
       () => ["only"],
       (p) => present.has(p),
     );
-    expect(found).toEqual([{ name: "only", socketPath: `${root}/sessions/only/herdr.sock` }]);
+    expect(found).toEqual([{ name: "only", socketPath: sock("only") }]);
   });
 
   test("returns nothing when no sockets exist", () => {
@@ -143,8 +155,8 @@ function makeRegistry(opts: {
   present?: string[];
   snapshots?: Record<string, { bridge: "connected" | "disconnected"; agents: AgentView[] }>;
 } = {}): Harness {
-  const configRoot = opts.configRoot ?? "/cfg/herdr";
-  const primarySocketPath = opts.primarySocketPath ?? `${configRoot}/herdr.sock`;
+  const configRoot = opts.configRoot ?? ROOT;
+  const primarySocketPath = opts.primarySocketPath ?? join(configRoot, "herdr.sock");
   const fakes = new Map<string, FakeSession>();
   const spawns: string[] = [];
   let dirs = opts.sessionDirs ?? [];
@@ -194,7 +206,7 @@ describe("SessionRegistry — construction & lookup", () => {
   });
 
   test("a named-session primary keeps its own name and is still the default lookup", () => {
-    const h = makeRegistry({ primarySocketPath: "/cfg/herdr/sessions/work/herdr.sock" });
+    const h = makeRegistry({ primarySocketPath: sock("work") });
     expect(h.registry.primary).toBe("work");
     expect(h.registry.get()?.name).toBe("work");
     expect(h.registry.get("work")).toBe(h.registry.get());
@@ -205,11 +217,7 @@ describe("SessionRegistry — list()", () => {
   test("orders primary first then alphabetical, with per-session working/blocked counts", async () => {
     const h = makeRegistry({
       sessionDirs: ["zeta", "alpha"],
-      present: [
-        "/cfg/herdr/herdr.sock",
-        "/cfg/herdr/sessions/zeta/herdr.sock",
-        "/cfg/herdr/sessions/alpha/herdr.sock",
-      ],
+      present: [sock(), sock("zeta"), sock("alpha")],
       snapshots: {
         default: { bridge: "connected", agents: [agent("d1", "blocked"), agent("d2", "idle")] },
         alpha: { bridge: "connected", agents: [agent("a1", "working")] },
@@ -227,7 +235,7 @@ describe("SessionRegistry — list()", () => {
   test("an unreachable session reports reachable:false and zeroed counts", async () => {
     const h = makeRegistry({
       sessionDirs: ["down"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/down/herdr.sock"],
+      present: [sock(), sock("down")],
       snapshots: {
         // Stale last-known agents, but the last poll failed → treated as unreachable with 0 counts.
         down: { bridge: "disconnected", agents: [agent("x1", "blocked")] },
@@ -250,7 +258,7 @@ describe("SessionRegistry — refresh() lifecycle", () => {
   test("starts runtimes for newly-appeared sessions and does not respawn the primary", async () => {
     const h = makeRegistry({
       sessionDirs: ["demo"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/demo/herdr.sock"],
+      present: [sock(), sock("demo")],
     });
     await h.registry.refresh();
     // primary spawned at construction; demo spawned on refresh; default NOT respawned though present.
@@ -264,13 +272,13 @@ describe("SessionRegistry — refresh() lifecycle", () => {
   test("disposes a session whose socket vanished (engine + poker stopped, notifications cleared)", async () => {
     const h = makeRegistry({
       sessionDirs: ["demo"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/demo/herdr.sock"],
+      present: [sock(), sock("demo")],
     });
     await h.registry.refresh();
     const demo = h.fakes.get("demo")!;
     // Socket removed (session stopped) → next refresh disposes it.
     h.setDirs([]);
-    h.setPresent(["/cfg/herdr/herdr.sock"]);
+    h.setPresent([sock()]);
     await h.registry.refresh();
     expect(demo.disposed).toEqual({ engine: 1, poker: 1, notifications: 1 });
     expect(h.registry.get("demo")).toBeUndefined();
@@ -279,7 +287,7 @@ describe("SessionRegistry — refresh() lifecycle", () => {
   test("never disposes the primary, even when discovery finds nothing", async () => {
     const h = makeRegistry({
       sessionDirs: ["demo"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/demo/herdr.sock"],
+      present: [sock(), sock("demo")],
     });
     await h.registry.refresh();
     const primaryFake = h.fakes.get("default")!;
@@ -295,7 +303,7 @@ describe("SessionRegistry — refresh() lifecycle", () => {
     const h = makeRegistry({
       multiSession: false,
       sessionDirs: ["demo"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/demo/herdr.sock"],
+      present: [sock(), sock("demo")],
     });
     await h.registry.refresh();
     expect(h.spawns).toEqual(["default"]); // demo never discovered
@@ -306,7 +314,7 @@ describe("SessionRegistry — refresh() lifecycle", () => {
   test("disposeAll stops every runtime including the primary", async () => {
     const h = makeRegistry({
       sessionDirs: ["demo"],
-      present: ["/cfg/herdr/herdr.sock", "/cfg/herdr/sessions/demo/herdr.sock"],
+      present: [sock(), sock("demo")],
     });
     await h.registry.refresh();
     const primaryFake = h.fakes.get("default")!;

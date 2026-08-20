@@ -81,3 +81,8 @@ reports; if it breaks against a newer Collie, send the patch.
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File contrib\windows\collie-ctl.test.ps1
 ```
+
+Since 0.40.7 the **pre-push hook runs this suite on Windows**, in place of
+`scripts/collie-ctl.test.sh` — that one refuses to run here, because `collie-ctl.sh` delegates every
+verb to this script and the suite would drive the real Task Scheduler job instead of its sandbox. So
+the lifecycle is still checked before every push on a Windows box; it is CI that never sees it.

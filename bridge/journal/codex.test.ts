@@ -9,6 +9,7 @@ import {
   isCodexSessionId,
   parseCodexTranscript,
 } from "./codex.ts";
+import { CAN_SYMLINK } from "../platform-support.ts";
 
 // Row builders mirroring the verified on-disk shape (codex rollout logs, cli 0.32.0, 2026-07-29).
 // `{timestamp,type,payload}` are the only top-level keys — note the absence of any per-row id, which
@@ -267,7 +268,8 @@ describe("CodexTranscriptSource — several sessions roots", () => {
     await rm(base, { recursive: true, force: true });
   });
 
-  test("a rollout symlinked out of its root is refused, and the next root still answers", async () => {
+  // Needs a real symlink; skipped where this process may not create one (see platform-support.ts).
+  test.skipIf(!CAN_SYMLINK)("a rollout symlinked out of its root is refused, and the next root still answers", async () => {
     const { base, a, b } = await fixture();
     await symlink(`${base}/outside.jsonl`, `${a}/2026/08/11/rollout-2026-08-11T11-00-00-${B}.jsonl`);
     const src = new CodexTranscriptSource([a, b]);

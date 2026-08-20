@@ -12,6 +12,7 @@ import {
   splitOpencodeKey,
 } from "./opencode.ts";
 import { MAX_RESULT_CHARS, MAX_TEXT_CHARS } from "./text.ts";
+import { CAN_SYMLINK } from "../platform-support.ts";
 
 // Builders mirroring the verified on-disk shape (opencode 1.18.9, 2026-08-03): a message row's `data`
 // json plus its parts' `data` json, composed by the source into one JSONL line per message.
@@ -296,7 +297,9 @@ describe("OpencodeTranscriptSource", () => {
     outer.close();
     const tricky = join(base, "tricky");
     await mkdir(tricky, { recursive: true });
-    await symlink(join(outside, "opencode.db"), join(tricky, "opencode.db"));
+    // Only the containment test below reads `tricky`, and it is skipped where symlinks can't be
+    // made. Planting it unconditionally would fail the fixture, and with it every test in here.
+    if (CAN_SYMLINK) await symlink(join(outside, "opencode.db"), join(tricky, "opencode.db"));
 
     return { base, root, tricky };
   }
@@ -334,7 +337,8 @@ describe("OpencodeTranscriptSource", () => {
   // The database also holds OAuth tokens, so containment runs even though the path is a CONSTANT:
   // `opencode.db` itself can be a symlink, and then the fixed name points at another user's file.
   // Symlink resolution is the entire reason the check runs on realpaths.
-  test("an opencode.db that symlinks out of the root fails containment", async () => {
+  // Needs a real symlink; skipped where this process may not create one (see platform-support.ts).
+  test.skipIf(!CAN_SYMLINK)("an opencode.db that symlinks out of the root fails containment", async () => {
     const { base, tricky } = await fixture();
     expect(await new OpencodeTranscriptSource(tricky).resolve({ kind: "id", value: SID })).toBeNull();
     await rm(base, { recursive: true, force: true });

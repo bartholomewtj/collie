@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.40.7] - 2026-08-20
+
+### Fixed
+- Backend test suite passes on Windows, so the pre-push hook no longer needs `SKIP_TESTS=1` there. 25 tests asserted nothing on that platform because their fixtures built paths by interpolating `/` while the code under test uses `join()`; they now run. The 9 that genuinely need POSIX file modes or symlink privileges skip with a reason, via the new `bridge/platform-support.ts` (`CAN_SYMLINK` is probed, not assumed, so Developer Mode runs them). CI on ubuntu-latest still runs all 774 (5250fc3)
+- `scripts/collie-ctl.test.sh` refuses to run on Windows instead of failing there. `collie-ctl.sh` delegates every lifecycle verb to `contrib/windows/collie-ctl.ps1` on that platform, so the suite's sandbox stopped being one: `start` reached the real scheduled task and the real port, and could have stopped a live bridge. It still runs in full on Linux and macOS. The pre-push hook runs `contrib/windows/collie-ctl.test.ps1` in its place there, so the lifecycle is still checked before every push (5250fc3)
+
 ## [0.40.6] - 2026-08-20
 
 ### Fixed
