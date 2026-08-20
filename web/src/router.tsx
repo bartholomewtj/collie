@@ -47,9 +47,9 @@ export const router = createBrowserRouter([
         loader: historyLoader,
         element: <HistoryRoute />,
         // Opt OUT of the poll loop. revalidate() re-runs every active loader, and a transcript can be
-        // hundreds of turns — re-pulling it every 1.5s would be pure waste, and it would fight the
-        // view's own "load older" paging by resetting the page under it. History is fetched on
-        // navigation; the view pages back through it with direct api calls.
+        // hundreds of turns — re-pulling it every 1.5s would be pure waste. History is fetched on
+        // navigation; freshness is handled in-view via status-driven newest-page refresh and direct
+        // api calls for older pages.
         shouldRevalidate: () => false,
       },
     ],

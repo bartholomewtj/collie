@@ -533,24 +533,26 @@ describe("AgentChat — traces affordance", () => {
   });
 });
 
-// The top-of-mirror affordance. Agent panes prefetch the transcript above the live tail (a swipe
-// up reads the conversation). Shells still page Herdr scrollback with Load older. The two are
-// never simultaneously possible — a transcript wins, because alt-screen panes have no ring.
+// The top-of-mirror affordance. Agent panes show only the live CLI viewport. Shells still page Herdr
+// scrollback with Load older when readableLines exceeds requestedLines.
 describe("AgentChat — top-of-mirror history affordance", () => {
   const showHistory = () => screen.queryByRole("button", { name: /show entire history/i });
   const loadOlder = () => screen.queryByRole("button", { name: /load older/i });
 
-  it("an agent pane with a transcript inlines it above the live tail, not a jump-away button", async () => {
+  it("an agent pane shows only the live CLI viewport and does not inline the transcript", () => {
     // A Claude pane: alt-screen, so readableLines is just its viewport — there IS no scrollback.
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 51 };
-    renderChat({ agent, agents: [agent], requestedLines: 600 });
+    renderChat({ agent, agents: [agent], requestedLines: 600, text: "live terminal output" });
     expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
-    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
-    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText("live terminal output")).toBeInTheDocument();
+    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show live terminal/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
   });
 
-  it("a pane with real scrollback and no transcript offers Load older", () => {
+  it("a pane with real scrollback offers Load older", () => {
     // A shell on the primary screen: 6895 lines of ring + 51 viewport, and we've only asked for 600.
     const agent = { ...fixtureAgents[0]!, kind: "shell" as const, readableLines: 6946 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
@@ -578,90 +580,18 @@ describe("AgentChat — top-of-mirror history affordance", () => {
     expect(showHistory()).not.toBeInTheDocument();
   });
 
-  it("a transcript wins even when the pane also reports scrollback", async () => {
+  it("a pane reporting scrollback gets Load older even when it also reports a session", () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 6946 };
     renderChat({ agent, agents: [agent], requestedLines: 600 });
     expect(showHistory()).not.toBeInTheDocument();
-    expect(loadOlder()).not.toBeInTheDocument();
-    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
+    expect(loadOlder()).toBeInTheDocument();
+    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
   });
 
-  it("keeps the header History button so find / jump-to-turn still have a page", async () => {
+  it("keeps the header History button so find / jump-to-turn still have a page", () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true };
     renderChat({ agent, agents: [agent] });
     expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
-    expect(await screen.findByText("what changed today?")).toBeInTheDocument();
-  });
-});
-
-// Idle panes hide the live TUI once the transcript already holds the newest turn — otherwise the
-// same message reads twice, once as markdown and once as a wrapped CLI snapshot. Working / blocked
-// / a missing overlap keep the tail, and Show live peels it back.
-describe("AgentChat — collapsed live tail", () => {
-  const LAST =
-    "Three things stand out after the sweep across every repo I could reach this morning and afternoon. Nothing else is broken — services are up, the tests all pass, and the context map is current now.";
-  const MIRROR_ONLY = "MIRRORONLYTOKEN that the journal never wrote down at all";
-
-  function idleWithOverlap(status: "idle" | "working" | "blocked" = "idle") {
-    // Collapse is for the parsed chat view. Raw terminal always keeps the live tail.
-    writeDisplayPrefs({ rawTerminal: false });
-    server.use(
-      http.get(/\/api\/pane\/[^/]+\/history/, () =>
-        HttpResponse.json({
-          paneId: "w1:p1",
-          available: true,
-          entries: [
-            {
-              uuid: "t-ask",
-              ts: "2026-08-20T00:00:00.000Z",
-              role: "user",
-              parts: [{ kind: "text", text: "what stands out?" }],
-            },
-            {
-              uuid: "t-last",
-              ts: "2026-08-20T00:00:01.000Z",
-              role: "assistant",
-              parts: [{ kind: "text", text: LAST }],
-            },
-          ],
-          hasMore: false,
-          total: 2,
-          fileTruncated: false,
-        }),
-      ),
-    );
-    const agent = { ...fixtureAgents[0]!, hasSession: true, status };
-    renderChat({
-      agent,
-      agents: [agent],
-      text: `lead-in words so the probe skips the first token.\n${LAST}\n${MIRROR_ONLY}`,
-    });
-  }
-
-  it("hides the live tail on an idle pane whose transcript already holds the newest turn", async () => {
-    idleWithOverlap("idle");
-    expect(await screen.findByRole("button", { name: /show live terminal/i })).toBeInTheDocument();
-    expect(screen.getByText(/nothing else is broken/i)).toBeInTheDocument();
-    expect(screen.queryByText("Live")).not.toBeInTheDocument();
-    expect(screen.queryByText(MIRROR_ONLY)).not.toBeInTheDocument();
-  });
-
-  it("keeps the live tail while the agent is working, even when the transcript overlaps", async () => {
-    idleWithOverlap("working");
-    expect(await screen.findByText(/nothing else is broken/i)).toBeInTheDocument();
-    expect(screen.getByText("Live")).toBeInTheDocument();
-    expect(screen.getByText(MIRROR_ONLY)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /show live terminal/i })).not.toBeInTheDocument();
-  });
-
-  it("Show live peels the tail back, Hide live puts it away", async () => {
-    const user = userEvent.setup();
-    idleWithOverlap("idle");
-    await user.click(await screen.findByRole("button", { name: /show live terminal/i }));
-    expect(screen.getByText(MIRROR_ONLY)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hide live terminal/i })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /hide live terminal/i }));
-    expect(screen.queryByText(MIRROR_ONLY)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /show live terminal/i })).toBeInTheDocument();
+    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
   });
 });
