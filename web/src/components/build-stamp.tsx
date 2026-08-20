@@ -13,9 +13,16 @@ import { checkForUpdate } from "@/lib/pwa";
 // poll, see lib/server-build.ts) and, if they differ (you're on a stale bundle), flags it with a
 // one-tap update — appearing/disappearing in real time as the server rebuilds. See README →
 // Troubleshooting.
+//
+// It also surfaces the OTHER staleness, which is a different axis and has no tap: the bridge
+// reporting that its own `web/dist` predates the sources it was built from. That one can't be fixed
+// from the phone — someone has to run `bun run build` on the host — but it must be visible here,
+// because a stale server bundle is otherwise indistinguishable from a working app right up until it
+// isn't (see bridge/build-freshness.ts).
 export function BuildStamp({ className }: { className?: string }) {
   const serverBuild = useServerBuild();
   const [updating, setUpdating] = useState(false);
+  const [serverStale, setServerStale] = useState(false);
   useEffect(() => {
     let alive = true;
     // Initial fill: the poll-driven header normally seeds the store first, but fetch config once so
@@ -24,7 +31,9 @@ export function BuildStamp({ className }: { className?: string }) {
     // (the config response's own header usually already has), so we don't double-count an observation.
     fetchConfig()
       .then((c) => {
-        if (alive && getServerBuild() === undefined) observeServerBuild(c.build);
+        if (!alive) return;
+        if (getServerBuild() === undefined) observeServerBuild(c.build);
+        setServerStale(c.staleBuild === true);
       })
       .catch(() => {
         /* offline / bridge down — just show the local stamp */
@@ -53,6 +62,14 @@ export function BuildStamp({ className }: { className?: string }) {
       {/* "app": this is the bundle the browser runs; the bridge's own version sits in Settings →
           Updates. Two unlabelled versions on one screen read as a contradiction. */}
       <span className="font-mono">app {buildLabel()}</span>
+      {serverStale && (
+        <>
+          {" · "}
+          {/* Plain text, not a button: the fix is a shell command on the host. Saying what to run
+              beats a control that can't run it. */}
+          <span className="font-medium text-status-blocked">server needs `bun run build`</span>
+        </>
+      )}
       {stale && (
         <>
           {" · "}

@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.42.0] - 2026-08-20
+
+### Added
+- The bridge notices when `web/dist` is older than the sources it was built from, and says so: a warning at startup and on every flip, `staleBuild` on `/api/config`, and "server needs `bun run build`" in the phone's footer. Nothing rebuilds `web/dist` for you, so a correct checkout could serve a bundle built from something else with no error anywhere — which is exactly how 0.41.1 shipped a crashing pane screen for an hour. mtime comparison, cached 30s, skips `node_modules`/`dist`/dot-dirs (`bridge/build-freshness.ts`).
+
 ## [0.41.2] - 2026-08-20
 
 ### Removed
