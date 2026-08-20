@@ -46,15 +46,13 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 1. **Rebuild + restart** so the phone is on 0.46.2: `bun run build`, then `collie-ctl.ps1 restart`.
    Confirm a blocked space does not jump, and a long `npm install` is a blue dot with the live tail
    hidden (grammars off — raw terminal on keeps the tail).
-2. **#69 stays parked** until there is a design that does not edit `adws/adw_modules/`
-   (`permissions.py` / `quality.py` are `protected_files`).
-3. Nothing else is queued. Product leftovers without issues: Windows update-banner still names the
+2. Nothing else is queued. Product leftovers without issues: Windows update-banner still names the
    Herdr `update` action (`platform_unsupported` here); README screenshots may still show old screens.
 
 ## Open
 
-- **#69** — ADW agents can rewrite files the request put out of scope. Parked: no design, needs
-  protected factory files.
+- **#69** — landing in 0.46.3: `quality.out_of_scope` fails the ADW test phase if a path named
+  under `Out of scope:` is in the diff. Hand-edited `quality.py` (protected — not an ADW).
 - No issue: in-app update banner tells you to run the Herdr `update` action, which is
   `platform_unsupported` on Windows.
 - No issue: pull upstream regularly (`git fetch upstream`, merge on a branch as in #35).

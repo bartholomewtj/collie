@@ -48,6 +48,7 @@ from typing import Callable
 
 from .data_types import (EventRecord, QualityCheckResult, QualityCheckSpec, QualityResult,
                          VerifyOutput)
+from .quality_scope import parse_out_of_scope, scope_breaches
 from .utils import now_iso, operator_env
 
 # How much of a failing command's output rides back inside the envelope. Enough
@@ -267,6 +268,86 @@ def _git_cwd(run, *args: str) -> subprocess.CompletedProcess:
     )
 
 
+# ── Out of scope (#69) ────────────────────────────────────────────────────────
+# writes: is path-shaped, so a builder allowed `web/` may rewrite any file under
+# it, including one the request named under "Out of scope:". This check is the
+# other half: named files/dirs in that section vs git's file list. Fail, don't
+# warn — a warning is what #67 already had (the request itself).
+
+
+def _request_text(run) -> str:
+    """The engineer prompt, full text — sessions.request is truncated to 500 chars."""
+    try:
+        rows = run.tracer.conn.execute(
+            "SELECT payload_json FROM events "
+            "WHERE adw_id=? AND type='log' AND name='request' "
+            "ORDER BY rowid",
+            (run.adw_id,),
+        ).fetchall()
+    except Exception:
+        return ""
+    for (payload,) in rows:
+        try:
+            data = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get("input"):
+            return str(data["input"])
+    return ""
+
+
+def _changed_paths(run) -> list[str] | None:
+    diff = _git_cwd(run, "diff", "HEAD", "--name-only")
+    extra = _git_cwd(run, "ls-files", "--others", "--exclude-standard")
+    if diff.returncode != 0:
+        return None
+    paths: list[str] = []
+    for line in (*diff.stdout.splitlines(), *extra.stdout.splitlines()):
+        path = line.strip().replace("\\", "/")
+        if path:
+            paths.append(path)
+    return list(dict.fromkeys(paths))
+
+
+def out_of_scope(run) -> QualityCheckResult:
+    """Fail if a path named under Out of scope: appears in the working-tree diff."""
+    request = _request_text(run)
+    forbidden = parse_out_of_scope(request)
+    if not forbidden:
+        return _logic(
+            run, name="out_of_scope", area="backend", operation="lint",
+            command="out_of_scope", passed=True,
+            stdout="✓ no named out-of-scope paths in the request",
+        )
+    changed = _changed_paths(run)
+    if changed is None:
+        return _logic(
+            run, name="out_of_scope", area="backend", operation="lint",
+            command="out_of_scope", passed=False,
+            stdout="", stderr="git diff HEAD --name-only failed",
+        )
+    hits = scope_breaches(forbidden, changed)
+    if not hits:
+        return _logic(
+            run, name="out_of_scope", area="backend", operation="lint",
+            command="out_of_scope", passed=True,
+            stdout=f"✓ none of {len(forbidden)} out-of-scope path(s) in the diff",
+        )
+    listed = ", ".join(hits[:40])
+    extra_n = len(hits) - 40
+    if extra_n > 0:
+        listed += f" (+{extra_n} more)"
+    stdout = (
+        "✗ files named under Out of scope: appear in the diff (#69).\n"
+        f"  Hits: {listed}\n"
+        "  Revert those files. writes: is path-shaped and cannot express this."
+    )
+    return _logic(
+        run, name="out_of_scope", area="backend", operation="lint",
+        command="out_of_scope", passed=False, stdout=stdout,
+    )
+
+
 # ── Blocks ────────────────────────────────────────────────────────────────────
 # Collie is two codebases in one repo: the Bun bridge (bridge/, scripts/) and the
 # React PWA (web/). Both need their own suite AND their own typecheck, because
@@ -476,6 +557,7 @@ def run_tests(run) -> QualityResult:
     still reaches the builder through `as_envelope` below.
     """
     return _collect(run, [
+        out_of_scope,
         typecheck_bridge,
         typecheck_web,
         test_bridge,
@@ -512,6 +594,7 @@ def run_quality(run) -> QualityResult:
     builder and let the bounded repair loop decide the run's fate.
     """
     return _collect(run, [
+        out_of_scope,
         versions,
         version_bump,
         typecheck_bridge,
