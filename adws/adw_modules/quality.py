@@ -1,4 +1,4 @@
-"""Deterministic lint, typecheck, build, and test blocks.
+"""Deterministic typecheck, test, version, and build blocks.
 
 A known command is not a judgement call. Anything whose invocation you can write
 down belongs here as code — it runs in milliseconds, costs nothing, and returns
@@ -24,12 +24,11 @@ deciding.
 ║       does in their terminal. Never hard-code an absolute path like           ║
 ║       /Users/you/.bun/bin/bun — that bakes your machine into the trace.       ║
 ║                                                                              ║
-║  And one rule about what may go in: a quality block MUST NOT have side        ║
-║  effects on the checkout. `bun run build` is deliberately absent — it         ║
-║  rewrites web/dist, which IS the deployment on a host that serves from this   ║
-║  tree, so a gate that ran it would publish whatever the builder had in the    ║
-║  working tree mid-run. Typecheck already covers what the bundler would        ║
-║  catch.                                                                       ║
+║  There is no lint block: eslint is not a dependency. The harness network-API  ║
+║  fence is a Vitest test (`web/src/lib/harness/fence.test.ts`).                ║
+║                                                                              ║
+║  `build` is in run_quality() only, never the SDLC inner loop. It rewrites     ║
+║  gitignored web/dist. On this checkout the bridge serves that dist live.      ║
 ║                                                                              ║
 ║  This file is REPO-OWNED. A fleet box refresh replaces every other module    ║
 ║  from the skill but keeps your quality.py, so these commands survive.        ║
@@ -38,8 +37,11 @@ deciding.
 
 from __future__ import annotations
 
+import json
+import re
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -53,6 +55,15 @@ from .utils import now_iso, operator_env
 # stack trace can't swamp the next agent's context.
 TAIL_CHARS = 4_000
 
+# Same functional-path set as scripts/git-hooks/pre-commit. A fleet box has no
+# core.hooksPath, so the bump check has to live here or it never runs (#74).
+_FUNCTIONAL_RE = re.compile(
+    r"^(bridge/|web/src/|web/public/|web/vite\.config\.ts|web/index\.html|"
+    r"web/package\.json|scripts/|systemd/|package\.json|herdr-plugin\.toml)"
+)
+_TOML_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"')
+_CHANGELOG_VERSION_RE = re.compile(r"^##\s*\[([0-9][^\]]*)\]")
+
 
 def _check_dir(run, name: str) -> Path:
     seq = run.phases[-1].seq if run.phases else 0
@@ -61,10 +72,50 @@ def _check_dir(run, name: str) -> Path:
     return path
 
 
-def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
+def _finish(run, *, name: str, area: str, operation: str, command: str,
+            returncode: int, stdout: str, stderr: str, duration: float,
+            started_at: str) -> QualityCheckResult:
     phase = run.phases[-1]
-    output_dir = _check_dir(run, spec.name)
-    output_artifact = output_dir / "command.log"
+    output_artifact = _check_dir(run, name) / "command.log"
+    output_artifact.write_text(
+        f"$ {command}\nexit: {returncode}\nduration_seconds: {duration:.3f}\n"
+        f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n"
+    )
+    passed = returncode == 0
+    run.tracer.event(EventRecord(
+        adw_id=run.adw_id,
+        phase_id=phase.phase_id,
+        type="tool_call",
+        name=f"quality:{name}",
+        payload={
+            "area": area,
+            "operation": operation,
+            "command": command,
+            "returncode": returncode,
+            "passed": passed,
+            "output_artifact": str(output_artifact),
+        },
+        started_at=started_at,
+        ended_at=now_iso(),
+    ))
+    run.console.note(
+        f"quality {name}: {'passed' if passed else 'failed'} "
+        f"(exit {returncode}, {duration:.1f}s)"
+    )
+    return QualityCheckResult(
+        name=name,
+        area=area,
+        operation=operation,
+        command=command,
+        returncode=returncode,
+        passed=passed,
+        duration_seconds=duration,
+        output_artifact=str(output_artifact),
+        output_tail=(stdout + stderr)[-TAIL_CHARS:],
+    )
+
+
+def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
     command = shlex.join(spec.argv)
     env = operator_env()             # the engineer's own shell environment
 
@@ -95,42 +146,124 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
         returncode = 127
         stderr = str(error)
 
-    duration = time.monotonic() - clock
-    output_artifact.write_text(
-        f"$ {command}\nexit: {returncode}\nduration_seconds: {duration:.3f}\n"
-        f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n"
-    )
-    passed = returncode == 0
-    run.tracer.event(EventRecord(
-        adw_id=run.adw_id,
-        phase_id=phase.phase_id,
-        type="tool_call",
-        name=f"quality:{spec.name}",
-        payload={
-            "area": spec.area,
-            "operation": spec.operation,
-            "command": command,
-            "returncode": returncode,
-            "passed": passed,
-            "output_artifact": str(output_artifact),
-        },
-        started_at=started_at,
-        ended_at=now_iso(),
-    ))
-    run.console.note(
-        f"quality {spec.name}: {'passed' if passed else 'failed'} "
-        f"(exit {returncode}, {duration:.1f}s)"
-    )
-    return QualityCheckResult(
+    return _finish(
+        run,
         name=spec.name,
         area=spec.area,
         operation=spec.operation,
         command=command,
         returncode=returncode,
-        passed=passed,
-        duration_seconds=duration,
-        output_artifact=str(output_artifact),
-        output_tail=(stdout + stderr)[-TAIL_CHARS:],
+        stdout=stdout,
+        stderr=stderr,
+        duration=time.monotonic() - clock,
+        started_at=started_at,
+    )
+
+
+def _logic(run, *, name: str, area: str, operation: str, command: str,
+           passed: bool, stdout: str, stderr: str = "") -> QualityCheckResult:
+    """A check that is Python, not a subprocess — still a traced quality result."""
+    run.console.note(f"quality {name}: {command}")
+    started_at = now_iso()
+    return _finish(
+        run,
+        name=name,
+        area=area,
+        operation=operation,
+        command=command,
+        returncode=0 if passed else 1,
+        stdout=stdout,
+        stderr=stderr,
+        duration=0.0,
+        started_at=started_at,
+    )
+
+
+def _collect(run, blocks: list[Callable]) -> QualityResult:
+    checks = list(_ensure_installs(run))
+    checks.extend(block(run) for block in blocks)
+    failures = [
+        f"{check.name}: `{check.command}` exited {check.returncode}\n{check.output_tail}".rstrip()
+        for check in checks if not check.passed
+    ]
+    return QualityResult(
+        passed=not failures,
+        checks=checks,
+        failures=failures,
+        artifacts=[check.output_artifact for check in checks],
+    )
+
+
+def _ensure_installs(run) -> list[QualityCheckResult]:
+    """Fleet boxes get a git bundle, not node_modules. Host checkouts already have them."""
+    checks: list[QualityCheckResult] = []
+    root = Path(run.repo_root)
+    if not (root / "node_modules").exists():
+        checks.append(_run(QualityCheckSpec(
+            name="install_bridge",
+            area="backend",
+            operation="build",
+            argv=["bun", "install", "--frozen-lockfile"],
+            timeout_seconds=300,
+        ), run))
+    if not (root / "web" / "node_modules").exists():
+        checks.append(_run(QualityCheckSpec(
+            name="install_web",
+            area="frontend",
+            operation="build",
+            argv=["bun", "install", "--frozen-lockfile", "--cwd", "web"],
+            timeout_seconds=300,
+        ), run))
+    return checks
+
+
+def _toml_version(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = _TOML_VERSION_RE.match(line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _json_version(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8")).get("version")
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _changelog_version(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = _CHANGELOG_VERSION_RE.match(line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _semver_tuple(version: str) -> tuple[int, ...]:
+    core = version.split("-", 1)[0].split("+", 1)[0]
+    parts: list[int] = []
+    for piece in core.split("."):
+        try:
+            parts.append(int(piece))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
+def _git_cwd(run, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=run.repo_root,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -141,30 +274,14 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
 # Everything runs from the repo root, so the web blocks use `bun run --cwd web`
 # (flag AFTER `run`; `bun --cwd web run …` silently lists scripts instead).
 #
-# There is no `lint` block: this repo has no linter configured. There is no
-# `build` block on purpose — see the banner.
-
-def test(run) -> QualityCheckResult:
-    """The bridge + scripts suites. Fast, hermetic, no side effects on the tree.
-
-    Deliberately not the root `bun run test`: that also runs the collie-ctl
-    lifecycle suite, which drives service lifecycle in a sandbox. The pre-push
-    hook owns that one; a quality gate should not be starting and stopping
-    services.
-    """
-    return _run(QualityCheckSpec(
-        name="test",
-        area="backend",
-        operation="build",
-        argv=["bun", "test", "./bridge", "./scripts"],
-        timeout_seconds=600,
-    ), run)
+# QualityOperation has no "test" value (data_types.py is not repo-owned), so
+# test blocks use operation="build" and name= to say what they are.
 
 
-def typecheck(run) -> QualityCheckResult:
+def typecheck_bridge(run) -> QualityCheckResult:
     """Bridge + scripts types (root tsconfig, which has noUncheckedIndexedAccess)."""
     return _run(QualityCheckSpec(
-        name="typecheck",
+        name="typecheck_bridge",
         area="backend",
         operation="typecheck",
         argv=["bun", "run", "typecheck"],
@@ -172,15 +289,181 @@ def typecheck(run) -> QualityCheckResult:
     ), run)
 
 
-def web_test(run) -> QualityCheckResult:
-    """The Vitest suite. Since 0.41.1 web's `test` script typechecks first, so
-    this block covers both the app and service-worker tsconfigs as well."""
+def typecheck_web(run) -> QualityCheckResult:
+    """App + service-worker tsconfigs. Vite does not typecheck."""
     return _run(QualityCheckSpec(
-        name="web_test",
+        name="typecheck_web",
+        area="frontend",
+        operation="typecheck",
+        argv=["bun", "run", "--cwd", "web", "typecheck"],
+        timeout_seconds=300,
+    ), run)
+
+
+def test_bridge(run) -> QualityCheckResult:
+    """Bridge + scripts suites. Fast, hermetic, no side effects on the tree.
+
+    Deliberately not the root `bun run test`: that also runs the collie-ctl
+    lifecycle suite, which on Windows exits 0 as a skip. ctl is its own block.
+    """
+    return _run(QualityCheckSpec(
+        name="test_bridge",
+        area="backend",
+        operation="build",
+        argv=["bun", "test", "./bridge", "./scripts"],
+        timeout_seconds=600,
+    ), run)
+
+
+def test_web(run) -> QualityCheckResult:
+    """Vitest only. Typecheck is the typecheck_web block, so a failure keeps its own tail."""
+    return _run(QualityCheckSpec(
+        name="test_web",
         area="frontend",
         operation="build",
-        argv=["bun", "run", "--cwd", "web", "test"],
+        argv=["bun", "run", "--cwd", "web", "vitest", "run"],
         timeout_seconds=900,
+    ), run)
+
+
+def test_ctl(run) -> QualityCheckResult:
+    """Lifecycle suite for the platform this process is actually on."""
+    if sys.platform == "win32":
+        argv = [
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", "contrib/windows/collie-ctl.test.ps1",
+        ]
+    else:
+        argv = ["bash", "scripts/collie-ctl.test.sh"]
+    return _run(QualityCheckSpec(
+        name="test_ctl",
+        area="backend",
+        operation="build",
+        argv=argv,
+        timeout_seconds=180,
+    ), run)
+
+
+def versions(run) -> QualityCheckResult:
+    """The four version sources must agree. Same invariant as scripts/check-version.sh."""
+    root = Path(run.repo_root)
+    toml_v = _toml_version(root / "herdr-plugin.toml")
+    pkg_v = _json_version(root / "package.json")
+    web_v = _json_version(root / "web" / "package.json")
+    log_v = _changelog_version(root / "CHANGELOG.md")
+    lines = [
+        f"  {'herdr-plugin.toml':<18} {toml_v or '<missing>'}  (canonical)",
+        f"  {'package.json':<18} {pkg_v or '<missing>'}",
+        f"  {'web/package.json':<18} {web_v or '<missing>'}",
+        f"  {'CHANGELOG.md':<18} {log_v or '<missing>'}",
+    ]
+    if not toml_v:
+        stdout = "✗ could not read version from herdr-plugin.toml\n" + "\n".join(lines)
+        return _logic(run, name="versions", area="backend", operation="lint",
+                      command="versions", passed=False, stdout=stdout)
+    if pkg_v != toml_v or web_v != toml_v or log_v != toml_v:
+        stdout = (
+            "✗ version mismatch — all four must equal the canonical "
+            "herdr-plugin.toml version:\n"
+            + "\n".join(lines)
+            + "\n  → bump all three files to the same version and add a matching CHANGELOG entry."
+        )
+        return _logic(run, name="versions", area="backend", operation="lint",
+                      command="versions", passed=False, stdout=stdout)
+    stdout = (
+        f"✓ version {toml_v} consistent across manifest, package.json, "
+        "web/package.json, CHANGELOG"
+    )
+    return _logic(run, name="versions", area="backend", operation="lint",
+                  command="versions", passed=True, stdout=stdout)
+
+
+def version_bump(run) -> QualityCheckResult:
+    """Functional paths changed ⇒ herdr-plugin.toml version must differ from HEAD.
+
+    The pre-commit hook does this, but a sandbox clone has no core.hooksPath
+    (#74 shipped a functional change at a already-pushed tag).
+    """
+    head = _git_cwd(run, "rev-parse", "--verify", "--quiet", "HEAD")
+    if head.returncode != 0:
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=True,
+                      stdout="✓ no HEAD — nothing to compare")
+
+    diff = _git_cwd(run, "diff", "HEAD", "--name-only")
+    extra = _git_cwd(run, "ls-files", "--others", "--exclude-standard")
+    if diff.returncode != 0:
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=False,
+                      stdout="", stderr=diff.stderr.strip() or "git diff HEAD --name-only failed")
+
+    changed = []
+    for line in (*diff.stdout.splitlines(), *extra.stdout.splitlines()):
+        path = line.strip().replace("\\", "/")
+        if path and _FUNCTIONAL_RE.match(path):
+            changed.append(path)
+    # unique, stable order
+    changed = list(dict.fromkeys(changed))
+
+    root = Path(run.repo_root)
+    cur = _toml_version(root / "herdr-plugin.toml")
+    shown = _git_cwd(run, "show", "HEAD:herdr-plugin.toml")
+    prev = None
+    if shown.returncode == 0:
+        for line in shown.stdout.splitlines():
+            match = _TOML_VERSION_RE.match(line)
+            if match:
+                prev = match.group(1)
+                break
+
+    if cur and prev and _semver_tuple(cur) < _semver_tuple(prev):
+        stdout = (
+            f"✗ version went backwards ({prev} → {cur}). "
+            "The new version must be greater than the last."
+        )
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=False, stdout=stdout)
+
+    if not changed:
+        stdout = "✓ no functional paths changed — version bump not required"
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=True, stdout=stdout)
+
+    if not cur:
+        stdout = "✗ could not read version from herdr-plugin.toml"
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=False, stdout=stdout)
+
+    if prev is None or cur != prev:
+        stdout = (
+            f"✓ version {cur} differs from HEAD ({prev or 'none'}) "
+            f"with {len(changed)} functional path(s) changed"
+        )
+        return _logic(run, name="version_bump", area="backend", operation="lint",
+                      command="version_bump", passed=True, stdout=stdout)
+
+    listed = ", ".join(changed[:40])
+    extra_n = len(changed) - 40
+    if extra_n > 0:
+        listed += f" (+{extra_n} more)"
+    stdout = (
+        f"✗ functional code changed but the version is still {cur}.\n"
+        "  Bump version in herdr-plugin.toml, package.json, web/package.json "
+        "and add a CHANGELOG entry.\n"
+        f"  Changed: {listed}"
+    )
+    return _logic(run, name="version_bump", area="backend", operation="lint",
+                  command="version_bump", passed=False, stdout=stdout)
+
+
+def build(run) -> QualityCheckResult:
+    """Typecheck both sides, then Vite. Rewrites gitignored web/dist — live on this host."""
+    return _run(QualityCheckSpec(
+        name="build",
+        area="frontend",
+        operation="build",
+        argv=["bun", "run", "build"],
+        timeout_seconds=300,
     ), run)
 
 
@@ -192,14 +475,12 @@ def run_tests(run) -> QualityResult:
     subprocess already knows; the repair loop is unchanged, because a failure
     still reaches the builder through `as_envelope` below.
     """
-    checks = [test(run), web_test(run)]
-    failures = [
-        f"{check.name}: `{check.command}` exited {check.returncode}\n"
-        f"{check.output_tail}".rstrip()
-        for check in checks if not check.passed
-    ]
-    return QualityResult(passed=not failures, checks=checks, failures=failures,
-                         artifacts=[check.output_artifact for check in checks])
+    return _collect(run, [
+        typecheck_bridge,
+        typecheck_web,
+        test_bridge,
+        test_web,
+    ])
 
 
 def as_envelope(result: QualityResult, what: str) -> VerifyOutput:
@@ -230,22 +511,13 @@ def run_quality(run) -> QualityResult:
     The runner did its job; the CODE is what failed. Hand this result to the
     builder and let the bounded repair loop decide the run's fate.
     """
-    blocks: list[Callable] = [
-        test,
-        typecheck,
-        web_test,
-    ]
-    checks = [block(run) for block in blocks]
-    # A failure is the command, its exit code, and what it actually printed —
-    # everything a builder needs to repair without opening a log or being told
-    # what the error "means" by a parser that guessed.
-    failures = [
-        f"{check.name}: `{check.command}` exited {check.returncode}\n{check.output_tail}".rstrip()
-        for check in checks if not check.passed
-    ]
-    return QualityResult(
-        passed=not failures,
-        checks=checks,
-        failures=failures,
-        artifacts=[check.output_artifact for check in checks],
-    )
+    return _collect(run, [
+        versions,
+        version_bump,
+        typecheck_bridge,
+        typecheck_web,
+        test_bridge,
+        test_web,
+        test_ctl,
+        build,
+    ])
