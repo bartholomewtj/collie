@@ -1,14 +1,32 @@
 # Next session
 
-_Last handoff: 2026-08-20 — main at **0.41.2**, tags `v0.41.1` and `v0.41.2` pushed, no open PRs.
-The bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the Task
-Scheduler job `herdr.collie`. The frontend was rebuilt after the last change; the bridge picked it
-up live (no restart)._
+_Last handoff: 2026-08-20 — main at **0.42.0**, tags `v0.41.1` / `v0.41.2` / `v0.42.0` pushed, no
+open PRs. The bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the
+Task Scheduler job `herdr.collie`, and was restarted after the last change (it touched `bridge/`).
+The frontend was rebuilt too._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
 
 ## Where this stopped
+
+**0.42.0 (PR #73) — the bridge now catches the thing that caused 0.41.1.** Nothing rebuilds
+`web/dist` for you: not `git pull`, not a branch switch, not editing `web/src`. Only `bun run build`
+(or the ctl's `update`, which calls it) does. So a checkout could sit on a correct `main` while the
+phone served a bundle built from something else, with **no error anywhere**, because a stale bundle
+is a perfectly valid one. `bridge/build-freshness.ts` compares the newest source mtime against
+`web/dist/build-info.json` and surfaces the answer three ways: a warning at startup and on every
+flip (`[build] web/dist is OLDER than web/ sources (newest: web/src/…)`), `staleBuild` on
+`/api/config`, and **"server needs `bun run build`"** in the phone's footer next to the app stamp.
+The footer nag is deliberately not a button — the fix is a shell command on the host, so it names
+the command instead of offering a control that can't run it.
+
+It is an **mtime comparison, not a content hash**, which means a branch switch that rewrites
+timestamps without changing content will also ask for a rebuild. That is the intended trade: the
+answer costs seconds, and being wrong the other way cost an hour. Cached 30s (like the SSSF scan),
+skips `node_modules` / `dist` / dot-dirs, never follows symlinks, and answers "not stale" when there
+is nothing to compare — no build at all (the static handler already 503s with a hint) or no readable
+sources (a dist-only deployment).
 
 **0.41.1 (PR #71) — the phone was crashing on every pane, and the source was innocent.** Tapping a
 space or a tab gave "Something went wrong / Cannot read properties of undefined (reading 'length')".
@@ -76,15 +94,10 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
 
 ## Next thing to do
 
-1. **Close the `web/dist` staleness gap.** Nothing warns when the deployed bundle is older than
-   `web/src`, and a hand-run `git pull` doesn't rebuild — only `bun run build` and
-   `collie-ctl.ps1 update` do. That gap is what let a five-minute-old broken build sit deployed for
-   an hour (0.41.1 above). An mtime comparison in the ctl script, or a startup warning in the
-   bridge, would have caught it in seconds. No issue filed yet.
-2. **#70 — reshoot the README screenshots.** `assets/dashboard.png` and `assets/space-detail.png`
+1. **#70 — reshoot the README screenshots.** `assets/dashboard.png` and `assets/space-detail.png`
    both show screens 0.41.0 deleted. One shot of the tree with a blocked space expanded at the top
    covers what the two of them used to split.
-3. **Phone: turn on push** (Settings → Push notifications), then
+2. **Phone: turn on push** (Settings → Push notifications), then
    `bash scripts/collie-ctl.sh push-test`. Then write your real quick replies:
    `cp commands.toml.example "$(herdr plugin config-dir herdr.collie)/commands.toml"`, uncomment the
    `[[quick]]` rows, reload.
@@ -122,7 +135,10 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   `web/dist` from disk, and its build stamp is `web/dist/build-info.json`. When a UI bug won't
   reproduce in the source, check what is actually deployed *before* reading more code:
   `curl -H "Tailscale-User-Login: $COLLIE_TRUSTED_USER" http://127.0.0.1:8787/api/config` — the
-  `build` field names the commit being served. This cost an hour on 2026-08-20.
+  `build` field names the commit being served. This cost an hour on 2026-08-20. Since 0.42.0 the
+  same response carries `staleBuild`, the bridge logs it, and the phone footer says so — but the
+  guard only fires once the bridge has *noticed*, and it caches for 30s, so on a fresh rebuild give
+  it half a minute before trusting a quiet footer.
 - **ADW cost lines read `$0.0000` and are false.** The custom-registered models in
   `~/.pi/agent/models.json` carry `cost: 0`, so only agents on pi's bundled catalog bill correctly.
   Real spend is on openrouter.ai, not in `just runs`.
@@ -137,7 +153,7 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   `SKIP_VERSION_CHECK=1` is the intended escape hatch.
 - **Every release commit gets a `v*` tag pushed with it** (`git tag -a vX.Y.Z <sha> -m "Collie X.Y.Z"
   && git push origin vX.Y.Z`). The update banner and `update` both read tags, so an untagged release
-  is invisible to the phone. `v0.41.0`, `v0.41.1` and `v0.41.2` are pushed.
+  is invisible to the phone. `v0.41.0`, `v0.41.1`, `v0.41.2` and `v0.42.0` are pushed.
 - **SSSF discovery is bounded at three levels below a pane cwd** (`MAX_DOWN`, `bridge/sssf-viz.ts`).
   Nest a repo deeper than that and its traces vanish with no error. Discovery is also async and
   caches for 30s, so give a restarted bridge ~30s before concluding a repo is missing.

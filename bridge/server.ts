@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { extname, join, normalize, relative, sep } from "node:path";
 import type { ActivityLedger } from "./activity.ts";
 import type { AuditLog } from "./audit.ts";
+import { buildFreshness } from "./build-freshness.ts";
 import { isLoopbackBindHost, type Config } from "./config.ts";
 import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
@@ -56,6 +57,8 @@ const PROMPT_BINDING_BLANK_LINE_HEADROOM = 6;
 // The built PWA lives in web/dist (Vite output). If it's missing, the bridge still runs the API
 // — only the static UI 503s with a hint to build.
 const WEB_DIR = join(import.meta.dir, "..", "web", "dist");
+// The parent of WEB_DIR — holds both `src/` and `dist/`, which is what the freshness check compares.
+const WEB_ROOT = join(import.meta.dir, "..", "web");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -383,6 +386,8 @@ export function startServer(opts: {
           push: push.enabled,
           vapidPublicKey: push.publicKey,
           build: await buildId(),
+          // Only when true, so the common (healthy) payload is byte-identical to before.
+          ...((await buildFreshness(WEB_ROOT)).stale ? { staleBuild: true as const } : {}),
           // Omitted entirely when there are none, so an operator who never wrote a commands.toml
           // ships the same payload as before.
           ...(mine.length > 0 ? { operatorCommands: mine } : {}),
@@ -506,6 +511,12 @@ export function startServer(opts: {
     );
   }
   for (const w of startupWarnings(cfg)) console.warn(w);
+  // Says so once at boot if the bundle on disk predates its sources — the "my change didn't take"
+  // trap for the frontend, where nothing else errors because a stale bundle is still a valid one.
+  // Not awaited — startServer is sync by design (its callers use the returned server directly), and
+  // a directory walk must never sit between binding the port and returning. The line lands a few ms
+  // into the startup block instead of at the end of it.
+  void buildFreshness(WEB_ROOT).catch(() => {});
 
   return server;
 }

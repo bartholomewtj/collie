@@ -651,7 +651,8 @@ Symptoms below, in order — search the page for yours. **`Os { NotFound }` from
 **`update` says "not currently on a branch"** · **`tailscale serve failed`** · **isn't answering
 (service won't start)** · **phone can't open the URL** · **page loads but stays empty (blank page,
 403)** · **a password prompt won't take your reply** · **no push notifications** · **gone after a
-reboot** · **`herdr plugin list` shows the old version** · **stale UI after a rebuild**.
+reboot** · **`herdr plugin list` shows the old version** · **stale UI after a rebuild** ·
+**footer says the server needs a rebuild**.
 
 **`herdr plugin …` fails with `Error: Os { code: 2, kind: NotFound, message: "No such file or
 directory" }`** (plugin install fails, action invoke fails)**.** This is *not* a Collie problem — it
@@ -750,6 +751,23 @@ running; the bridge reports what it serves via the `X-Collie-Build` header and `
 mismatch, the footer offers **"new build — tap to update."** Otherwise reopen the PWA a couple times
 (the SW auto-updates) or clear that origin's site data. Best practice: **pick one HTTPS origin and
 stick to it.** (Over plain HTTP the SW can't register — always fresh, but no PWA features.)
+
+**Footer says "server needs `bun run build`".** Different problem from the one above, and it is
+the host's, not the phone's: the bridge has noticed that its own `web/dist` is **older than the
+sources it was built from**, so the UI being served is not the checkout you are looking at. Nothing
+rebuilds `web/dist` for you — not `git pull`, not a branch switch, not editing `web/src` — so a
+correct checkout can serve a bundle built from something else entirely, with no error anywhere,
+because a stale bundle is still a valid one. Fix it on the host:
+
+```bash
+cd <your collie checkout> && bun run build   # live, no restart
+```
+
+The bridge logs the same thing at startup and whenever it flips
+(`[build] web/dist is OLDER than web/ sources (newest: web/src/…)`), and reports it as
+`staleBuild` on `/api/config`. It is an mtime comparison, not a content hash, so a branch switch
+that rewrites timestamps without changing content will also ask for a rebuild — that costs seconds,
+and being wrong the other way once cost an hour of debugging a frontend that was correct in git.
 
 ## Architecture
 

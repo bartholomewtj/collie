@@ -334,6 +334,12 @@ export interface BridgeConfig {
   vapidPublicKey: string;
   /** Build id of the bundle the bridge is currently serving (for stale-cache detection). */
   build?: string;
+  /**
+   * True when `web/dist` is OLDER than the sources it was built from — the bridge is serving a
+   * bundle that is not this checkout, and someone needs to run `bun run build`. Omitted (not
+   * `false`) when the build is current, so a healthy payload is unchanged.
+   */
+  staleBuild?: boolean;
   /** The operator's own palette rows. Absent when there is no `commands.toml`. */
   operatorCommands?: OperatorCommand[];
   /** The operator's own Quick-dock rows. Absent when `commands.toml` declares none. */

@@ -91,7 +91,12 @@ the unit name; the Herdr action runs from anywhere.
   other way to refresh ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md)).
 - **Frontend changes** (`web/`): rebuild with `bun run build` (root) or `cd web && bun run build`.
   The bridge serves `web/dist` **from disk at request time**, so on the deployment host
-  a rebuild is **immediately live — no restart**.
+  a rebuild is **immediately live — no restart**. The corollary is the trap: **nothing rebuilds it
+  for you**, so a correct checkout can serve a bundle built from something else and nothing errors.
+  Since 0.42.0 the bridge checks for this itself (`bridge/build-freshness.ts`) — it warns at startup
+  and on every flip, reports `staleBuild` on `/api/config`, and the phone's footer says
+  "server needs `bun run build`". When a UI bug won't reproduce in the source, read the deployed
+  build id off `/api/config` before reading any more code.
 - **Backend changes** (`bridge/*.ts`): Bun does **not** hot-reload the service — you must
   `systemctl --user restart collie`. Forgetting this is the #1 "my change didn't take" trap.
 - `bun run build` (root) and `collie-ctl.sh build` **typecheck both sides first** (root tsc + web
