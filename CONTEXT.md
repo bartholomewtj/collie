@@ -5,7 +5,7 @@
 > not restated here. **Why-not** decisions live in [`.adr/`](./.adr/README.md).
 > Form: ICM System Map (Van Clief & McDermott, [arXiv:2603.16021](https://arxiv.org/abs/2603.16021)).
 >
-> **This checkout runs on Windows** (`C:\ClaudeOS\Projects\collie`, fork of `AltanS/collie`, remote
+> **This checkout runs on Windows** (`C:\ClaudeOS\Projects\tools\collie`, fork of `AltanS/collie`, remote
 > `bartholomewtj/collie`). Upstream and the docs assume Linux + systemd; on this box the bridge is
 > started/stopped by `contrib/windows/collie-ctl.ps1` (Task Scheduler job is `wscript.exe` +
 > `exec-bridge.vbs`, no console window) and the Herdr `update`/`restart` plugin actions

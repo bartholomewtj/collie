@@ -265,7 +265,7 @@ Keep the doc edits to a few lines each — plain language, no restating the thre
 
 ## Verify
 
-Run from the repo root (`C:\claudeOS\Projects\collie`), judge each by **exit status**:
+Run from the repo root (`C:\claudeOS\Projects\tools\collie`), judge each by **exit status**:
 
 ```bash
 bun test ./bridge/server.test.ts     # must be green — this is the file you touched

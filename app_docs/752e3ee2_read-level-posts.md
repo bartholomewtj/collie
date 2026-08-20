@@ -6,7 +6,7 @@ Promoted bridge-wide notification endpoints (`POST /api/notifications/snooze`, `
 
 ## Context & Motivation
 
-Under `COLLIE_DEVICE_HEADER`, unallowlisted devices or callers without the device header operate in a read-only role intended to bound damage. However, notification preferences and snooze are bridge-wide state ([ADR 0003](file:///C:/claudeOS/Projects/collie/.adr/0003-one-shared-seen.md)):
+Under `COLLIE_DEVICE_HEADER`, unallowlisted devices or callers without the device header operate in a read-only role intended to bound damage. However, notification preferences and snooze are bridge-wide state ([ADR 0003](file:///C:/claudeOS/Projects/tools/collie/.adr/0003-one-shared-seen.md)):
 - A read-only client or same-host local user could mute all push notifications across all devices (e.g. `snoozedUntil: 9e15`) or turn off all alert types (`{blocked: false, done: false, updates: false}`), suppressing "agent is waiting" notifications for the operator.
 - Push subscription (`POST /api/subscribe`) constitutes a standing grant to receive operator alerts.
 - State-changing `POST` routes at read level bypassed the `checkAccess` `Origin` requirement because the check previously only evaluated `level === "write"`.

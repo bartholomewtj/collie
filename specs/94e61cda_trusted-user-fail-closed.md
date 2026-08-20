@@ -282,7 +282,7 @@ gate has no effect under skipServe, which stays true.
 
 ## Verify
 
-Run from the repo root (`C:\claudeOS\Projects\collie`). **Judge every command by its exit status**,
+Run from the repo root (`C:\claudeOS\Projects\tools\collie`). **Judge every command by its exit status**,
 not by scanning output for the word "error".
 
 ```bash
