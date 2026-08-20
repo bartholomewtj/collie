@@ -23,6 +23,16 @@ for f in "${files[@]}"; do
   dir="$(dirname "$f")"
   # 1) markdown links
   # 2) backticked repo paths — only prefixes we know are directories, so prose like `foo.ts` alone is ignored
+  #
+  # The `while` runs in a pipeline subshell and so cannot set `fail` directly; capture what it emits
+  # and test that instead. It used to end `done | grep -q fail && fail=1`, which was silently
+  # decorative (#66): `grep -q` exits on its FIRST match and closes the pipe, the still-writing
+  # producer takes SIGPIPE, and `pipefail` then reports the whole pipeline as failed — so `fail=1`
+  # never ran, the script fell through to its own ✓, and exited 0 after printing the failures. It
+  # only misbehaved once there was enough output to keep the producer alive past grep's exit, so a
+  # doc with one dead link failed correctly and a real one with several passed. Nothing here may
+  # pipe into a short-circuiting reader again.
+  hits="$(
   {
     grep -oE '\]\(([^)#[:space:]]+)' "$f" | sed 's/^](//' | grep -vE '^(https?:|mailto:|file:)' || true
     grep -oE '`(bridge|web/src|web/public|scripts|contrib|systemd|adws|specs|requests|app_docs|\.adr|\.github)/[^` ]*`' "$f" | tr -d '`' || true
@@ -41,7 +51,9 @@ for f in "${files[@]}"; do
     if compgen -G "${target}*" >/dev/null 2>&1; then continue; fi
     echo "✗ $f → $p (not found)" >&2
     echo fail
-  done | grep -q fail && fail=1
+  done
+  )"
+  if [ -n "$hits" ]; then fail=1; fi
 done
 
 if [ "$fail" -ne 0 ]; then

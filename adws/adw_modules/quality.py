@@ -6,28 +6,33 @@ the same answer every time. Agents are for the parts that need reading and
 deciding.
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  REPLACE THE PLACEHOLDER COMMANDS BELOW.                                     ║
+║  COLLIE'S BLOCKS ARE WIRED. Keep them that way.                              ║
 ║                                                                              ║
-║  Every block ships as an `echo` that exits 0 and announces it is fake. They   ║
-║  are placeholders on purpose: a stamped repo has no way to guess your test    ║
-║  runner, and a wrong-but-plausible command that silently passes is worse      ║
-║  than one that says so out loud.                                             ║
+║  This file ships from the skill with every block as an `echo` that exits 0    ║
+║  and announces it is fake, so a stamped repo can't mistake an unconfigured    ║
+║  gate for a passing one. Nobody replaced them here, and for every run up to   ║
+║  2026-08-20 the quality phase printed "Placeholder quality check for test",   ║
+║  exited 0 in 0.0s, and the chain committed on that (#60). One of those runs   ║
+║  shipped a pane screen that crashed on open. The blocks below are now the     ║
+║  real commands. If you ever see `Placeholder` in a trace again, this file     ║
+║  was reverted — that is the bug, not the run.                                 ║
 ║                                                                              ║
-║  For each block you want: swap `_placeholder(...)` for the real argv, e.g.    ║
-║      argv=["bun", "test", "apps/web/server.test.ts"]                         ║
-║      argv=["uv", "run", "pytest", "-q"]                                      ║
-║      argv=["npm", "run", "lint"]                                             ║
-║  Delete the blocks you don't need, and drop them from run_quality()'s list.   ║
-║                                                                              ║
-║  Two rules when you write the real command:                                  ║
+║  Two rules when you change a command:                                        ║
 ║    1. argv LIST, never a shell string — no quoting bugs, no shell injection.  ║
 ║    2. Call binaries by BARE NAME. These blocks inherit the operator's         ║
-║       environment (see utils.operator_env), so `bun`, `uv`, `pytest` resolve  ║
-║       exactly as they do in their terminal. Never hard-code an absolute path  ║
-║       like /Users/you/.bun/bin/bun — that bakes your machine into the trace.  ║
+║       environment (see utils.operator_env), so `bun` resolves exactly as it   ║
+║       does in their terminal. Never hard-code an absolute path like           ║
+║       /Users/you/.bun/bin/bun — that bakes your machine into the trace.       ║
+║                                                                              ║
+║  And one rule about what may go in: a quality block MUST NOT have side        ║
+║  effects on the checkout. `bun run build` is deliberately absent — it         ║
+║  rewrites web/dist, which IS the deployment on a host that serves from this   ║
+║  tree, so a gate that ran it would publish whatever the builder had in the    ║
+║  working tree mid-run. Typecheck already covers what the bundler would        ║
+║  catch.                                                                       ║
 ║                                                                              ║
 ║  This file is REPO-OWNED. A fleet box refresh replaces every other module    ║
-║  from the skill but keeps your quality.py, so your commands survive.         ║
+║  from the skill but keeps your quality.py, so these commands survive.        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -35,7 +40,6 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -48,20 +52,6 @@ from .utils import now_iso, operator_env
 # for a builder to act on without opening the artifact; bounded so a runaway
 # stack trace can't swamp the next agent's context.
 TAIL_CHARS = 4_000
-
-
-def _placeholder(name: str) -> list[str]:
-    """A command guaranteed to exist: the interpreter already running this ADW.
-
-    Bare `python` is not on PATH inside a container -- the placeholder exited
-    127 there and a box run reported a failing suite for a check that was never
-    configured (issue #16). sys.executable is whatever is running this file, so
-    it resolves in a box, on Windows, and under uv alike. It prints an absolute
-    path into the log, which is fine for a placeholder that exists to be
-    replaced -- your real command still goes in as a bare name (see the banner).
-    """
-    return [sys.executable or "python3", "-c",
-            f"print('Placeholder quality check for {name}')"]
 
 
 def _check_dir(run, name: str) -> Path:
@@ -145,44 +135,52 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
 
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
-# Replace every argv below. See the banner at the top of this file.
+# Collie is two codebases in one repo: the Bun bridge (bridge/, scripts/) and the
+# React PWA (web/). Both need their own suite AND their own typecheck, because
+# Vite strips types without checking them — a type error builds clean and ships.
+# Everything runs from the repo root, so the web blocks use `bun run --cwd web`
+# (flag AFTER `run`; `bun --cwd web run …` silently lists scripts instead).
+#
+# There is no `lint` block: this repo has no linter configured. There is no
+# `build` block on purpose — see the banner.
 
 def test(run) -> QualityCheckResult:
-    """Run the project's test suite. The highest-value block to wire up first."""
+    """The bridge + scripts suites. Fast, hermetic, no side effects on the tree.
+
+    Deliberately not the root `bun run test`: that also runs the collie-ctl
+    lifecycle suite, which drives service lifecycle in a sandbox. The pre-push
+    hook owns that one; a quality gate should not be starting and stopping
+    services.
+    """
     return _run(QualityCheckSpec(
         name="test",
         area="backend",
         operation="build",
-        argv=_placeholder("test"),        # e.g. ["bun", "test"] or ["uv", "run", "pytest", "-q"]
+        argv=["bun", "test", "./bridge", "./scripts"],
         timeout_seconds=600,
     ), run)
 
 
-def lint(run) -> QualityCheckResult:
-    return _run(QualityCheckSpec(
-        name="lint",
-        area="backend",
-        operation="lint",
-        argv=_placeholder("lint"),        # e.g. ["bun", "x", "oxlint@1.36.0", "src"]
-    ), run)
-
-
 def typecheck(run) -> QualityCheckResult:
+    """Bridge + scripts types (root tsconfig, which has noUncheckedIndexedAccess)."""
     return _run(QualityCheckSpec(
         name="typecheck",
         area="backend",
         operation="typecheck",
-        argv=_placeholder("typecheck"),   # e.g. ["bun", "x", "tsc", "--noEmit"]
+        argv=["bun", "run", "typecheck"],
+        timeout_seconds=300,
     ), run)
 
 
-def build(run) -> QualityCheckResult:
-    output_dir = _check_dir(run, "build") / "bundle"
+def web_test(run) -> QualityCheckResult:
+    """The Vitest suite. Since 0.41.1 web's `test` script typechecks first, so
+    this block covers both the app and service-worker tsconfigs as well."""
     return _run(QualityCheckSpec(
-        name="build",
-        area="backend",
+        name="web_test",
+        area="frontend",
         operation="build",
-        argv=_placeholder("build"),       # e.g. ["bun", "build", "src/index.ts", "--outdir", str(output_dir)]
+        argv=["bun", "run", "--cwd", "web", "test"],
+        timeout_seconds=900,
     ), run)
 
 
@@ -194,12 +192,14 @@ def run_tests(run) -> QualityResult:
     subprocess already knows; the repair loop is unchanged, because a failure
     still reaches the builder through `as_envelope` below.
     """
-    check = test(run)
-    failures = ([] if check.passed else
-                [f"{check.name}: `{check.command}` exited {check.returncode}\n"
-                 f"{check.output_tail}".rstrip()])
-    return QualityResult(passed=check.passed, checks=[check], failures=failures,
-                         artifacts=[check.output_artifact])
+    checks = [test(run), web_test(run)]
+    failures = [
+        f"{check.name}: `{check.command}` exited {check.returncode}\n"
+        f"{check.output_tail}".rstrip()
+        for check in checks if not check.passed
+    ]
+    return QualityResult(passed=not failures, checks=checks, failures=failures,
+                         artifacts=[check.output_artifact for check in checks])
 
 
 def as_envelope(result: QualityResult, what: str) -> VerifyOutput:
@@ -232,9 +232,8 @@ def run_quality(run) -> QualityResult:
     """
     blocks: list[Callable] = [
         test,
-        lint,
         typecheck,
-        build,
+        web_test,
     ]
     checks = [block(run) for block in blocks]
     # A failure is the command, its exit code, and what it actually printed —
