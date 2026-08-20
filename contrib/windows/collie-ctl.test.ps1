@@ -35,6 +35,15 @@ COLLIE_HOST="127.0.0.1"
   Assert-Equal ((Get-SelfProcessIds) -contains [int]$PID) $true "self ids include the current process"
   Assert-Equal ((Get-SelfProcessIds) -contains [uint32]$PID) $true "self ids match UInt32 process ids from Win32_Process"
 
+  $envAcl = (& icacls.exe $script:EnvFile | Out-String)
+  Assert-Equal ($envAcl -match '\(I\)') $false ".env ACL inheritance stripped"
+  Assert-Equal ([regex]::IsMatch($envAcl, [regex]::Escape("$env:USERNAME:(F)"), 'IgnoreCase')) $true ".env current user FullControl"
+
+  Protect-CollieSecret $script:ConfigDir
+  $dirAcl = (& icacls.exe $script:ConfigDir | Out-String)
+  Assert-Equal ($dirAcl -match '\(I\)') $false "config dir ACL inheritance stripped"
+  Assert-Equal ([regex]::IsMatch($dirAcl, [regex]::Escape("$env:USERNAME:(F)"), 'IgnoreCase')) $true "config dir current user FullControl"
+
   $originalPluginRoot = $script:PluginRoot
   $script:PluginRoot = Join-Path $temp "launcher plugin & space"
   $launcherScripts = New-Item -ItemType Directory -Path (Join-Path $script:PluginRoot "contrib\windows") -Force
