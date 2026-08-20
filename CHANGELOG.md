@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.41.0] - 2026-08-20
+
+### Fixed
+- A repo nested one folder deeper than `<pane cwd>/<group>/<repo>` is discoverable again. The SSSF traces scan looks down a bounded number of levels from each pane's cwd, and that bound was 2 — so moving a checkout into a `tools/` subfolder (`~/work/projects/tools/repo`, three levels down) silently stopped it being found: no error, no empty state, the lanes mark just never appeared and every ADW run in it was invisible. `MAX_DOWN` is now 3. The cost stays bounded by what already bounded it: `MAX_DIRENTS` caps fan-out per directory, `SKIP_DIRS` and the dot-dir rule prune the expensive subtrees, symlinks and junctions are never entered, and results cache for 30s.
+
 ## [0.40.9] - 2026-08-20
 
 ### Fixed
