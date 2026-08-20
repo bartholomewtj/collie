@@ -16,12 +16,14 @@
 // in harness/claude; which agents get them is decided by the adapter registry (harness/registry).
 //
 // Invariant (relied on by find-in-output): joining every RAW block's line text with "\n" reproduces
-// the visible mirror text character-for-character. Find operates on global character offsets over
-// that string; a prompt-select block is rendered as buttons, so its text is NOT part of that space
-// (find covers the raw mirror only).
+// the visible mirror text character-for-character. The presentation pass (`presentBlocks`) strips
+// trailing padded spaces from raw blocks and renders them; find's haystack and link offsets are
+// built from those same presented lines, so find coordinate space stays character-coherent with
+// what is drawn. `splitLines` preserves the byte-exact stream for the reply guard, statusline
+// extractors, and dialog grammars.
 
 import type { AnsiSegment } from "./ansi";
-import { PURE_HORIZONTAL_RULE_GLYPH_CLASS } from "./rule-glyphs";
+import { BOX_ENCLOSURE_GLYPH_CLASS, PURE_HORIZONTAL_RULE_GLYPH_CLASS } from "./rule-glyphs";
 import type { PromptModel } from "./harness/prompt-model";
 import type { WizardModel } from "./harness/wizard-model";
 import type { PreviewSelectModel } from "./harness/preview-model";
@@ -48,7 +50,10 @@ export type { MenuModel, MenuAction, MenuNav, MenuLeftRight } from "./harness/me
 /** One visual line: the styled segments that make it up, with the line-terminating "\n" removed. */
 export interface StyledLine {
   segments: AnsiSegment[];
-  /** Keep this known terminal-width border on one visual row when the mirror wraps. */
+  /**
+   * Keep this line on one visual row when the mirror wraps: long horizontal rules, rounded box
+   * borders, enclosed table/box rows, or full-width highlight rows.
+   */
   noWrap?: true;
 }
 
@@ -169,39 +174,148 @@ export function splitLines(segments: AnsiSegment[]): StyledLine[] {
   return lines;
 }
 
-// A terminal-width horizontal border is visually useless when browser wrapping turns it into several rows.
-// This deliberately accepts only one repeated horizontal rule glyph (apart from terminal padding): labels,
-// mixed rows, square table edges, prose, and ASCII rules keep the mirror's ordinary wrapping.
+function styledLine(segments: AnsiSegment[]): StyledLine {
+  return { segments };
+}
+
+// -------------------------------------------------------------------------------------------------
+// Presentation pass: noWrap classification and trailing-padding stripping.
 //
-// Twenty stands on two facts of its own, and deliberately cites no other threshold. (1) Nothing in prose,
-// markdown or code runs to twenty IDENTICAL rule glyphs, so the classifier cannot fire on real content.
-// (2) Below roughly twenty columns a row already fits the narrowest mirror without wrapping, so clipping
-// it would buy nothing — the only rows worth clipping are the ones wide enough to wrap.
-//
-// An earlier revision derived this number from the Claude grammar's own 20-glyph box-border run. That run
-// no longer exists: it was a hidden assumption that the pane is at least twenty columns wide, which is
-// exactly what stalled the reply guard on a 19-column pane (issue #76), and markers.ts replaced it with a
-// display-cell floor. Do not re-couple the two. They classify borders for different consumers with
-// opposite failure costs — a false positive there types Enter into the wrong screen, a false positive here
-// crops a short rule — so they share the glyph alphabet in rule-glyphs.ts and nothing else.
-//
-// Rounded `╭─╮` / `╰─╯` box borders are the same wrap problem with corners: Grok (and omp) draw the
-// composer that way at the full pane width (~200 columns). Wrap-on turns one of those rows into a
-// wall of `─` on a phone. Square `┌─┐` table edges stay unclipped — they are mixed TUI chrome, not
-// a single rule, and clipping one would crop a table. The rounded pair is required to have the same
-// 20-glyph `─` run, so a short `╭─╮` in prose still wraps.
+// This pass runs between `buildBlocks` and the renderer (ansi-output.tsx). `splitLines` stays byte-
+// exact so safety-critical consumers (reply guard, statusline extractors, dialog grammars) see exact
+// pane bytes. `presentLine` / `presentLines` / `presentBlocks` classify rows that should stay on one
+// visual row when the mirror wraps, and strip trailing padded spaces (≥ 2 spaces) so full-width
+// coloured lines do not wrap into extra coloured rows.
+
 const MIN_NO_WRAP_BORDER_LENGTH = 20;
+const MIN_TRAILING_PAD = 2;
+
 const PURE_HORIZONTAL_BORDER = new RegExp(
   `^([${PURE_HORIZONTAL_RULE_GLYPH_CLASS}])\\1{${MIN_NO_WRAP_BORDER_LENGTH - 1},}$`,
 );
 const ROUNDED_BOX_BORDER = new RegExp(
   `^[╭╰]─{${MIN_NO_WRAP_BORDER_LENGTH},}[\\s\\S]*[╮╯]$`,
 );
+const BOX_ENCLOSURE_START_END = new RegExp(
+  `^[${BOX_ENCLOSURE_GLYPH_CLASS}][\\s\\S]*[${BOX_ENCLOSURE_GLYPH_CLASS}]$`,
+  "u",
+);
 
-function styledLine(segments: AnsiSegment[]): StyledLine {
-  const text = segments.map((segment) => segment.text).join("").trim();
-  const clip = PURE_HORIZONTAL_BORDER.test(text) || ROUNDED_BOX_BORDER.test(text);
-  return clip ? { segments, noWrap: true } : { segments };
+function isFullWidthHighlight(line: StyledLine, text: string): boolean {
+  if (isBlank(text)) return false;
+  const trailingCount = text.length - text.trimEnd().length;
+  if (trailingCount < MIN_TRAILING_PAD) return false;
+
+  const firstNonSpaceIdx = line.segments.findIndex((s) => /\S/.test(s.text));
+  if (firstNonSpaceIdx === -1) return false;
+
+  for (let i = firstNonSpaceIdx; i < line.segments.length; i++) {
+    const seg = line.segments[i]!;
+    if (seg.bg === undefined && seg.style?.backgroundColor === undefined) return false;
+  }
+  return true;
+}
+
+function stripTrailingSpaces(segments: AnsiSegment[], count: number): AnsiSegment[] {
+  let toRemove = count;
+  const result: AnsiSegment[] = [];
+
+  let lastKeptIndex = -1;
+  let trimmedLastSeg: AnsiSegment | null = null;
+
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i]!;
+    if (toRemove === 0) {
+      if (lastKeptIndex === -1) lastKeptIndex = i;
+      continue;
+    }
+    if (seg.text.length <= toRemove) {
+      toRemove -= seg.text.length;
+    } else {
+      const newText = seg.text.slice(0, seg.text.length - toRemove);
+      trimmedLastSeg = { ...seg, text: newText };
+      lastKeptIndex = i - 1;
+      toRemove = 0;
+    }
+  }
+
+  for (let i = 0; i <= lastKeptIndex; i++) {
+    result.push(segments[i]!);
+  }
+  if (trimmedLastSeg) {
+    result.push(trimmedLastSeg);
+  }
+  return result;
+}
+
+/**
+ * Classify a line's `noWrap` wrap policy and strip trailing padded spaces.
+ * Operates purely on presentation: classifies on the original text before stripping.
+ */
+export function presentLine(line: StyledLine): StyledLine {
+  if (line.segments.length === 0) return line;
+
+  const text = lineText(line);
+  const trimmed = text.trim();
+
+  const shouldNoWrap =
+    PURE_HORIZONTAL_BORDER.test(trimmed) ||
+    ROUNDED_BOX_BORDER.test(trimmed) ||
+    (trimmed.length >= MIN_NO_WRAP_BORDER_LENGTH && BOX_ENCLOSURE_START_END.test(trimmed)) ||
+    isFullWidthHighlight(line, text);
+
+  let newSegments = line.segments;
+  if (isBlank(text)) {
+    newSegments = [];
+  } else {
+    const trailing = text.length - text.trimEnd().length;
+    if (trailing >= MIN_TRAILING_PAD) {
+      newSegments = stripTrailingSpaces(line.segments, trailing);
+    }
+  }
+
+  const segmentsChanged = newSegments !== line.segments;
+  const noWrapVal = shouldNoWrap ? true : undefined;
+  const noWrapChanged = line.noWrap !== noWrapVal;
+
+  if (!segmentsChanged && !noWrapChanged) return line;
+
+  return shouldNoWrap
+    ? { segments: newSegments, noWrap: true }
+    : { segments: newSegments };
+}
+
+/**
+ * Present a list of StyledLines. Preserves array and line object references when unchanged.
+ */
+export function presentLines(lines: StyledLine[]): StyledLine[] {
+  let changed = false;
+  const out = lines.map((l) => {
+    const pl = presentLine(l);
+    if (pl !== l) changed = true;
+    return pl;
+  });
+  return changed ? out : lines;
+}
+
+/**
+ * Present semantic blocks for rendering: presents lines in raw and menu blocks, leaving
+ * interactive dialog blocks untouched.
+ */
+export function presentBlocks(blocks: Block[]): Block[] {
+  let changed = false;
+  const out = blocks.map((b) => {
+    if (b.kind === "raw" || b.kind === "menu") {
+      const pl = presentLines(b.lines);
+      if (pl !== b.lines) {
+        changed = true;
+        return { ...b, lines: pl } as Block;
+      }
+      return b;
+    }
+    return b;
+  });
+  return changed ? out : blocks;
 }
 
 // The two generic StyledLine probes. They live HERE, in the core AST module that imports nothing
