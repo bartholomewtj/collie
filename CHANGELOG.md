@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.48.0] - 2026-08-21
+
+### Added
+- Pane stacks the journal conversation above the live TUI again, so sending a message does not hide the session; the live tail always stays (no seam, no collapsed tail). Header History is unchanged.
+
 ## [0.47.0] - 2026-08-21
 
 ### Changed
