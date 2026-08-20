@@ -298,3 +298,13 @@ describe("parseAnsi — segment shape carries pre-computed style and muted flag"
     expect(parseAnsi("hello world")[0]!.muted).toBe(false);
   });
 });
+
+describe("parseAnsi — non-string input", () => {
+  // Regression guard for the 0.40.8 pane crash: routes/detail.tsx stopped passing AgentChat its
+  // required `text` prop, `undefined` reached `input.length`, and every pane opened onto the error
+  // boundary. Typecheck is the real gate (#68); this keeps the failure mode an empty mirror.
+  it("returns no segments instead of throwing", () => {
+    expect(parseAnsi(undefined as unknown as string)).toEqual([]);
+    expect(parseAnsi(null as unknown as string)).toEqual([]);
+  });
+});

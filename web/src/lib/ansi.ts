@@ -148,6 +148,14 @@ function buildStyle(state: State, fg: string | undefined, bg: string | undefined
  * common semicolon forms.
  */
 export function parseAnsi(input: string): AnsiSegment[] {
+  // Defensive, despite the type: five call sites feed this the pane mirror, and in 0.40.8 a
+  // rewritten routes/detail.tsx stopped passing AgentChat its REQUIRED `text` prop. Vite strips
+  // types without checking them, so the broken bundle built and shipped, and `input.length` below
+  // threw "Cannot read properties of undefined (reading 'length')" — a full-screen error boundary
+  // the moment you opened any pane. A missing mirror should read as an empty one, not take the app
+  // down. The real gate is `bun run typecheck`, now folded into `bun run test` (#68); this is the
+  // seatbelt for the next time something slips past it.
+  if (typeof input !== "string") return [];
   const segs: AnsiSegment[] = [];
   const state: State = {};
   let buf = "";

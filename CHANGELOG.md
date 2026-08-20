@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.41.1] - 2026-08-20
+
+### Fixed
+- `parseAnsi` returns no segments for a non-string input instead of throwing. It is typed to take a string, but in 0.40.8 a rewritten `routes/detail.tsx` stopped passing `AgentChat` its required `text` prop; Vite strips types without checking them, so that bundle built clean and shipped, and `input.length` threw *"Cannot read properties of undefined (reading 'length')"* the moment any pane opened — which in the new tree is what tapping a single-tab space or a single-pane tab does. A missing mirror now reads as an empty one rather than a full-screen error boundary.
+
+### Changed
+- `bun run test` typechecks first, on both sides (#68). The pre-push hook already did; `bun run test` did not, so a manual run and the SSSF ADW quality gate both reported green against a type-broken tree — which is exactly how the missing `text` prop above reached a build. Root `test` now runs `bun run typecheck` before the Bun suites, and web `test` runs its own (app + service worker) before Vitest. CI runs it twice now, which is harmless.
+
 ## [0.41.0] - 2026-08-20
 
 ### Fixed
