@@ -1,12 +1,25 @@
 # Next session
 
-_Last handoff: 2026-08-20 — main at **0.42.0**, tags `v0.41.1` / `v0.41.2` / `v0.42.0` pushed, no
-open PRs. The bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the
-Task Scheduler job `herdr.collie`, and was restarted after the last change (it touched `bridge/`).
-The frontend was rebuilt too._
+_Last handoff: 2026-08-20 — main at **0.43.0**, tags through `v0.43.0` pushed, no open PRs. The
+bridge on this box runs from `C:\claudeOS\Projects\tools\collie`, supervised by the Task Scheduler
+job `herdr.collie`, and was restarted at 0.42.0 (the last change that touched `bridge/`). The
+frontend was rebuilt after 0.43.0._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie): a phone web UI that drives the Herdr
 agent herd through a Bun bridge, served over `tailscale serve`. Herdr plugin id `herdr.collie`.
+
+**0.43.0 — the release commit for PR #74 (an ADW run), which shipped without one.** The run moved
+the spaces filter into a header icon beside New space and took the traces buttons off the space and
+tab rows; traces still live on the pane header and the `/traces` route. The code is fine — reviewed
+the diff, `tabTraces` is gone with no dangling references, 806 backend and 2618 web tests pass. What
+was missing is the release: it changed `web/src/` and left the version at 0.42.0, which was already
+a **pushed tag**, so `main` carried functional changes the tag didn't. 0.43.0 is that release, and
+its two request docs (`requests/spaces-pane-filter-icon.md`, `requests/pr-spaces-filter-icon.md`)
+are committed alongside, matching how every other `requests/` doc is tracked.
+
+**Worth knowing: the pre-commit bump guard did not stop it.** It should have — `web/src/` is in its
+functional-path list and the version was unchanged from HEAD. Either the run used
+`SKIP_VERSION_CHECK=1` or the hook was not active in its sandbox. Unresolved; see Watch out for.
 
 ## Where this stopped
 
@@ -139,6 +152,14 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   same response carries `staleBuild`, the bridge logs it, and the phone footer says so — but the
   guard only fires once the bridge has *noticed*, and it caches for 30s, so on a fresh rebuild give
   it half a minute before trusting a quiet footer.
+- **An ADW shipped a functional change past a pushed tag, and the bump guard didn't fire.** PR #74
+  changed `web/src/` while leaving the version at 0.42.0 — already tagged — so `main` and `v0.42.0`
+  disagreed until 0.43.0 was cut by hand. `scripts/git-hooks/pre-commit` lists `web/src/` as a
+  functional path and compares against HEAD, so it should have blocked the commit. Find out whether
+  the run set `SKIP_VERSION_CHECK=1` or simply ran without `core.hooksPath` pointing at
+  `scripts/git-hooks` — a sandbox that clones or copies the tree gets neither the hook path nor the
+  hooks. **Check `git describe --exact-match HEAD` after any ADW run**; if it errors, main is past
+  its newest tag and needs a release commit.
 - **ADW cost lines read `$0.0000` and are false.** The custom-registered models in
   `~/.pi/agent/models.json` carry `cost: 0`, so only agents on pi's bundled catalog bill correctly.
   Real spend is on openrouter.ai, not in `just runs`.
@@ -153,7 +174,8 @@ Tests: `bun run test` (backend + scripts) and `cd web && bun run test`. Both typ
   `SKIP_VERSION_CHECK=1` is the intended escape hatch.
 - **Every release commit gets a `v*` tag pushed with it** (`git tag -a vX.Y.Z <sha> -m "Collie X.Y.Z"
   && git push origin vX.Y.Z`). The update banner and `update` both read tags, so an untagged release
-  is invisible to the phone. `v0.41.0`, `v0.41.1`, `v0.41.2` and `v0.42.0` are pushed.
+  is invisible to the phone. Tags through `v0.43.0` are pushed. `git describe --exact-match HEAD`
+  on `main` is the one-command check that a release was actually tagged.
 - **SSSF discovery is bounded at three levels below a pane cwd** (`MAX_DOWN`, `bridge/sssf-viz.ts`).
   Nest a repo deeper than that and its traces vanish with no error. Discovery is also async and
   caches for 30s, so give a restarted bridge ~30s before concluding a repo is missing.
