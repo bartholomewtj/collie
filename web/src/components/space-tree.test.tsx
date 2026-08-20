@@ -298,3 +298,111 @@ describe("SpaceTree — triage ordering and auto-expand vs explicit collapse", (
     expect(screen.getByRole("button", { name: /expand space blocked-space/i })).toBeInTheDocument();
   });
 });
+
+describe("SpaceTree — traces and filter", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("does not show traces button on space rows even when sssf data is present", () => {
+    const w = ws("w1", "my-space", {
+      sssf: {
+        state: "ready",
+        token: "tok",
+        repos: [{ name: "repo-a", state: "ready", running: true }],
+      },
+    });
+    const t = tab("w1:t1", "w1", "tab 1");
+    const p = agent("w1:p1", "w1", "w1:t1");
+
+    renderTree({
+      workspaces: [w],
+      tabs: [t],
+      agents: [p],
+    });
+
+    expect(screen.queryByRole("button", { name: /ADW runs in this space/i })).not.toBeInTheDocument();
+  });
+
+  it("does not show traces button on tab rows even when pane has sssf runs", async () => {
+    const user = userEvent.setup();
+    // 2 tabs so expanding space shows tab row without navigating
+    const w = ws("w1", "my-space", { paneCount: 2, tabCount: 2 });
+    const t1 = tab("w1:t1", "w1", "tab-one", 1);
+    const t2 = tab("w1:t2", "w1", "tab-two", 1);
+    const p1 = agent("w1:p1", "w1", "w1:t1", {
+      sssf: {
+        runs: [
+          {
+            repo: "repo-a",
+            adwId: "adw-1",
+            status: "running",
+            startedAt: "2025-01-01T00:00:00Z",
+          },
+        ],
+      },
+    });
+    const p2 = agent("w1:p2", "w1", "w1:t2");
+
+    renderTree({
+      workspaces: [w],
+      tabs: [t1, t2],
+      agents: [p1, p2],
+    });
+
+    // Expand space
+    await user.click(screen.getByRole("button", { name: /expand space my-space/i }));
+    expect(screen.getByText("tab-one")).toBeInTheDocument();
+
+    expect(screen.queryByRole("button", { name: /ADW runs in this tab/i })).not.toBeInTheDocument();
+  });
+
+  it("filter is hidden until header icon is tapped; typing filters spaces", async () => {
+    const user = userEvent.setup();
+    const w1 = ws("w1", "alpha-space");
+    const w2 = ws("w2", "beta-space");
+
+    renderTree({
+      workspaces: [w1, w2],
+      tabs: [],
+      agents: [],
+    });
+
+    // Filter input is not shown by default
+    expect(screen.queryByPlaceholderText("Filter spaces…")).not.toBeInTheDocument();
+
+    // Filter button is in the header
+    const filterBtn = screen.getByRole("button", { name: "Filter spaces" });
+    expect(filterBtn).toBeInTheDocument();
+
+    // Tap filter button to open
+    await user.click(filterBtn);
+    const input = screen.getByPlaceholderText("Filter spaces…");
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveFocus();
+
+    // Type filter query
+    await user.type(input, "alp");
+    expect(screen.getByText("alpha-space")).toBeInTheDocument();
+    expect(screen.queryByText("beta-space")).not.toBeInTheDocument();
+
+    // Toggle button now acts as close & clear
+    await user.click(screen.getByRole("button", { name: "Filter spaces" }));
+    expect(screen.queryByPlaceholderText("Filter spaces…")).not.toBeInTheDocument();
+    expect(screen.getByText("alpha-space")).toBeInTheDocument();
+    expect(screen.getByText("beta-space")).toBeInTheDocument();
+  });
+
+  it("filter button is omitted when there is only 1 workspace", () => {
+    const w = ws("w1", "only-space");
+
+    renderTree({
+      workspaces: [w],
+      tabs: [],
+      agents: [],
+    });
+
+    expect(screen.queryByRole("button", { name: "Filter spaces" })).not.toBeInTheDocument();
+  });
+});
+
