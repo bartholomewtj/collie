@@ -137,17 +137,25 @@ the unit name; the Herdr action runs from anywhere.
   (`web/src/lib/loaders.ts`) fetch the snapshot + pane; **polling is `useRevalidator()` on an
   adaptive interval** (`web/src/hooks/use-polling.ts`); mutations are direct `lib/api.ts` calls
   followed by `revalidator.revalidate()`. There is **no TanStack Query** — don't reintroduce it.
-- Routes (`web/src/router.tsx`): `/` (Herd), `/spaces`, `/space/:spaceId`, `/traces`,
-  `/traces/:spaceId/:repo`, `/settings`, `/pane/:paneId` and `/pane/:paneId/history`. The router
-  instance is module-scoped so it keeps its location.
-- **Navigation is a bottom bar + one back rule.** `BottomNav` (Herd / Spaces / Traces / Settings)
-  is mounted in `routes/root.tsx` and shown on the destinations and on a space; every screen below
-  a destination passes `AppHeader onBack` — a "‹" that goes up exactly one level (pane → space →
-  Spaces, trace → Traces, history → pane). Don't add a second way back (a Back chip in a strip, the
-  Collie mark as home) or a sibling-switcher row on a pushed screen; that's the mess 0.35.0 removed.
-- **Tap-and-hold is the one way to manage a pane, tab or space in place.** Pane pills, pane rows in
-  a space's list, tab chips, the tab headings in a space's "All" list, and Spaces rows all open a
-  small actions sheet on a hold
+- Routes (`web/src/router.tsx`): `/` (the Spaces tree), `/traces`, `/traces/:spaceId/:repo`,
+  `/settings`, `/pane/:paneId` and `/pane/:paneId/history`. `/spaces` and `/space/:spaceId` are
+  kept as **redirects to `/`** (`routes/redirects.tsx`) — old bookmarks, push deep links and a PWA's
+  saved start URL still resolve; `/space/:spaceId` expands that space in the tree on the way past.
+  The router instance is module-scoped so it keeps its location.
+- **Home is ONE tree, not a dashboard plus a navigator.** `/` renders `components/space-tree.tsx`:
+  space → tab → pane, where **a row with exactly one child opens that child instead of expanding**
+  (same rule at every level, so a one-tab/one-pane space is one tap to the CLI). Triage lives on the
+  rows — a status dot per row, blocked spaces first and auto-expanded unless you explicitly collapsed
+  them. Expansion is persisted in `use-dash-prefs.ts`, not in the URL. Don't reintroduce a separate
+  "who needs me" screen or a per-space route; 0.40.8 removed both because they said the same thing
+  twice.
+- **Navigation is a bottom bar + one back rule.** `BottomNav` (Spaces / Traces / Settings) is
+  mounted in `routes/root.tsx` and shown on those three destinations only; every screen below one
+  passes `AppHeader onBack` — a "‹" that goes up exactly one level (pane → tree, trace → Traces,
+  history → pane). Don't add a second way back (a Back chip in a strip, the Collie mark as home) or
+  a sibling-switcher row on a pushed screen; that's the mess 0.35.0 removed.
+- **Tap-and-hold is the one way to manage a pane, tab or space in place.** Pane pills and all three
+  row kinds in the home tree (space, tab, pane) open a small actions sheet on a hold
   (`use-long-press.ts` + `*-actions-sheet.tsx`, rows shared via `action-sheet-rows.tsx`). Rename +
   close for panes and tabs; **rename only for spaces** — Collie never deletes a space. Don't add a
   second gesture (swipe-to-delete, an ⋯ button) or a second sheet; extend the existing one, and keep
