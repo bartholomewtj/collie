@@ -39,7 +39,7 @@ beforeEach(() => {
 const DISPLAY_PREFS_KEY = "collie:display-prefs:v5";
 
 /** Persist display prefs. Defaults to grammars on (raw terminal off) — the tests that lift menus
- *  and collapse the live tail need that, now that raw terminal is the empty-storage default. */
+ *  need that, now that raw terminal is the empty-storage default. */
 function writeDisplayPrefs(
   partial: Partial<{ wrap: boolean; fontSize: number; rawTerminal: boolean; tapToFocus: boolean }> = {},
 ) {
@@ -533,22 +533,23 @@ describe("AgentChat — traces affordance", () => {
   });
 });
 
-// The top-of-mirror affordance. Agent panes show only the live CLI viewport. Shells still page Herdr
-// scrollback with Load older when readableLines exceeds requestedLines.
+// Agent panes stack the journal above the live TUI so a swipe up reads the session. Shells still
+// page Herdr scrollback with Load older when readableLines exceeds requestedLines. The live tail
+// is never hidden; there is no Show live / Hide live control.
 describe("AgentChat — top-of-mirror history affordance", () => {
   const showHistory = () => screen.queryByRole("button", { name: /show entire history/i });
   const loadOlder = () => screen.queryByRole("button", { name: /load older/i });
 
-  it("an agent pane shows only the live CLI viewport and does not inline the transcript", () => {
-    // A Claude pane: alt-screen, so readableLines is just its viewport — there IS no scrollback.
+  it("an agent pane inlines the transcript above the live tail and keeps the live TUI", async () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 51 };
     renderChat({ agent, agents: [agent], requestedLines: 600, text: "live terminal output" });
+    await waitFor(() => expect(screen.getByText("what changed today?")).toBeInTheDocument());
+    expect(screen.getByText("live terminal output")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
     expect(showHistory()).not.toBeInTheDocument();
     expect(loadOlder()).not.toBeInTheDocument();
-    expect(screen.getByText("live terminal output")).toBeInTheDocument();
-    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
-    expect(screen.queryByText("Live")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show live terminal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /hide live terminal/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
   });
 
@@ -580,18 +581,19 @@ describe("AgentChat — top-of-mirror history affordance", () => {
     expect(showHistory()).not.toBeInTheDocument();
   });
 
-  it("a pane reporting scrollback gets Load older even when it also reports a session", () => {
+  it("a transcript wins even when the pane also reports scrollback", async () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true, readableLines: 6946 };
-    renderChat({ agent, agents: [agent], requestedLines: 600 });
-    expect(showHistory()).not.toBeInTheDocument();
-    expect(loadOlder()).toBeInTheDocument();
-    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
+    renderChat({ agent, agents: [agent], requestedLines: 600, text: "live terminal output" });
+    await waitFor(() => expect(screen.getByText("what changed today?")).toBeInTheDocument());
+    expect(loadOlder()).not.toBeInTheDocument();
+    expect(screen.getByText("live terminal output")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
   });
 
-  it("keeps the header History button so find / jump-to-turn still have a page", () => {
+  it("keeps the header History button so find / jump-to-turn still have a page", async () => {
     const agent = { ...fixtureAgents[0]!, hasSession: true };
     renderChat({ agent, agents: [agent] });
     expect(screen.getByRole("button", { name: /conversation history/i })).toBeInTheDocument();
-    expect(screen.queryByText("what changed today?")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("what changed today?")).toBeInTheDocument());
   });
 });
