@@ -14,7 +14,6 @@ import { useDashPrefs } from "@/hooks/use-dash-prefs";
 import {
   filterSpaces,
   groupPanesByTab,
-  sortSpacesByRecency,
   spaceLastSeenMap,
   spaceTriageMap,
   worstBucket,
@@ -100,13 +99,9 @@ export function SpaceTree({
   const worstBySpace = spaceTriageMap(agents);
   const blockedSpaces = [...worstBySpace.values()].filter((b) => b === "needs").length;
 
-  const recencySorted = sortSpacesByRecency(workspaces, panes, lastSeen);
-  const filtered = filterSpaces(recencySorted, query);
-  // Blocked spaces first, recency preserved within each group
-  const visible = [
-    ...filtered.filter((w) => worstBySpace.get(w.workspaceId) === "needs"),
-    ...filtered.filter((w) => worstBySpace.get(w.workspaceId) !== "needs"),
-  ];
+  // Fixed order: Herdr's workspace order, straight from the snapshot. No recency sort, no
+  // blocked-first regroup — blocked state shows in place instead of lifting the row.
+  const visible = filterSpaces(workspaces, query);
 
   function handleSpaceRowClick(
     w: WorkspaceView,
