@@ -129,6 +129,7 @@ export function AgentCard({
           {cornerDot && (
             <StatusDot
               status={agent.status}
+              runningCommand={agent.runningCommand}
               // Filled and ringed in the surface it actually sits on — a card is white, a flat row
               // is the page. Get this wrong and a hollow ring reads as a notch in the logo.
               surface={flat ? "bg-background" : "bg-card"}
@@ -189,7 +190,7 @@ export function AgentCard({
           /* The dot itself is colour-only and lives on the avatar; give SR users the word. */
           <span className="sr-only">{STATUS_LABEL[agent.status]}</span>
         ) : (
-          <StatusBadge status={agent.status} />
+          <StatusBadge status={agent.status} runningCommand={agent.runningCommand} />
         )}
       </Shell>
     </button>

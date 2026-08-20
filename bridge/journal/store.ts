@@ -40,8 +40,40 @@ export function pageEntries(
   return { window: entries.slice(start, end), hasMore: start > 0 };
 }
 
+/** True when the NEWEST entry holds a tool call whose result hasn't been written yet — the
+ *  agent is mid-command. Only the newest entry counts: results fold into the same entry
+ *  (claude/pi mutate in place) or arrive as later rows, so anything older is settled. */
+export function newestEntryPendingTool(entries: TranscriptEntry[]): boolean {
+  if (entries.length === 0) return false;
+  const last = entries[entries.length - 1]!;
+  return last.parts.some((p) => p.kind === "tool" && p.result === undefined);
+}
+
 export class TranscriptStore {
   private readonly cache = new Map<string, CacheEntry>();
+
+  private async loadEntry(
+    adapter: JournalAdapter,
+    path: string,
+    meta: { size: number; mtimeMs: number },
+  ): Promise<CacheEntry> {
+    const cached = this.cache.get(path);
+    if (cached && cached.size === meta.size && cached.mtimeMs === meta.mtimeMs) {
+      // Re-set to move it to the end: eviction below is insertion-ordered, so touching a hit keeps
+      // the hot journal from being evicted underneath a colder one.
+      this.cache.delete(path);
+      this.cache.set(path, cached);
+      return cached;
+    }
+    const { text, complete, size, mtimeMs } = await adapter.source.load(path);
+    const entry: CacheEntry = { size, mtimeMs, complete, entries: adapter.parse(text) };
+    this.cache.set(path, entry);
+    if (this.cache.size > CACHE_MAX) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
+    }
+    return entry;
+  }
 
   /**
    * Read one page of a pane's journal.
@@ -62,23 +94,8 @@ export class TranscriptStore {
     // so validity is decided by a stat. Only a moved size/mtime costs a read + parse.
     const meta = await adapter.source.stat(path);
     if (meta === null) return null; // vanished between resolve and read
-    const cached = this.cache.get(path);
-    let entry: CacheEntry;
-    if (cached && cached.size === meta.size && cached.mtimeMs === meta.mtimeMs) {
-      entry = cached;
-      // Re-set to move it to the end: eviction below is insertion-ordered, so touching a hit keeps
-      // the hot journal from being evicted underneath a colder one.
-      this.cache.delete(path);
-      this.cache.set(path, entry);
-    } else {
-      const { text, complete, size, mtimeMs } = await adapter.source.load(path);
-      entry = { size, mtimeMs, complete, entries: adapter.parse(text) };
-      this.cache.set(path, entry);
-      if (this.cache.size > CACHE_MAX) {
-        const oldest = this.cache.keys().next().value;
-        if (oldest !== undefined) this.cache.delete(oldest);
-      }
-    }
+
+    const entry = await this.loadEntry(adapter, path, meta);
     const { entries, complete } = entry;
 
     const { window, hasMore } = pageEntries(entries, opts);
@@ -89,5 +106,21 @@ export class TranscriptStore {
       total: entries.length,
       fileTruncated: !complete,
     };
+  }
+
+  /**
+   * True when the newest parsed turn holds a pending tool call; false when it doesn't; null when
+   * there is nothing to read (no log / refused ref / containment miss) — the caller omits the
+   * flag for null, exactly like `page()` returning null.
+   */
+  async runningCommand(adapter: JournalAdapter, ref: AgentSessionRef): Promise<boolean | null> {
+    const path = await adapter.source.resolve(ref);
+    if (path === null) return null;
+
+    const meta = await adapter.source.stat(path);
+    if (meta === null) return null;
+
+    const entry = await this.loadEntry(adapter, path, meta);
+    return newestEntryPendingTool(entry.entries);
   }
 }

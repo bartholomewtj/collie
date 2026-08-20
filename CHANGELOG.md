@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.46.0] - 2026-08-20
+
+### Added
+- Working status split: blue status dot while an agent runs commands (thinking stays amber)
+- Live terminal tail hides while the newest turn is a running command (Show live still pins it), with a running tool row in the transcript
+
 ## [0.45.1] - 2026-08-20
 
 ### Fixed

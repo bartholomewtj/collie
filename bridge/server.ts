@@ -251,6 +251,29 @@ export function startServer(opts: {
           const a = activity.get(rt.name, p.paneId);
           return a ? { ...p, lastActiveAt: a.activeAt, lastSeenAt: a.seenAt } : p;
         };
+        // Decorate working agent panes with runningCommand when their journal tail shows a tool
+        // call with no result yet. Stamped at serialise time (like withActivity) so the state engine
+        // stays a pure Herdr poller. Omitted when cfg.transcript is off (transcripts is null).
+        const decoratedAgents =
+          transcripts && journals
+            ? await Promise.all(
+                agents.map(async (p) => {
+                  if (p.status !== "working") return p;
+                  try {
+                    const adapter = adapterFor(journals, p.agent);
+                    if (!adapter) return p;
+                    const ref =
+                      p.agentSession ??
+                      (adapter.inferFromCwd && p.cwd ? await adapter.inferFromCwd(p.cwd) : null);
+                    if (!ref) return p;
+                    const running = await transcripts.runningCommand(adapter, ref);
+                    return running === true ? { ...p, runningCommand: true } : p;
+                  } catch {
+                    return p;
+                  }
+                }),
+              )
+            : agents;
         // Tag every snapshot poll with the on-disk build id so an open client notices a live rebuild
         // between polls — the no-service-worker self-update path (web/src/lib/self-update.ts).
         return withBuildHeader(
@@ -266,7 +289,7 @@ export function startServer(opts: {
             // and the two timestamps then ride through its rest-spread onto the wire shape.
             // decoratePanes hangs each pane's ADW runs on it (bridge/sssf-viz.ts) — a plain stamp
             // from the last discovery pass, so it costs no I/O here; identity when the feature is off.
-            agents: sssfViz.decoratePanes(agents, sessionName).map((p) => toPaneWire(withActivity(p), offerHistory)),
+            agents: sssfViz.decoratePanes(decoratedAgents, sessionName).map((p) => toPaneWire(withActivity(p), offerHistory)),
             shellPanes: sssfViz.decoratePanes(shellPanes, sessionName).map((p) => toPaneWire(withActivity(p), offerHistory)),
             // Keyed by the REQUEST's session param (undefined on the primary session), not rt.name:
             // the Traces frame sends the same param back on /sssf/api/*, and the two must match or

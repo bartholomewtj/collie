@@ -129,7 +129,7 @@ function PanePill({
       {isShell ? (
         <TerminalSquare className="size-3.5 shrink-0" />
       ) : (
-        <StatusDot status={pane.status} />
+        <StatusDot status={pane.status} runningCommand={pane.runningCommand} />
       )}
       <span>{name}</span>
       <span
