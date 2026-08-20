@@ -1,6 +1,6 @@
 {
   "name": "collie",
-  "version": "0.41.0",
+  "version": "0.41.1",
   "private": true,
   "license": "MIT",
   "description": "Collie — a mobile web UI to monitor and reply to your Herdr agent herd over Tailscale",
@@ -11,7 +11,7 @@
     "build": "bun run typecheck && cd web && bun install && bun run typecheck && bun run build",
     "build:web": "cd web && bun run build",
     "web:dev": "cd web && bun run dev",
-    "test": "bun test ./bridge ./scripts && bash scripts/collie-ctl.test.sh",
+    "test": "bun run typecheck && bun test ./bridge ./scripts && bash scripts/collie-ctl.test.sh",
     "test:ctl": "bash scripts/collie-ctl.test.sh",
     "typecheck": "bunx tsc --noEmit"
   },
