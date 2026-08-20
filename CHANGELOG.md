@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.43.0] - 2026-08-20
+
+### Changed
+- Spaces filter moved into a header icon next to New space — tap to open and type, tap again (or the X) to close and clear — so the list starts at the first space instead of behind a permanent search box (858d950)
+
+### Removed
+- Traces buttons off the space and tab rows in the tree; traces stay on the pane header and the `/traces` route, which is where you go when you actually want them (858d950)
+
 ## [0.42.0] - 2026-08-20
 
 ### Added
