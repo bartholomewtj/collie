@@ -1,38 +1,41 @@
 # Next session
 
 _Last handoff: 2026-08-21 — `main` at **0.46.2** (`v0.46.2` tagged). One open PR.
-Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. Last **restarted at
-0.42.0**. Phone UI is still an older `web/dist`._
+Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. **Rebuilt and restarted
+this session** — `web/dist` is `0.46.2-dev+0e54405-dirty` (dirty = untracked files under
+`adws/adw_data/`, leave them). One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
 
 ## Where this stopped
 
-**0.46.2 is on main and tagged.** Stacked ADW PRs #87/#89/#90/#91 landed (sidebar order, commands-running
-blue dot + hide live tail, Windows `.env` icacls, pre-push `./scripts` tests). #60 closed after a
-green security-suite retest. Raw-terminal docs (#86) merged.
+**0.46.2 is on main, tagged, built, and running.** Stacked ADW PRs #87/#89/#90/#91 landed. #60
+closed after a green security-suite retest. `bun run build` then `collie-ctl.ps1 restart` done.
+
+Restart hit a **#55 regression**: `Protect-CollieSecret` on the config *directory* ran
+`icacls /inheritance:r` and left `exec-bridge.vbs`, logs, and pid with empty DACLs. Stop
+succeeded; start failed (`Set-Content` access denied on the VBS). Restored `BART\barth:(F)` on
+every file in that dir, then `start` worked. Files now have explicit Full Control, so a later
+restart should survive. The code still only grants `(F)` on the dir itself (no `(OI)(CI)`), so
+*new* files in that dir can still be orphaned.
 
 **#69 is implemented but not merged.** PR https://github.com/bartholomewtj/collie/pull/94
-(`fix/69-out-of-scope-gate`, PATCH 0.46.3). `quality.out_of_scope` fails the ADW test phase if a
-path named under `Out of scope:` is in the diff. Hand-edited `adws/adw_modules/` (the grader — an
-ADW must not write it). **CI is red:** the new scripts test spawns `uv`, which is not on the
-GitHub Actions runner (`Executable not found in $PATH: "uv"`). Local `bun test` was green.
+(`fix/69-out-of-scope-gate`, PATCH 0.46.3). CI is red: the bun test that drives the parser spawns
+`uv`, which GitHub Actions does not have (`Executable not found in $PATH: "uv"`). Local `bun test`
+was green. Hand-edited `adws/adw_modules/` (the grader — an ADW must not write it).
 
 ## Resume with
 
 ```bash
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
-git branch --show-current && git status --short      # expect main, clean
+git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
 git describe --tags --abbrev=0                        # expect v0.46.2
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
-```powershell
-bun run build                                              # 0.46.0 web/ is not in the live dist
-powershell -File contrib\windows\collie-ctl.ps1 restart    # 0.46.0 bridge/ is not in the live process
-```
+Do **not** rebuild/restart unless `web/dist/build-info.json` is behind `main` or the bridge is down.
 
 Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_tests()` in
 `adws/adw_modules/quality.py`. Do **not** run `run_quality()` casually — `build` rewrites live
@@ -40,18 +43,17 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 
 ## Next thing to do
 
-1. **Fix PR #94 CI, then merge.** The bun test that drives the parser shells out to `uv`; CI is
-   Ubuntu and has `python3`, not `uv`. Spawn `python`/`python3 -m unittest adw_modules.test_out_of_scope`
-   instead. After green: merge, tag `v0.46.3`, close #69.
-2. **Rebuild + restart** so the phone is on whatever `main` is: `bun run build`, then
-   `collie-ctl.ps1 restart`. Confirm a blocked space does not jump, and a long `npm install` is a
-   blue dot with the live tail hidden (grammars off — raw terminal on keeps the tail).
-3. Product leftovers without issues: Windows update-banner still names the Herdr `update` action
-   (`platform_unsupported` here); README screenshots may still show old screens.
+1. **Fix PR #94 CI, then merge.** Spawn `python`/`python3 -m unittest adw_modules.test_out_of_scope`
+   instead of `uv`. After green: merge, tag `v0.46.3`, close #69.
+2. **Confirm on the phone** that a blocked space does not jump, and a long `npm install` is a blue
+   dot with the live tail hidden (grammars off — raw terminal on keeps the tail).
+3. **#55 follow-up if you want it:** `Protect-CollieSecret` on the config dir must not strip child
+   ACLs. Either skip the directory (only harden `.env`) or grant `(OI)(CI)(F)` so children inherit.
+   Discovered when `restart` broke the live bridge.
 
 ## Open
 
-- **PR #94** — #69 out-of-scope quality gate. Waiting on a CI fix, not on review of the idea.
+- **PR #94** — #69 out-of-scope quality gate. Waiting on a CI fix (`uv` not on the runner).
 - **#69** — open until #94 merges.
 - No issue: in-app update banner tells you to run the Herdr `update` action, which is
   `platform_unsupported` on Windows.
@@ -60,18 +62,20 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 
 ## Watch out for
 
+- **Restarting can lock the config dir.** `Protect-CollieSecret` on the directory + `/inheritance:r`
+  without object/container inherit left `exec-bridge.vbs` with no ACEs. If start fails with access
+  denied there, `icacls <file> /grant:r "$env:USERDOMAIN\$env:USERNAME:(F)"` on every file in
+  `%APPDATA%\herdr\plugins\config\herdr.collie\`, then `collie-ctl.ps1 start`. Do not
+  `taskkill /IM bun.exe`.
 - **Raw terminal on means no prompt buttons and no idle-tail / commands-only collapse.** 0.45.0
   default. Grammar / hide-live bugs need ⚙ → Raw terminal off.
-- **Do not trust an ADW's own success line.** Read the diff's file list against the request's Out of
-  scope. After #94, the quality phase fails that class of rewrite; still read the diff.
-- **The source being right tells you nothing about what the phone runs.** Bridge serves `web/dist`.
-  `/api/config` → `build` is the commit being served, `staleBuild` is the mtime guard (30s cache).
+- **Do not trust an ADW's own success line.** Read the diff's file list against Out of scope.
+- **The source being right tells you nothing about what the phone runs.** `/api/config` → `build`
+  is the commit being served; `staleBuild` is the mtime guard. Local curl gets `identity required`.
 - **`run_quality()` publishes `web/dist`.** SDLC inner loop (`run_tests()`) does not build.
-- **`quality.py` / `adws/adw_modules/` are protected_files.** An ADW cannot implement factory-gate
-  changes. #69 was hand-edited for that reason.
-- **PATH's `bash` is the WSL stub.** Tests resolve Git bash. Use `C:\Program Files\Git\bin\bash.exe`.
+- **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
+- **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`.
 - **CI has no `uv`.** A test that shells out to `uv` will pass here and fail on GitHub.
-- Tag every release. Untagged = invisible to the phone. Current: `v0.46.2`.
-- Never `taskkill /IM bun.exe` — it takes the live bridge and every agy run with it.
-- If `AGENTS.md` or `GEMINI.md` reappear, an agent tool wrote them. Delete. `CLAUDE.md` is the
-  working agreement.
+- Tag every release. Current: `v0.46.2`.
+- Never `taskkill /IM bun.exe`.
+- If `AGENTS.md` or `GEMINI.md` reappear, delete them. `CLAUDE.md` is the working agreement.
