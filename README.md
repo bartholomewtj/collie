@@ -65,11 +65,11 @@ pick up a push notification the moment an agent is waiting on input.
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src="assets/dashboard.png" alt="Collie dashboard — Needs you, Recent, Spaces" width="250"><br><sub><b>Dashboard</b> — agents needing you float to the top</sub></td>
+    <td align="center" width="50%"><img src="assets/dashboard.png" alt="Collie Spaces tree — four spaces with status dots, who needs you first" width="250"><br><sub><b>Spaces</b> — the tree; agents needing you sort to the top</sub></td>
     <td align="center" width="50%"><img src="assets/ask-question.png" alt="A Claude AskUserQuestion prompt up-leveled into tappable buttons" width="250"><br><sub><b>Ask</b> — Claude's own questions become tappable buttons</sub></td>
   </tr>
   <tr>
-    <td align="center" width="50%"><img src="assets/space-detail.png" alt="A space's tabs and panes" width="250"><br><sub><b>Space</b> — its tabs and panes, deep-linkable</sub></td>
+    <td align="center" width="50%"><img src="assets/space-detail.png" alt="Grok space expanded in the tree, showing its Collie tab" width="250"><br><sub><b>Expanded</b> — a space opened onto its tabs and panes</sub></td>
     <td align="center" width="50%"><img src="assets/keys.png" alt="The special-keys pad — arrows, Esc, Tab, Ctrl, Alt, Shift" width="250"><br><sub><b>Keys</b> — the special-keys pad, no chords to remember</sub></td>
   </tr>
   <tr>
