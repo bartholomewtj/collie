@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.46.2] - 2026-08-20
+
+### Fixed
+- pre-push hook now runs the ./scripts tests alongside ./bridge, closing the gap where a scripts-only failure was green on push but red in CI
+
 ## [0.46.1] - 2026-08-20
 
 ### Fixed
