@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Push, topicIsSendable } from "./push.ts";
 import type { PushSender, PushSubscription, SendOptions } from "./push.ts";
 import { loadConfig } from "./config.ts";
+import { POSIX_MODES } from "./platform-support.ts";
 
 // The broadcast prune-vs-log logic and the on-disk persistence are the untested-by-Bun.serve parts.
 // We inject a fake sender so the 404/410-prune path is exercised without the real web-push library,
@@ -240,7 +241,8 @@ describe("Push — eviction of persistently-failing subscriptions", () => {
 });
 
 describe("Push — persistence", () => {
-  test("addSubscription persists with owner-only (0600) permissions", async () => {
+  // Skipped where mode bits are meaningless (Windows); see platform-support.ts.
+  test.skipIf(!POSIX_MODES)("addSubscription persists with owner-only (0600) permissions", async () => {
     const cfg = await tempCfg();
     const push = new Push(cfg, () => Promise.resolve());
     enable(push, []);

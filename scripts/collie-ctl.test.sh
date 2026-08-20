@@ -27,6 +27,20 @@ if [ -n "${COLLIE_HERMETIC_PROBE:-}" ]; then
   exit 0
 fi
 
+# Windows is not a host this suite can run on, and the reason is in the script under test: on
+# MINGW/MSYS/CYGWIN, collie-ctl.sh has no POSIX lifecycle to exercise — is_windows() sends every
+# lifecycle verb to contrib/windows/collie-ctl.ps1, which supervises through Task Scheduler. So the
+# "sandbox" stops being one: `start` here reaches the operator's REAL scheduled task and real port,
+# and a passing run would mean it had stopped their live bridge. Refuse instead of pretending. CI
+# (ubuntu-latest) runs the whole suite, and the Windows lifecycle is the PowerShell script's own.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    echo "collie-ctl.test.sh: skipped on Windows — collie-ctl.sh delegates its lifecycle to" >&2
+    echo "  contrib/windows/collie-ctl.ps1 there, so this suite would drive the real machine." >&2
+    exit 0
+    ;;
+esac
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CTL="${ROOT}/scripts/collie-ctl.sh"
 BASE_PATH="$PATH"
@@ -49,6 +63,33 @@ assert_contains() {
     *"$2"*) ;;
     *) fail "expected output to contain '$2'" ;;
   esac
+}
+
+# Does chmod mean anything here? On Windows (Git Bash/MSYS) it does not: the call succeeds, the bits
+# are never stored, and stat reports 644 whatever was asked for. A mode assertion there tests the
+# filesystem's indifference, not the script, so callers skip just that assertion and keep the rest of
+# the test. Linux and macOS - where Collie actually runs, and where CI runs - answer yes and check it.
+chmod_takes_effect() {
+  local probe="${TMP_ROOT}/chmod-probe.$$"
+  : > "$probe"
+  chmod 600 "$probe" 2>/dev/null || true
+  local mode; mode="$(stat -c '%a' "$probe" 2>/dev/null || stat -f '%Lp' "$probe" 2>/dev/null || true)"
+  rm -f "$probe"
+  [ "$mode" = "600" ]
+}
+
+# Are symlinks real here? The same question for the other POSIX facility Windows lacks. Under MSYS,
+# `ln -s` without Developer Mode quietly COPIES the file, so a test that plants a link would be
+# asserting against a plain file and reporting a failure that says nothing about the script.
+can_symlink() {
+  local dir="${TMP_ROOT}/symlink-probe.$$"
+  mkdir -p "$dir"
+  : > "${dir}/target"
+  ln -s "${dir}/target" "${dir}/link" 2>/dev/null || { rm -rf "$dir"; return 1; }
+  local linked=1
+  [ -L "${dir}/link" ] && linked=0
+  rm -rf "$dir"
+  return "$linked"
 }
 
 setup_case() {
@@ -217,6 +258,10 @@ EOF
 
 test_missing_tailscale_cli() {
   setup_case tailscale-missing
+  # The sandbox PATH is built by symlinking the few real tools the script needs into it. Where
+  # symlinks aren't real the copies can't run (an MSYS binary away from its DLLs is not a binary),
+  # so the sandbox would fail for a reason that has nothing to do with a missing Tailscale CLI.
+  can_symlink || { echo "  (skipped missing-tailscale: real symlinks unavailable here)"; return 0; }
   ln -s "$(command -v dirname)" "${BIN_DIR}/dirname"
   ln -s "$(command -v tr)" "${BIN_DIR}/tr"
   # A stub bun keeps resolve_bun inside the sandbox. Without it, the absolute-path fallbacks find a
@@ -1419,13 +1464,9 @@ test_env_permissions_are_hardened_on_start() {
     return 0
   fi
 
-  # Check if chmod 600 actually takes effect on this OS/filesystem
-  local probe_file="${CASE_DIR}/probe.env"
-  touch "$probe_file"
-  chmod 600 "$probe_file" 2>/dev/null || true
-  local probe_chmod_mode; probe_chmod_mode="$(stat -c '%a' "$probe_file" 2>/dev/null || stat -f '%Lp' "$probe_file" 2>/dev/null || true)"
-  rm -f "$probe_file"
-  if [ "$probe_chmod_mode" != "600" ]; then
+  # The whole test is about hardening modes, so where chmod is a no-op there is nothing to assert.
+  if ! chmod_takes_effect; then
+    echo "  (skipped env-perms: chmod is a no-op on this filesystem)"
     return 0
   fi
 
@@ -1527,7 +1568,11 @@ test_push_keys_writes_the_resolved_env() {
   assert_contains "$(cat "$env_file")" "COLLIE_VAPID_PUBLIC="
   assert_contains "$(cat "$env_file")" "COLLIE_VAPID_SUBJECT=mailto:probe@example.com"
   # A private key is a signing credential; a world-readable moment is a leak.
-  assert_eq "$(stat -c '%a' "$env_file" 2>/dev/null || stat -f '%Lp' "$env_file")" "600"
+  if chmod_takes_effect; then
+    assert_eq "$(stat -c '%a' "$env_file" 2>/dev/null || stat -f '%Lp' "$env_file")" "600"
+  else
+    echo "  (skipped mode check: chmod is a no-op on this filesystem)"
+  fi
 
   # Re-running must NOT silently mint new keys: that would invalidate every subscription already out
   # there, and the devices would go quiet with nothing to show for it.
@@ -1556,6 +1601,7 @@ test_push_keys_writes_the_resolved_env() {
 test_push_keys_refuses_a_symlinked_env() {
   setup_case push-keys-symlink
   command -v bun > /dev/null || return 0
+  can_symlink || { echo "  (skipped symlinked-env: real symlinks unavailable here)"; return 0; }
 
   local real="${CASE_DIR}/dotfiles-env"
   printf 'COLLIE_PORT=8787\n' > "$real"

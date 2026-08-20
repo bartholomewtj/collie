@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { DEFAULT_NOTIFY_PREFS, NotifyPrefsStore, coerceNotifyPrefs } from "./notify-prefs.ts";
+import { POSIX_MODES } from "./platform-support.ts";
 import { loadConfig } from "./config.ts";
 
 // Notify-type prefs own which agent statuses push. The coercion is pure; the merge + disk round-trip
@@ -75,7 +76,8 @@ describe("NotifyPrefsStore", () => {
     expect(store.current()).toEqual(DEFAULT_NOTIFY_PREFS);
   });
 
-  test("persists with owner-only (0600) permissions", async () => {
+  // Skipped where mode bits are meaningless (Windows); see platform-support.ts.
+  test.skipIf(!POSIX_MODES)("persists with owner-only (0600) permissions", async () => {
     const cfg = await tempCfg();
     const store = new NotifyPrefsStore(cfg);
     await store.set({ blocked: false });

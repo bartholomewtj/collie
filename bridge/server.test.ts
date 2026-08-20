@@ -444,19 +444,22 @@ describe("isJsonContentType — JSON routes force a CORS preflight", () => {
 });
 
 describe("resolveStaticPath — static path traversal guard", () => {
-  const WEB = "/srv/collie/web/dist";
+  // Built with join(), not written out with slashes: the guard compares against `webDir + sep`, so a
+  // fixture that hardcodes "/" would be rejected out of hand on a platform whose separator differs
+  // — testing nothing. `rel` is always forward-slashed, which is the function's own promise.
+  const WEB = normalize(join("/srv", "collie", "web", "dist"));
 
   test("resolves a normal file under the web dir", () => {
     expect(resolveStaticPath("/assets/app.js", WEB)).toEqual({
       rel: "assets/app.js",
-      full: "/srv/collie/web/dist/assets/app.js",
+      full: join(WEB, "assets", "app.js"),
     });
   });
 
   test("maps / to index.html", () => {
     expect(resolveStaticPath("/", WEB)).toEqual({
       rel: "index.html",
-      full: "/srv/collie/web/dist/index.html",
+      full: join(WEB, "index.html"),
     });
   });
 
