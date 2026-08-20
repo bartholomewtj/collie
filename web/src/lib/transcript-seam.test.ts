@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findSeam, trimAtSeam } from "./transcript-seam";
+import { findSeam, liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "./transcript-seam";
 import type { TranscriptEntry } from "./types";
 
 function turn(uuid: string, role: TranscriptEntry["role"], text: string): TranscriptEntry {
@@ -83,5 +83,66 @@ describe("trimAtSeam", () => {
     ];
     const out = trimAtSeam(entries, `fragment\n${MESSAGE}`);
     expect(out[0]!.parts).toEqual([{ kind: "tool", name: "Bash", summary: "git status --short" }]);
+  });
+});
+
+describe("newestTurnInViewport", () => {
+  it("is false when the journal is empty or the mirror shares nothing with it", () => {
+    expect(newestTurnInViewport([], `x ${MESSAGE}`)).toBe(false);
+    expect(newestTurnInViewport([turn("a", "assistant", MESSAGE)], "unrelated pane output that is long enough to probe past twelve tokens easily")).toBe(false);
+  });
+
+  it("is true only when the seam sits on the newest turn, not an older one still in the window", () => {
+    const later =
+      "Completely different prose about the weather on the coast this week after the rain finally stopped falling overnight.";
+    const entries = [turn("a", "assistant", MESSAGE), turn("b", "assistant", later)];
+    expect(newestTurnInViewport([entries[0]!], `x ${MESSAGE}`)).toBe(true);
+    expect(newestTurnInViewport(entries, `x ${MESSAGE}`)).toBe(false);
+  });
+
+  it("is false when the newest turn has no text (a tool call the screen never printed)", () => {
+    const entries: TranscriptEntry[] = [
+      turn("a", "assistant", MESSAGE),
+      {
+        uuid: "b",
+        ts: "2026-08-20T00:00:00Z",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "git status --short" }],
+      },
+    ];
+    expect(newestTurnInViewport(entries, `x ${MESSAGE}`)).toBe(false);
+  });
+});
+
+describe("liveMirrorNeeded", () => {
+  const idleCaughtUp = {
+    status: "idle" as const,
+    dialogPresent: false,
+    rawTerminal: false,
+    findOpen: false,
+    hasTranscript: true,
+    newestTurnInViewport: true,
+    pinned: false,
+  };
+
+  it("hides the tail for an idle pane whose transcript already holds the newest turn", () => {
+    expect(liveMirrorNeeded(idleCaughtUp)).toBe(false);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "done" })).toBe(false);
+  });
+
+  it("keeps the tail while the journal has not caught the viewport", () => {
+    expect(liveMirrorNeeded({ ...idleCaughtUp, newestTurnInViewport: false })).toBe(true);
+  });
+
+  it("keeps the tail whenever the TUI is the thing you need", () => {
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working" })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "blocked" })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "unknown" })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, dialogPresent: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, rawTerminal: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, findOpen: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, kind: "shell" })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, hasTranscript: false })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, pinned: true })).toBe(true);
   });
 });

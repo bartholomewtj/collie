@@ -37,7 +37,7 @@ import type { MenuBlockAction } from "@/components/menu-block";
 import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
 import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
 import { TranscriptView } from "@/components/transcript-view";
-import { trimAtSeam } from "@/lib/transcript-seam";
+import { liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "@/lib/transcript-seam";
 import { shortCwd } from "@/lib/format";
 import { historyPath, tracePath } from "@/lib/nav";
 import { useOpenSpace } from "@/hooks/use-open-space";
@@ -83,9 +83,12 @@ interface AgentChatProps {
 // sheets are separate and live inside <Composer>.)
 type Drawer = "switcher" | null;
 
-// The detail view mirrors a terminal pane, NOT a chat thread. The pane's output comes from the
-// route loader (`text`); polling revalidates it. Replies/keys are confirmed via the header status
-// line (`setStatus`), then a revalidation pulls the fresh output.
+// The detail view is a chat thread with a live terminal tail, not a terminal that happens to have
+// history. Between turns the tail is a worse copy of the newest markdown message, so it hides once
+// the journal has that turn and nothing in the TUI needs a tap or a token paint. Working / blocked
+// / a dialog / Show live peel it back. The pane's output comes from the route loader (`text`);
+// polling revalidates it. Replies/keys are confirmed via the header status line (`setStatus`), then
+// a revalidation pulls the fresh output.
 //
 // This shell owns the pane frame: the header (the find bar takes it over while find is open), the
 // terminal mirror (freeze, find highlighting, transcript above the live tail, load-older scrollback
@@ -278,13 +281,37 @@ export function AgentChat({
   // used to read twice, once as markdown and once as raw terminal. Cut the transcript where the
   // mirror picks it up, so the Live divider is a real seam. Memoised on the frozen `display`, so a
   // scrolled-up reader's cut stays put with their text instead of sliding under them.
+  //
+  // When the newest turn is already in the transcript and the TUI has nothing to tap or stream, the
+  // tail IS that worse copy — hide it (and do not trim: the markdown is then the only copy). Pinning
+  // peels the tail back; a pane change drops the pin so a newly opened idle pane starts as chat.
   const mirrorPlain = useMemo(
     () => parseAnsi(display).map((seg) => seg.text).join(""),
     [display],
   );
-  const visibleEntries = useMemo(
-    () => trimAtSeam(inline.entries, mirrorPlain),
+  const caughtUp = useMemo(
+    () => newestTurnInViewport(inline.entries, mirrorPlain),
     [inline.entries, mirrorPlain],
+  );
+  const [livePinned, setLivePinned] = useState(false);
+  const [pinnedFor, setPinnedFor] = useState(paneId);
+  if (pinnedFor !== paneId) {
+    setPinnedFor(paneId);
+    setLivePinned(false);
+  }
+  const showLive = liveMirrorNeeded({
+    kind: agent?.kind,
+    status: agent?.status,
+    dialogPresent,
+    rawTerminal: prefs.rawTerminal,
+    findOpen,
+    hasTranscript: inline.entries.length > 0,
+    newestTurnInViewport: caughtUp,
+    pinned: livePinned,
+  });
+  const visibleEntries = useMemo(
+    () => (showLive ? trimAtSeam(inline.entries, mirrorPlain) : inline.entries),
+    [showLive, inline.entries, mirrorPlain],
   );
 
   // Load older scrollback: raise the per-pane requested line count and refetch. The enlarged buffer
@@ -804,12 +831,34 @@ export function AgentChat({
                     </div>
                   )}
                   <TranscriptView entries={visibleEntries} agent={agent?.agent} />
-                  {display ? (
+                  {showLive && display ? (
                     <div className="mt-3 flex items-center gap-2">
                       <div className="h-px flex-1 bg-border" />
-                      <span className="text-[11px] font-medium text-muted-foreground">Live</span>
+                      {livePinned ? (
+                        <button
+                          type="button"
+                          onClick={() => setLivePinned(false)}
+                          aria-label="Hide live terminal"
+                          className="text-[11px] font-medium text-muted-foreground"
+                        >
+                          Hide live
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-medium text-muted-foreground">Live</span>
+                      )}
                       <div className="h-px flex-1 bg-border" />
                     </div>
+                  ) : !showLive ? (
+                    <button
+                      type="button"
+                      onClick={() => setLivePinned(true)}
+                      aria-label="Show live terminal"
+                      className="mt-3 flex w-full items-center gap-2"
+                    >
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-[11px] font-medium text-muted-foreground">Show live</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </button>
                   ) : null}
                 </div>
               )}
@@ -828,7 +877,7 @@ export function AgentChat({
                   {loadingOlder ? "Loading…" : "Load older"}
                 </button>
               ) : null}
-              {display ? (
+              {showLive && display ? (
                 <AnsiOutput
                   text={display}
                   wrap={prefs.wrap}
