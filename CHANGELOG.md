@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.44.0] - 2026-08-20
+
+### Added
+- Idle panes hide the live terminal tail when the transcript already has the newest turn, so the thread reads as chat instead of a TUI snapshot. Show live still peels it back. (08db5c3)
+
 ## [0.43.2] - 2026-08-20
 
 ### Fixed
