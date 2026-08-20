@@ -59,14 +59,15 @@ tap. Agents needing you sort to the top and start expanded, with a status dot on
 
 A bottom bar holds the three places you go — **Spaces** (the tree), **Traces**, **Settings** — and
 every screen below one of those has a **‹ back** in the top-left that goes up one level (pane →
-tree). Long-press a space, tab or pane row to rename or close it (a Claude pane shows the name you
-gave it with `/rename`), answer an `AskUserQuestion` prompt with a tap, switch between herds, and
-pick up a push notification the moment an agent is waiting on input.
+tree). A pane opens as the **raw terminal**. Composer ⚙ → Display → Raw terminal off restores
+tappable prompt buttons (`AskUserQuestion`, permissions, wizards). Long-press a space, tab or pane
+row to rename or close it (a Claude pane shows the name you gave it with `/rename`), switch between
+herds, and pick up a push notification the moment an agent is waiting on input.
 
 <table>
   <tr>
     <td align="center" width="50%"><img src="assets/dashboard.png" alt="Collie Spaces tree — four spaces with status dots, who needs you first" width="250"><br><sub><b>Spaces</b> — the tree; agents needing you sort to the top</sub></td>
-    <td align="center" width="50%"><img src="assets/ask-question.png" alt="A Claude AskUserQuestion prompt up-leveled into tappable buttons" width="250"><br><sub><b>Ask</b> — Claude's own questions become tappable buttons</sub></td>
+    <td align="center" width="50%"><img src="assets/ask-question.png" alt="A Claude AskUserQuestion prompt up-leveled into tappable buttons" width="250"><br><sub><b>Ask</b> — with Raw terminal off, Claude's questions become tappable buttons</sub></td>
   </tr>
   <tr>
     <td align="center" width="50%"><img src="assets/space-detail.png" alt="Grok space expanded in the tree, showing its Collie tab" width="250"><br><sub><b>Expanded</b> — a space opened onto its tabs and panes</sub></td>
@@ -407,6 +408,10 @@ session it finds is drivable through the same URL — including a private or san
 
 **Collie follows your phone by default.** To pin it, open **Settings → Appearance** and pick
 **System**, **Light** or **Dark** — per device, stored in the browser.
+
+Pane display (wrap, **raw terminal**, text size, tap-to-type) lives on the composer ⚙, also per
+device. **Raw terminal is on by default** — the plain TUI, no tappable prompt buttons. Turn it off
+there to get the parsed view.
 
 The terminal mirror is the exception: it always renders on a **dark ground** and light mode *inverts*
 it rather than re-colouring it. Agents emit absolute colours chosen for a black terminal, and

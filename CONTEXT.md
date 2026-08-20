@@ -26,7 +26,8 @@
 ### Names that collide
 
 - **Herdr workspace vs Collie space** — same thing. Herdr `workspace_id` ↔ a space row in the home tree (there is no per-space route any more; `/space/:spaceId` redirects to `/`). A space holds tabs; a tab holds panes.
-- **Herdr pane vs agent chat** — Herdr's `pane_id` is a raw PTY. Collie renders agent panes through `AgentChat` (`web/src/components/agent-chat.tsx`) with prompt parsing; bare shells fall back to the raw mirror.
+- **Herdr pane vs agent chat** — Herdr's `pane_id` is a raw PTY. Collie defaults to that raw mirror (`use-display-prefs`, `rawTerminal: true`, storage `collie:display-prefs:v5`). Turn **Raw terminal** off in Display settings (composer ⚙) to get `AgentChat` prompt parsing. Bare shells always stay on the raw mirror.
+- **Raw terminal** — a persisted display pref, **on by default**. Not the same as **Type into terminal** (the send-mode toggle beside Keys).
 - **Session** means three things: the agent's on-disk transcript id (`bridge/journal/`), Herdr's daemon session (`session.snapshot`), and Collie's multi-session URL `?s=<name>` (`web/src/lib/session.ts`, `bridge/sessions.ts`).
 - **Idle lock** — a pause, not a security gate (`web/src/lib/idle.ts`, [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
 - **Type into terminal** — a per-session send mode armed by the "Type" toggle beside Keys; never persisted. Entry point + reasoning at the toggle in `web/src/components/composer.tsx`; the keystroke pump in `web/src/hooks/use-direct-typing.ts`. (Older docs cite a `send-mode-menu.tsx` — it no longer exists.)
@@ -172,7 +173,7 @@ Router: `router.tsx` (module-scoped, keeps location). Loaders: `lib/loaders.ts`.
 | Connection health | `lib/connection.ts` · `lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `hooks/use-online.ts` · `components/connection-banner.tsx` · `connection-info.tsx` |
 | Drafts (survive reloads) | `lib/drafts.ts` · `hooks/use-terminal-draft.ts` · `components/terminal-draft-preview.tsx` |
 | Idle lock | `lib/idle.ts` · `hooks/use-idle-lock.ts` · `components/idle-lock.tsx` |
-| Theme / display prefs | `hooks/use-theme.ts` · `hooks/use-display-prefs.ts` · `hooks/use-dash-prefs.ts` · `components/theme-control.tsx` · `display-prefs.tsx` |
+| Theme / display prefs | `hooks/use-theme.ts` · `hooks/use-display-prefs.ts` (`rawTerminal` default **on**, key `v5`) · `hooks/use-dash-prefs.ts` · `components/theme-control.tsx` · `display-prefs.tsx` |
 | Markdown in transcripts | `lib/markdown.ts` · `components/markdown-text.tsx` · `lib/links.ts` |
 | Multi-session | `lib/session.ts` · `components/session-switcher.tsx` |
 | PWA | `vite.config.ts` (`vite-plugin-pwa`) · `lib/pwa.ts` · `lib/sw-routes.ts` · `lib/reload-guard.ts` |
@@ -204,6 +205,7 @@ placeholder ([ADR 0010](./.adr/0010-long-sends-are-verified-via-the-paste-placeh
 | A harness's **screen** grammar | `web/src/lib/harness/<name>/`, `registry.ts`, `conformance.ts` fixtures, `lib/grammar/*_NOTES.md` | `bridge/` |
 | A harness's **journal** adapter | `bridge/journal/<name>.ts`, `journal/registry.ts`; run `bun scripts/journal-probe.ts` | `web/src/lib/harness/` |
 | Terminal rendering / colours | `web/src/components/ansi-output.tsx`, `lib/ansi.ts`, `index.css` ([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md)) | `bridge/` |
+| Display prefs / wrap / raw terminal | `web/src/hooks/use-display-prefs.ts`, `components/display-prefs.tsx`, composer ⚙ | `bridge/` |
 | Auth / ingress / host & origin checks | `bridge/config.ts`, `bridge/server.ts` (`guard`, `checkAccess`, `isHostAllowed`), `DEPLOYMENT.md`, [ADR 0023](./.adr/0023-host-validation-is-fail-closed.md) | `web/src/lib/harness/` |
 | Push / notifications | `bridge/notifications.ts`, `notify-prefs.ts`, `snooze.ts`, `push.ts`, `push-endpoint.ts`; `web/src/lib/push.ts`, `sw.ts`, `routes/settings.tsx`; README → Web Push | `state-engine.ts` internals |
 | Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md)) | — |
@@ -221,7 +223,8 @@ placeholder ([ADR 0010](./.adr/0010-long-sends-are-verified-via-the-paste-placeh
 |---|---|
 | Socket RPC bug | `bridge/herdr-client.ts` · `dial.ts` · `wire.ts` · `HERDR_API.md` |
 | Polling / stale snapshot / transitions | `bridge/state-engine.ts` · `event-poker.ts` · `web/src/hooks/use-polling.ts` |
-| Prompt / dialog not detected or mis-detected | `web/src/lib/blocks.ts` · `lib/harness/registry.ts` · `lib/harness/claude/` · `lib/grammar/*_NOTES.md` |
+| Prompt / dialog not detected or mis-detected | First: composer ⚙ → Raw terminal **off**. Then `web/src/lib/blocks.ts` · `lib/harness/registry.ts` · `lib/harness/claude/` · `lib/grammar/*_NOTES.md` |
+| Pane is raw TUI / no prompt buttons | `web/src/hooks/use-display-prefs.ts` · `components/display-prefs.tsx` · composer ⚙ |
 | Send didn't land / wrong verification | `web/src/lib/reply-action.ts` · `dialog-guard.ts` · `bridge/server.ts sendReplySteps` · `checkPromptBinding` · `lib/harness/claude/paste.ts` |
 | Composer / keys / type-into-terminal | `web/src/components/composer.tsx` · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` ([ADR 0005](./.adr/0005-a-composed-key-queue-never-outlives-its-dock.md)) |
 | History empty / wrong | `bridge/journal/registry.ts` · `journal/<harness>.ts` · `journal/files.ts` · `web/src/routes/history.tsx` |
