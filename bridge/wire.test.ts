@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { decodeReplyLine, decodeStreamLine } from "./wire.ts";
+import { toPaneWire, type AgentView } from "./types.ts";
 
 // The reply decoder is the pure core of the socket adapter: JSON parse plus result/error
 // discrimination. Exercising it here covers the wire shapes without needing a live Herdr socket.
@@ -65,5 +66,24 @@ describe("decodeStreamLine", () => {
     expect(() => decodeStreamLine('{"id":"es1"}')).toThrow(/unrecognized stream line/);
     expect(() => decodeStreamLine('{"result":{"type":"nope"}}')).toThrow(/unexpected ack shape/);
     expect(() => decodeStreamLine('{"event":42,"data":{}}')).toThrow(/event name not a string/);
+  });
+});
+
+describe("toPaneWire", () => {
+  test("passes runningCommand: true through to the wire shape", () => {
+    const pane: AgentView = {
+      paneId: "p1",
+      workspaceId: "w1",
+      workspaceLabel: "ws",
+      workspaceNumber: 1,
+      tabId: "t1",
+      agent: "claude",
+      status: "working",
+      cwd: "/repo",
+      focused: true,
+      runningCommand: true,
+    };
+    const wire = toPaneWire(pane, () => false);
+    expect(wire.runningCommand).toBe(true);
   });
 });

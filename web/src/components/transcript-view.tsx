@@ -83,6 +83,11 @@ function ToolPart({ part, query }: { part: Extract<TranscriptPart, { kind: "tool
             <Highlight text={part.summary} query={query} />
           </span>
         )}
+        {!result && (
+          <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground animate-pulse">
+            running
+          </span>
+        )}
         {result && (
           <ChevronRight
             className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}

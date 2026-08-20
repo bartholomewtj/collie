@@ -66,7 +66,7 @@ describe("TranscriptView", () => {
     expect(screen.getByText(/abc1234 the commit body/)).toBeInTheDocument();
   });
 
-  it("a tool call with no result isn't expandable (nothing to reveal)", () => {
+  it("a tool call with no result isn't expandable (nothing to reveal) and displays running marker", () => {
     render(
       <TranscriptView
         entries={[
@@ -78,6 +78,7 @@ describe("TranscriptView", () => {
       />,
     );
     expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByText("running")).toBeInTheDocument();
   });
 
   it("flags truncated output rather than silently dropping the tail", async () => {

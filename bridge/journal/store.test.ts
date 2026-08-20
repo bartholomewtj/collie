@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { pageEntries, TranscriptStore } from "./store.ts";
+import { newestEntryPendingTool, pageEntries, TranscriptStore } from "./store.ts";
 import type { JournalAdapter, TranscriptEntry, TranscriptSource } from "./types.ts";
 
 // The store is harness-BLIND: it resolves through whatever adapter it's handed, caches by absolute
@@ -112,6 +112,101 @@ describe("TranscriptStore", () => {
     expect(page!.fileTruncated).toBe(true);
     // The window covers every parsed entry, but the log itself was clipped — there IS more behind it.
     expect(page!.hasMore).toBe(true);
+  });
+
+  test("runningCommand returns true when newest entry holds a pending tool part", async () => {
+    const { adapter } = fakeAdapter(["u1"]);
+    adapter.parse = () => [
+      {
+        uuid: "u1",
+        ts: "",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "npm test" }],
+      },
+    ];
+    const store = new TranscriptStore();
+    expect(await store.runningCommand(adapter, REF)).toBe(true);
+  });
+
+  test("runningCommand returns false when newest entry tool part has result", async () => {
+    const { adapter } = fakeAdapter(["u1"]);
+    adapter.parse = () => [
+      {
+        uuid: "u1",
+        ts: "",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "npm test", result: { text: "pass" } }],
+      },
+    ];
+    const store = new TranscriptStore();
+    expect(await store.runningCommand(adapter, REF)).toBe(false);
+  });
+
+  test("runningCommand returns null when resolve fails", async () => {
+    const { adapter } = fakeAdapter(["u1"]);
+    const store = new TranscriptStore();
+    expect(await store.runningCommand(adapter, { kind: "id", value: "unknown" })).toBeNull();
+  });
+
+  test("runningCommand reuses cache on repeat calls with unchanged stat", async () => {
+    const { adapter, calls } = fakeAdapter(["u1"]);
+    const store = new TranscriptStore();
+    await store.runningCommand(adapter, REF);
+    await store.runningCommand(adapter, REF);
+    expect(calls.load).toBe(1);
+    expect(calls.parse).toBe(1);
+    expect(calls.stat).toBe(2);
+  });
+});
+
+describe("newestEntryPendingTool", () => {
+  test("returns false for empty entries", () => {
+    expect(newestEntryPendingTool([])).toBe(false);
+  });
+
+  test("returns true when newest entry has tool without result", () => {
+    expect(
+      newestEntryPendingTool([
+        {
+          uuid: "1",
+          ts: "",
+          role: "assistant",
+          parts: [{ kind: "tool", name: "Bash", summary: "echo hi" }],
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  test("returns false when newest entry has tool with result", () => {
+    expect(
+      newestEntryPendingTool([
+        {
+          uuid: "1",
+          ts: "",
+          role: "assistant",
+          parts: [{ kind: "tool", name: "Bash", summary: "echo hi", result: { text: "hi" } }],
+        },
+      ]),
+    ).toBe(false);
+  });
+
+  test("returns false when older entry has pending tool but newest entry is settled", () => {
+    expect(
+      newestEntryPendingTool([
+        {
+          uuid: "1",
+          ts: "",
+          role: "assistant",
+          parts: [{ kind: "tool", name: "Bash", summary: "echo hi" }],
+        },
+        {
+          uuid: "2",
+          ts: "",
+          role: "assistant",
+          parts: [{ kind: "text", text: "all done" }],
+        },
+      ]),
+    ).toBe(false);
   });
 });
 

@@ -362,7 +362,7 @@ export function SpaceTree({
                                         actionsEnabled ? () => setSheetPane(p) : undefined
                                       }
                                     >
-                                      <StatusDot status={pStatus} />
+                                      <StatusDot status={pStatus} runningCommand={p.runningCommand} />
                                       <span className="sr-only">{STATUS_LABEL[pStatus]}</span>
                                       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground hover:text-foreground">
                                         {paneDisplayName(p)}

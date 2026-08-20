@@ -107,6 +107,7 @@
      chip on the pane header, not the dot on the dashboard. */
   --status-blocked: light-dark(oklch(0.46 0.2 25), oklch(0.7 0.2 24));
   --status-working: light-dark(oklch(0.46 0.12 72), oklch(0.82 0.15 82));
+  --status-running: light-dark(oklch(0.46 0.12 250), oklch(0.82 0.15 250));
   --status-done: light-dark(oklch(0.45 0.14 152), oklch(0.74 0.16 152));
   --status-idle: light-dark(oklch(0.45 0.02 250), oklch(0.65 0.02 250));
   --status-unknown: light-dark(oklch(0.43 0.02 250), oklch(0.6 0.02 250));
@@ -175,6 +176,7 @@
 
   --color-status-blocked: var(--status-blocked);
   --color-status-working: var(--status-working);
+  --color-status-running: var(--status-running);
   --color-status-done: var(--status-done);
   --color-status-idle: var(--status-idle);
   --color-status-unknown: var(--status-unknown);

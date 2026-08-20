@@ -37,7 +37,7 @@ import type { MenuBlockAction } from "@/components/menu-block";
 import { canGrowRequestedLines, growRequestedLines } from "@/lib/loaders";
 import { useInlineHistory, INLINE_GROW_THRESHOLD } from "@/hooks/use-inline-history";
 import { TranscriptView } from "@/components/transcript-view";
-import { liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "@/lib/transcript-seam";
+import { commandsOnlyTurn, liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "@/lib/transcript-seam";
 import { shortCwd } from "@/lib/format";
 import { historyPath, tracePath } from "@/lib/nav";
 import { useOpenSpace } from "@/hooks/use-open-space";
@@ -293,6 +293,10 @@ export function AgentChat({
     () => newestTurnInViewport(inline.entries, mirrorPlain),
     [inline.entries, mirrorPlain],
   );
+  const commandsOnly = useMemo(
+    () => commandsOnlyTurn(inline.entries),
+    [inline.entries],
+  );
   const [livePinned, setLivePinned] = useState(false);
   const [pinnedFor, setPinnedFor] = useState(paneId);
   if (pinnedFor !== paneId) {
@@ -308,6 +312,7 @@ export function AgentChat({
     hasTranscript: inline.entries.length > 0,
     newestTurnInViewport: caughtUp,
     pinned: livePinned,
+    commandsOnly,
   });
   const visibleEntries = useMemo(
     () => (showLive ? trimAtSeam(inline.entries, mirrorPlain) : inline.entries),
@@ -727,7 +732,11 @@ export function AgentChat({
               {isShell ? (
                 <ShellBadge stale={connecting} />
               ) : (
-                <StatusBadge status={agent.status} stale={connecting} />
+                <StatusBadge
+                  status={agent.status}
+                  runningCommand={agent.runningCommand}
+                  stale={connecting}
+                />
               )}
             </>
           ) : undefined

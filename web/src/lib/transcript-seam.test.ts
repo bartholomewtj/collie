@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { findSeam, liveMirrorNeeded, newestTurnInViewport, trimAtSeam } from "./transcript-seam";
+import {
+  commandsOnlyTurn,
+  findSeam,
+  liveMirrorNeeded,
+  newestTurnInViewport,
+  trimAtSeam,
+} from "./transcript-seam";
 import type { TranscriptEntry } from "./types";
 
 function turn(uuid: string, role: TranscriptEntry["role"], text: string): TranscriptEntry {
@@ -114,6 +120,50 @@ describe("newestTurnInViewport", () => {
   });
 });
 
+describe("commandsOnlyTurn", () => {
+  it("returns false for an empty transcript", () => {
+    expect(commandsOnlyTurn([])).toBe(false);
+  });
+
+  it("returns true when the newest entry holds a tool part with no result", () => {
+    const entries: TranscriptEntry[] = [
+      turn("a", "user", "run tests"),
+      {
+        uuid: "b",
+        ts: "2026-08-20T00:00:00Z",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "npm test" }],
+      },
+    ];
+    expect(commandsOnlyTurn(entries)).toBe(true);
+  });
+
+  it("returns false when the newest entry's tool part has a result attached", () => {
+    const entries: TranscriptEntry[] = [
+      {
+        uuid: "b",
+        ts: "2026-08-20T00:00:00Z",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "npm test", result: { text: "pass" } }],
+      },
+    ];
+    expect(commandsOnlyTurn(entries)).toBe(false);
+  });
+
+  it("returns false when the newest entry is text-only", () => {
+    const entries: TranscriptEntry[] = [
+      {
+        uuid: "a",
+        ts: "2026-08-20T00:00:00Z",
+        role: "assistant",
+        parts: [{ kind: "tool", name: "Bash", summary: "npm test" }],
+      },
+      turn("b", "assistant", "All tests passed!"),
+    ];
+    expect(commandsOnlyTurn(entries)).toBe(false);
+  });
+});
+
 describe("liveMirrorNeeded", () => {
   const idleCaughtUp = {
     status: "idle" as const,
@@ -128,6 +178,19 @@ describe("liveMirrorNeeded", () => {
   it("hides the tail for an idle pane whose transcript already holds the newest turn", () => {
     expect(liveMirrorNeeded(idleCaughtUp)).toBe(false);
     expect(liveMirrorNeeded({ ...idleCaughtUp, status: "done" })).toBe(false);
+  });
+
+  it("hides the tail when commandsOnly is true even if working", () => {
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true })).toBe(false);
+  });
+
+  it("pinned, dialogPresent, rawTerminal, and findOpen still show live even with commandsOnly", () => {
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, pinned: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, dialogPresent: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, rawTerminal: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, findOpen: true })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, hasTranscript: false })).toBe(true);
+    expect(liveMirrorNeeded({ ...idleCaughtUp, status: "working", commandsOnly: true, kind: "shell" })).toBe(true);
   });
 
   it("keeps the tail while the journal has not caught the viewport", () => {

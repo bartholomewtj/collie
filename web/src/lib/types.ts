@@ -74,6 +74,12 @@ export interface AgentView {
    * pane; drives the header's Traces button.
    */
   sssf?: PaneSssf;
+  /**
+   * True when the pane's journal shows a tool call with no result yet on its newest turn —
+   * the agent is RUNNING A COMMAND rather than thinking. Decorates `working`; never a sixth
+   * status. Absent = no signal = amber.
+   */
+  runningCommand?: boolean;
 }
 
 /** One ADW run a pane launched. `repo` is a name from the pane's workspace `sssf.repos` (never a

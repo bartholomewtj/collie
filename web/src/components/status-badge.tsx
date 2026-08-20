@@ -37,10 +37,14 @@ const RING: Record<AgentStatus, string> = {
 
 export function StatusDot({
   status,
+  runningCommand,
   surface = "bg-background",
   className,
 }: {
   status: AgentStatus;
+  /** True when a working agent is mid-command rather than thinking — paints blue instead of amber.
+   *  Decorates `working`; non-working statuses ignore the flag. */
+  runningCommand?: boolean;
   /**
    * The colour the dot sits ON. A hollow ring must be FILLED with its surface, not left
    * transparent: over the avatar's corner a transparent interior showed orange logo through one
@@ -50,10 +54,12 @@ export function StatusDot({
   surface?: string;
   className?: string;
 }) {
+  const isRunning = status === "working" && Boolean(runningCommand);
   const hollow = RESTING.has(status);
+  const dotColor = isRunning ? "bg-status-running" : DOT[status];
   return (
     <span className={cn("relative flex size-2.5 shrink-0", className)}>
-      {status === "working" && (
+      {status === "working" && !isRunning && (
         <span
           className={cn(
             "absolute inline-flex size-full animate-ping rounded-full opacity-75",
@@ -67,7 +73,7 @@ export function StatusDot({
       <span
         className={cn(
           "relative inline-flex size-full rounded-full",
-          hollow ? cn("border-[1.5px]", surface, RING[status]) : DOT[status],
+          hollow ? cn("border-[1.5px]", surface, RING[status]) : dotColor,
         )}
       />
     </span>
@@ -76,22 +82,27 @@ export function StatusDot({
 
 export function StatusBadge({
   status,
+  runningCommand,
   stale,
   className,
 }: {
   status: AgentStatus;
+  /** Swaps the inner dot to blue when a working agent is running a command. */
+  runningCommand?: boolean;
   /** The badge is showing the LAST snapshot's status while the connection is not live — dim it so
    *  frozen data doesn't read as current. No animation to remove here (the badge dot never pulses),
    *  so opacity alone carries it; the transition restores it instantly on recovery. */
   stale?: boolean;
   className?: string;
 }) {
+  const isRunning = status === "working" && Boolean(runningCommand);
+  const dotColor = isRunning ? "bg-status-running" : DOT[status];
   return (
     <Badge
       variant="outline"
       className={cn("gap-1.5 transition-opacity", CHIP[status], stale && "opacity-40", className)}
     >
-      <span className={cn("size-1.5 rounded-full", DOT[status])} />
+      <span className={cn("size-1.5 rounded-full", dotColor)} />
       {STATUS_LABEL[status]}
     </Badge>
   );

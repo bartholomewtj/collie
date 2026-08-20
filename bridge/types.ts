@@ -71,6 +71,14 @@ export interface AgentView {
    *  or no run recorded this pane. Stamped by sssf-viz.ts at snapshot time; not a Herdr field. */
   sssf?: PaneSssf;
   /**
+   * True when the pane's journal shows a tool call with no result yet on its newest turn —
+   * the agent is RUNNING A COMMAND rather than thinking. Decorates `working`; never a sixth
+   * status. Only ever set true and only when cfg.transcript is on — absent means "no signal",
+   * which the UI renders as today's amber. Stamped at snapshot time from the journal tail
+   * (server.ts, same pattern as withActivity); rides the wire through toPaneWire untouched.
+   */
+  runningCommand?: boolean;
+  /**
    * Epoch ms of this agent's last observed status transition (bridge/activity.ts). The only thing
    * that can make a pane read as unseen. Absent until the ledger has an entry, and on the very
    * first poll after a fresh install.

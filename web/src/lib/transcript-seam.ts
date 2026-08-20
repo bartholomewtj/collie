@@ -178,6 +178,15 @@ export function newestTurnInViewport(entries: TranscriptEntry[], mirrorText: str
   return seam !== null && seam.entry === last;
 }
 
+/** True when the newest transcript turn holds a tool call with no result yet — the agent is
+ *  running commands, not writing prose, so the terminal tail is a spinner we already summarise
+ *  as the transcript's running tool row. */
+export function commandsOnlyTurn(entries: TranscriptEntry[]): boolean {
+  if (entries.length === 0) return false;
+  const last = entries[entries.length - 1]!;
+  return last.parts.some((p) => p.kind === "tool" && p.result === undefined);
+}
+
 /** Inputs to {@link liveMirrorNeeded}. Kept as a type so the pane and the tests share one shape. */
 export interface LiveMirrorNeed {
   kind?: "agent" | "shell";
@@ -188,6 +197,7 @@ export interface LiveMirrorNeed {
   hasTranscript: boolean;
   newestTurnInViewport: boolean;
   pinned: boolean;
+  commandsOnly?: boolean;
 }
 
 /**
@@ -206,6 +216,10 @@ export function liveMirrorNeeded(opts: LiveMirrorNeed): boolean {
   if (opts.kind === "shell") return true;
   if (!opts.hasTranscript) return true;
   if (opts.dialogPresent) return true;
+  // Commands-only turns hide the tail: the transcript's running tool row already shows what is
+  // running. Placed ahead of working-status because tool-parts-only turns cannot latch
+  // newestTurnInViewport (which requires a non-empty text part).
+  if (opts.commandsOnly) return false;
   const status = opts.status ?? "unknown";
   if (status === "working" || status === "blocked" || status === "unknown") return true;
   return !opts.newestTurnInViewport;
