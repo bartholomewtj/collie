@@ -37,3 +37,14 @@ const HORIZONTAL_BOX_RULE_GLYPH_CLASS = "─━┄┅┈┉╌╍═╴╶╸╺
 /** Glyphs safe to classify as a repeated, standalone horizontal terminal border. */
 export const PURE_HORIZONTAL_RULE_GLYPH_CLASS =
   HORIZONTAL_BOX_RULE_GLYPH_CLASS + BLOCK_EIGHTH_RULE_GLYPH_CLASS + UNICODE_DASH_RULE_GLYPH_CLASS;
+
+/**
+ * Box-drawing vertical strokes and corner/junction glyphs (square and rounded), explicitly
+ * excluding horizontal-only glyphs.
+ *
+ * Used by `blocks.ts` to ask: is this row an enclosed box/table row?
+ * A false positive here risks cropping a prose row that happens to start and end with box
+ * glyphs — which is why horizontal-only rules are excluded and the 20-cell floor stands.
+ */
+export const BOX_ENCLOSURE_GLYPH_CLASS = "│┃┆┇┊┋┌-╋╎╏║╒-╬╭-╰╵╷╹╻╽╿";
+

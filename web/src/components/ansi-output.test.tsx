@@ -71,7 +71,7 @@ describe("mirror line wrapping", () => {
   });
 
   it("keeps a marked ANSI border to one clipped row without changing its text, styles, links, or find offsets", () => {
-    const border = `  ${"─".repeat(20)}  `;
+    const border = `  ${"─".repeat(20)}`;
     const text = `ordinary prose\n${ESC}[41m${border.slice(0, 12)}${ESC}[44m${border.slice(12)}${ESC}[0m\nsee https://herdr.dev/docs\n`;
     const { container } = render(<AnsiOutput text={text} query="───" />);
     const pre = container.querySelector("pre")!;
@@ -95,7 +95,7 @@ describe("mirror line wrapping", () => {
   });
 
   it("clips a plain border only while wrapping, leaving ordinary output and wrap-off panning alone", () => {
-    const border = `  ${"─".repeat(20)}  `;
+    const border = `  ${"─".repeat(20)}`;
     const { container: plain } = render(<AnsiOutput text={`${border}\n`} />);
     expect(plain.querySelector("span.inline-block")?.textContent).toBe(border);
 
@@ -115,6 +115,56 @@ describe("mirror line wrapping", () => {
     const top = `  ╭${"─".repeat(40)}╮`;
     const { container } = render(<AnsiOutput text={`${top}\n`} />);
     expect(container.querySelector("span.inline-block")?.textContent).toBe(top);
+  });
+
+  it("clips a wide enclosed table/box row while wrapping", () => {
+    const row = "│ col 1      │ col 2      │";
+    const { container } = render(<AnsiOutput text={`${row}\n`} />);
+    const clipped = container.querySelector("span.inline-block")!;
+    expect(clipped).not.toBeNull();
+    expect(clipped.textContent).toBe(row);
+  });
+
+  it("clips a full-width highlight row, keeps its background, and strips trailing spaces", () => {
+    const highlight = `${ESC}[7mHighlight bar${" ".repeat(30)}${ESC}[27m`;
+    const { container } = render(<AnsiOutput text={`${highlight}\n`} />);
+    const clipped = container.querySelector("span.inline-block")!;
+    expect(clipped).not.toBeNull();
+    expect(clipped.textContent).toBe("Highlight bar");
+    const span = clipped.querySelector("span") as HTMLElement;
+    expect(span.style.backgroundColor).toBe("rgb(250, 250, 250)");
+  });
+
+  it("renders a coloured padded row trimmed to visible text, and strips pure-space coloured lines completely", () => {
+    const padded = `${ESC}[41mok${" ".repeat(60)}${ESC}[0m`;
+    const { container: paddedCont } = render(<AnsiOutput text={`${padded}\n`} />);
+    const paddedSpan = paddedCont.querySelector("span.inline-block span") as HTMLElement;
+    expect(paddedSpan.textContent).toBe("ok");
+    expect(paddedSpan.style.backgroundColor).toBe("var(--ansi-1)");
+
+    const pureSpace = `${ESC}[41m${" ".repeat(60)}${ESC}[0m`;
+    const { container: emptyCont } = render(<AnsiOutput text={`${pureSpace}\n`} />);
+    expect(emptyCont.querySelectorAll("span")).toHaveLength(0);
+  });
+
+  it("threads find match offsets and autolinks accurately on lines after a stripped row", () => {
+    const text = `${ESC}[41mtitle${" ".repeat(30)}${ESC}[0m\nline after with searchtarget and https://herdr.dev/docs\n`;
+    const { container } = render(<AnsiOutput text={text} query="searchtarget" />);
+    const pre = container.querySelector("pre")!;
+    const hit = pre.querySelector("[data-find-match]")!;
+    expect(hit).not.toBeNull();
+    expect(hit.textContent).toBe("searchtarget");
+    expect(pre.querySelector("a")?.textContent).toBe("https://herdr.dev/docs");
+    expect(pre.textContent).toBe("title\nline after with searchtarget and https://herdr.dev/docs\n");
+  });
+
+  it("leaves an enclosed table row unclipped under wrap={false} with interior columns intact", () => {
+    const tableRow = "│ col 1      │ col 2      │";
+    const { container: panned } = render(<AnsiOutput text={`${tableRow}\n`} wrap={false} />);
+    const pannedPre = panned.querySelector("pre")!;
+    expect(pannedPre.className).toContain("overflow-x-auto");
+    expect(pannedPre.querySelector("span.inline-block")).toBeNull();
+    expect(pannedPre.textContent).toBe(`${tableRow}\n`);
   });
 });
 

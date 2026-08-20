@@ -6,6 +6,7 @@ import { parseAnsi } from "@/lib/ansi";
 import { buildBlocks } from "@/lib/harness";
 import {
   lineText,
+  presentBlocks,
   splitLines,
   type Block,
   type MenuModel,
@@ -163,7 +164,10 @@ export const AnsiOutput = memo(function AnsiOutput({
   promptDisabled,
 }: AnsiOutputProps) {
   const segments = useMemo(() => parseAnsi(text), [text]);
-  const blocks = useMemo(() => buildBlocks(splitLines(segments), { agent }), [segments, agent]);
+  const blocks = useMemo(
+    () => presentBlocks(buildBlocks(splitLines(segments), { agent })),
+    [segments, agent],
+  );
 
   const rawBlocks = useMemo(
     () => blocks.filter((b): b is RawBlock => b.kind === "raw"),

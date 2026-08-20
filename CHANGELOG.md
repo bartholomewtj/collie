@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.48.1] - 2026-08-21
+
+### Fixed
+- Keep table, box-drawing, and full-width-highlight rows on one visual row when wrapping, and strip trailing padded spaces from coloured lines across grok, agy, and claude panes
+
 ## [0.48.0] - 2026-08-21
 
 ### Added
