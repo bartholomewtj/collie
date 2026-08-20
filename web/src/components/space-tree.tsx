@@ -1,12 +1,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router";
-import { ChevronDown, ChevronRight, FolderPlus, LayoutGrid, Plus, Search } from "lucide-react";
+import { useNavigate } from "react-router";
+import { ChevronDown, ChevronRight, FolderPlus, LayoutGrid, Plus, Search, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/section-header";
 import { StatusDot } from "@/components/status-badge";
-import { LanesIcon } from "@/components/sssf-frame";
 import { SpaceActionsSheet } from "@/components/space-actions-sheet";
 import { TabActionsSheet } from "@/components/tab-actions-sheet";
 import { PaneActionsSheet } from "@/components/pane-actions-sheet";
@@ -22,25 +21,9 @@ import {
 } from "@/lib/spaces";
 import { TRIAGE_STATUS } from "@/lib/triage";
 import { timeAgo } from "@/lib/format";
-import { panePath, tracePath } from "@/lib/nav";
+import { panePath } from "@/lib/nav";
 import { paneDisplayName, STATUS_LABEL } from "@/lib/types";
-import type { AgentView, PaneSssfRun, TabView, WorkspaceView } from "@/lib/types";
-
-/** The newest ADW run any pane in this tab launched (runs are per-pane, newest first), with the pane
- *  that owns it, and whether any run in the tab is still going. Undefined when the tab has none. */
-export function tabTraces(
-  panes: AgentView[],
-): { paneId: string; run: PaneSssfRun; live: boolean } | undefined {
-  let best: { paneId: string; run: PaneSssfRun } | undefined;
-  let live = false;
-  for (const p of panes) {
-    const runs = p.sssf?.runs ?? [];
-    if (runs.some((r) => r.status === "running")) live = true;
-    const r = runs[0];
-    if (r && (!best || r.startedAt > best.run.startedAt)) best = { paneId: p.paneId, run: r };
-  }
-  return best ? { ...best, live } : undefined;
-}
+import type { AgentView, TabView, WorkspaceView } from "@/lib/types";
 
 interface TreeRowButtonProps {
   onClick?: () => void;
@@ -100,8 +83,8 @@ export function SpaceTree({
   onRenamed,
 }: SpaceTreeProps) {
   const navigate = useNavigate();
-  const { pathname, search } = useLocation();
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const { prefs, setSpaceOpen, setTabOpen } = useDashPrefs();
 
@@ -176,6 +159,24 @@ export function SpaceTree({
                 {blockedSpaces}
               </span>
             )}
+            {workspaces.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (filterOpen || query) {
+                    setFilterOpen(false);
+                    setQuery("");
+                  } else {
+                    setFilterOpen(true);
+                  }
+                }}
+                aria-label="Filter spaces"
+                aria-expanded={filterOpen}
+                className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
+              >
+                {filterOpen || query ? <X className="size-4" /> : <Search className="size-4" />}
+              </button>
+            )}
             <button
               type="button"
               onClick={onNewSpace}
@@ -188,20 +189,22 @@ export function SpaceTree({
         }
       />
 
+      {filterOpen && (
+        <label className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
+          <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <input
+            type="search"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter spaces…"
+            aria-label="Filter spaces"
+            className="min-h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+        </label>
+      )}
+
       <div id="spaces-body" className="flex flex-col divide-y divide-border/60">
-        {workspaces.length > 1 && (
-          <label className="sticky top-0 z-10 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
-            <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter spaces…"
-              aria-label="Filter spaces"
-              className="min-h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </label>
-        )}
 
         {workspaces.length === 0 ? (
           <p className="px-1 py-6 text-center text-sm text-muted-foreground">No spaces yet.</p>
@@ -220,10 +223,6 @@ export function SpaceTree({
             const wsTabGroups = isSpaceExpanded || w.paneCount > 0
               ? groupPanesByTab(w.workspaceId, tabs, agents, shellPanes)
               : [];
-
-            const sssf = w.sssf && w.sssf.repos.length > 0 ? w.sssf : null;
-            const traceRepo = sssf ? (sssf.attached?.repo ?? sssf.repos[0].name) : null;
-            const runLive = !!sssf?.repos.some((r) => r.running);
 
             return (
               <div
@@ -282,26 +281,6 @@ export function SpaceTree({
                       </span>
                     )}
                   </TreeRowButton>
-
-                  {sssf && traceRepo && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(tracePath(w.workspaceId, traceRepo, session));
-                      }}
-                      aria-label={runLive ? "ADW runs in this space (one running)" : "ADW runs in this space"}
-                      className="relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
-                    >
-                      <LanesIcon className="size-4" />
-                      {runLive && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute right-1 top-1 size-1.5 rounded-full bg-emerald-400 ring-2 ring-background"
-                        />
-                      )}
-                    </button>
-                  )}
                 </div>
 
                 {/* Expanded space children */}
@@ -316,7 +295,6 @@ export function SpaceTree({
 
                       const isTabExpanded = isMultiPane && prefs.expandedTabs.includes(group.tabId);
                       const tabRecord = tabs.find((t) => t.tabId === group.tabId);
-                      const tabTracesInfo = tabTraces(tabPanes);
 
                       return (
                         <div key={group.tabId} className="flex flex-col">
@@ -371,35 +349,6 @@ export function SpaceTree({
                                 </span>
                               )}
                             </TreeRowButton>
-
-                            {tabTracesInfo && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(
-                                    tracePath(w.workspaceId, tabTracesInfo.run.repo, session, {
-                                      pane: tabTracesInfo.paneId,
-                                    }),
-                                    { state: { from: pathname + search } },
-                                  );
-                                }}
-                                aria-label={
-                                  tabTracesInfo.live
-                                    ? "ADW runs in this tab (one running)"
-                                    : "ADW runs in this tab"
-                                }
-                                className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
-                              >
-                                <LanesIcon className="size-3.5" />
-                                {tabTracesInfo.live && (
-                                  <span
-                                    aria-hidden="true"
-                                    className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-emerald-400 ring-2 ring-background"
-                                  />
-                                )}
-                              </button>
-                            )}
                           </div>
 
                           {/* Level 3: Pane Rows (when multi-pane tab is expanded) */}
