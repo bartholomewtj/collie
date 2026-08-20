@@ -51,12 +51,17 @@ public access, Collie isn't built for it. Read the
 
 ## Demo
 
-A run through the herd from a phone: a bottom bar holds the four places you go — **Herd** (who
-needs you, on top), **Spaces**, **Traces**, **Settings** — and every screen below one of those has a
-**‹ back** in the top-left that goes up one level (pane → space → Spaces). From Spaces you drill
-into a space's tabs and panes (long-press a pane pill or pane row, or a tab chip or tab heading, to rename or close it, or a
-space row to rename the space — and a Claude pane shows the name you gave it with `/rename`), answer an `AskUserQuestion` prompt with
-a tap, switch between herds, and pick up a push notification the moment an agent is waiting on input.
+A run through the herd from a phone. The home screen is one **folder tree** of your spaces: tap a
+space to expand its tabs, tap a tab to expand its panes, and anything holding exactly one child
+opens that child straight away — a space with one tab and one pane puts you in the CLI in a single
+tap. Agents needing you sort to the top and start expanded, with a status dot on every row, so
+"who's waiting on me" is on the same screen as "where is everything".
+
+A bottom bar holds the three places you go — **Spaces** (the tree), **Traces**, **Settings** — and
+every screen below one of those has a **‹ back** in the top-left that goes up one level (pane →
+tree). Long-press a space, tab or pane row to rename or close it (a Claude pane shows the name you
+gave it with `/rename`), answer an `AskUserQuestion` prompt with a tap, switch between herds, and
+pick up a push notification the moment an agent is waiting on input.
 
 <table>
   <tr>

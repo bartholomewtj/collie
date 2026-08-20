@@ -4,7 +4,7 @@ import { useLoaderData, useLocation, useNavigate, useParams, useRouteLoaderData 
 import { AgentChat } from "@/components/agent-chat";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { ROOT_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
-import { homePath, panePath, spacePath } from "@/lib/nav";
+import { homePath, panePath } from "@/lib/nav";
 import { setStatus } from "@/lib/status";
 import type { AgentView } from "@/lib/types";
 
@@ -52,16 +52,15 @@ export function DetailRoute() {
   const tabLabel = root.tabs.find((t) => t.tabId === agent?.tabId)?.label;
   const gone = !agent;
 
-  // "Up" from a pane is where you came from when we know it (`from`), else its space — the native
-  // stack shape (Spaces › space › pane). Remember the last workspace we saw so a pane that has just
-  // closed still lands on its space, not Home.
-  const lastWorkspace = useRef<string | undefined>(undefined);
-  if (agent) lastWorkspace.current = agent.workspaceId;
-  const upPath = () =>
-    from ?? (lastWorkspace.current ? spacePath(lastWorkspace.current, session) : homePath(session));
+  // "Up" from a pane is where you came from when we know it (`from`), else home — which IS the
+  // spaces tree now, so the native stack shape survives the loss of the space detail route. The
+  // `lastWorkspace` ref that used to remember a space for a just-closed pane went with that route:
+  // there is no longer a per-space screen for it to land on.
+  const upPath = () => from ?? homePath(session);
   const up = () => navigate(upPath());
 
-  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up to its space
+  // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up (to `from`, or
+  // home)
   // instead of leaving you on a dead "agent gone" view. Guarded on a connected, non-stale snapshot
   // so a transient poll failure or reconnect doesn't evict a still-valid pane.
   useEffect(() => {

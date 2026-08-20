@@ -1,10 +1,12 @@
+import { describe, expect, it } from "vitest";
+
 import {
   filterSpaces,
   groupPanesByTab,
-  tabsAreFlat,
   sortSpacesByRecency,
   spaceLastSeenMap,
   spaceTriageMap,
+  worstBucket,
 } from "./spaces";
 import { worstTriage } from "./triage";
 import type { AgentStatus, AgentView, TabView, WorkspaceView } from "./types";
@@ -64,6 +66,20 @@ describe("groupPanesByTab", () => {
     const other = agent({ paneId: "w2:p1", workspaceId: "w2", tabId: "w2:t1" });
     const groups = groupPanesByTab("w1", tabs, [other], []);
     expect(groups.every((g) => g.panes.length === 0)).toBe(true);
+  });
+});
+
+describe("worstBucket", () => {
+  const mk = (id: string, ws: string, status: AgentStatus, extra: Partial<AgentView> = {}) =>
+    agent({ paneId: id, workspaceId: ws, tabId: `${ws}:t1`, status, ...extra });
+
+  it("returns null for empty pane list", () => {
+    expect(worstBucket([])).toBeNull();
+  });
+
+  it("reduces a pane list to the worst bucket", () => {
+    expect(worstBucket([mk("p1", "w1", "idle"), mk("p2", "w1", "blocked")])).toBe("needs");
+    expect(worstBucket([mk("p1", "w1", "working"), mk("p2", "w1", "idle")])).toBe("working");
   });
 });
 
@@ -194,17 +210,5 @@ describe("spaceLastSeenMap", () => {
     expect(sortSpacesByRecency(spaces, panes, spaceLastSeenMap(panes))).toEqual(
       sortSpacesByRecency(spaces, panes),
     );
-  });
-});
-
-describe("tabsAreFlat", () => {
-  const tab = (workspaceId: string, tabId: string, paneCount: number) => ({
-    tabId, workspaceId, number: 1, label: tabId, focused: false, paneCount,
-  });
-  it("is flat when no tab in the space holds more than one pane", () => {
-    expect(tabsAreFlat("w1", [tab("w1", "a", 1), tab("w1", "b", 0), tab("w2", "c", 3)])).toBe(true);
-  });
-  it("is not flat once a tab holds two panes", () => {
-    expect(tabsAreFlat("w1", [tab("w1", "a", 1), tab("w1", "b", 2)])).toBe(false);
   });
 });

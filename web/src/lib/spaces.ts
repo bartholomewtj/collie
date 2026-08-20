@@ -1,16 +1,7 @@
 // Helpers for the space/tab navigator: shape the flat snapshot (agents + shell panes + tabs) into
-// the per-space, per-tab tree the home space view renders.
-import { bucketOf, TRIAGE_ORDER, type TriageKey } from "./triage";
+// the per-space, per-tab tree the spaces tree renders.
+import { bucketOf, TRIAGE_ORDER, worstTriage, type TriageKey } from "./triage";
 import type { AgentView, TabView, WorkspaceView } from "./types";
-
-/**
- * A space is "flat" when no tab holds more than one pane. Then the tab chips filter nothing (one
- * card either way) and merely repeat the section headings below them, so the space route hides the
- * chips and keeps only the "+" — the headings still carry the tab's name, status and long-press.
- */
-export function tabsAreFlat(workspaceId: string, tabs: TabView[]): boolean {
-  return tabs.filter((t) => t.workspaceId === workspaceId).every((t) => t.paneCount <= 1);
-}
 
 export interface TabGroup {
   tabId: string;
@@ -42,6 +33,14 @@ export function groupPanesByTab(
   if (orphans.length) groups.push({ tabId: `${workspaceId}:other`, label: "…", panes: orphans });
 
   return groups;
+}
+
+/**
+ * The most urgent bucket among a set of panes — routes through {@link worstTriage}.
+ * Null when the set holds no agents.
+ */
+export function worstBucket(panes: readonly AgentView[]): TriageKey | null {
+  return worstTriage(panes);
 }
 
 /**

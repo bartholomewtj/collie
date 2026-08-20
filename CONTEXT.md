@@ -25,7 +25,7 @@
 
 ### Names that collide
 
-- **Herdr workspace vs Collie space** — same thing. Herdr `workspace_id` ↔ route `/space/:spaceId`. A space holds tabs; a tab holds panes.
+- **Herdr workspace vs Collie space** — same thing. Herdr `workspace_id` ↔ a space row in the home tree (there is no per-space route any more; `/space/:spaceId` redirects to `/`). A space holds tabs; a tab holds panes.
 - **Herdr pane vs agent chat** — Herdr's `pane_id` is a raw PTY. Collie renders agent panes through `AgentChat` (`web/src/components/agent-chat.tsx`) with prompt parsing; bare shells fall back to the raw mirror.
 - **Session** means three things: the agent's on-disk transcript id (`bridge/journal/`), Herdr's daemon session (`session.snapshot`), and Collie's multi-session URL `?s=<name>` (`web/src/lib/session.ts`, `bridge/sessions.ts`).
 - **Idle lock** — a pause, not a security gate (`web/src/lib/idle.ts`, [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
@@ -78,7 +78,7 @@
 | `state-engine.ts` | Poll loop (`COLLIE_POLL_MS` / `COLLIE_POLL_IDLE_MS`), builds the snapshot, emits transitions (blocked/done). |
 | `event-poker.ts` | Long-lived `events.subscribe` stream whose only job is to poke the state engine for a debounced re-poll. |
 | `types.ts` | Bridge domain model — our types, decoupled from Herdr's wire shapes. |
-| `activity.ts` | Per-pane "last did something / last seen by you" (Herdr tracks neither). Feeds Herd ordering and the seen header ([ADR 0003](./.adr/0003-one-shared-seen.md)). |
+| `activity.ts` | Per-pane "last did something / last seen by you" (Herdr tracks neither). Feeds tree ordering and the seen header ([ADR 0003](./.adr/0003-one-shared-seen.md)). |
 | `audit.ts` | Append-only audit log of write-level actions, mode 0600. |
 | `notifications.ts` | Coordinator that gives every blocked/done alert one delivery decision (dedupe, escalation). |
 | `notify-prefs.ts` | Which lifecycle events push at all ([ADR 0021](./.adr/0021-notification-settings-are-writes.md)). |
@@ -146,9 +146,9 @@ each file as `*.test.ts(x)`.
 
 | Path | File | Loader |
 |---|---|---|
-| `/` (Herd) | `routes/home.tsx` | `rootLoader` (`/api/snapshot`, on the layout) |
-| `/spaces` | `routes/spaces.tsx` | — |
-| `/space/:spaceId` | `routes/space.tsx` → `components/space-view.tsx`, `space-overview.tsx` | — |
+| `/` (Spaces tree) | `routes/tree.tsx` → `components/space-tree.tsx` | `rootLoader` (`/api/snapshot`, on the layout) |
+| `/spaces` → `/` | `routes/redirects.tsx` (`SpacesRedirect`) | — |
+| `/space/:spaceId` → `/` | `routes/redirects.tsx` (`SpaceRedirect`) — expands that space first | — |
 | `/traces` · `/traces/:spaceId/:repo` | `routes/traces.tsx` → `components/sssf-frame.tsx` | — |
 | `/settings` | `routes/settings.tsx` | — |
 | `/pane/:paneId` | **`routes/detail.tsx`** → `components/agent-chat.tsx` + `composer.tsx` | `paneLoader` |
@@ -163,7 +163,8 @@ Router: `router.tsx` (module-scoped, keeps location). Loaders: `lib/loaders.ts`.
 | Composer (input, send modes, keys dock, quick dock) | `components/composer.tsx` (1k lines) · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` + `components/key-queue-strip.tsx` · `components/quick-actions.tsx` · `lib/quick-replies.ts` |
 | Send pipeline (what happens after tap) | `lib/reply-action.ts` (guard) · `lib/dialog-guard.ts` · `lib/prompt-action.ts` · `lib/preview-action.ts` · `lib/wizard-action.ts` · `lib/multi-select-action.ts` · `lib/menu-action.ts` · `lib/destructive.ts` (rm/dd/sudo confirm) · `lib/api.ts` |
 | Screen → blocks → UI | `lib/ansi.ts` → `lib/blocks.ts` → `lib/harness/*` → `components/{prompt-select,preview-select,wizard,multi-select,menu}-block.tsx` · raw: `components/ansi-output.tsx` |
-| Herd list / cards | `components/agent-list.tsx` · `agent-card.tsx` · `agent-sidebar.tsx` · `lib/triage.ts` (ordering) · `lib/status.ts` |
+| Spaces tree (home) | `components/space-tree.tsx` · `lib/spaces.ts` (grouping/ordering) · `lib/triage.ts` (buckets) · `hooks/use-dash-prefs.ts` (persisted expansion) · `hooks/use-open-space.ts` |
+| Agent cards / in-pane switcher | `components/agent-card.tsx` · `agent-sidebar.tsx` · `lib/triage.ts` (ordering) · `lib/status.ts` |
 | Long-press actions | `hooks/use-long-press.ts` · `components/{pane,tab,space}-actions-sheet.tsx` · `action-sheet-rows.tsx` |
 | Command palette / operator rows | `components/command-palette.tsx` · `lib/agent-commands.ts` · `lib/operator-commands.ts` |
 | Push & notifications (client) | `lib/push.ts` · `lib/push-decision.ts` · `hooks/use-push.ts` · `hooks/use-notify-prefs.ts` · `components/{notify-prefs,snooze}-control.tsx` · `sw.ts` |

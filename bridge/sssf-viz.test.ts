@@ -171,11 +171,14 @@ describe("sssf-viz — pure bits", () => {
     expect(evil.status).toBe(403);
   });
 
-  test("findRepos: up to the enclosing worktree root, down two levels, bounded and unfollowing", async () => {
+  test("findRepos: up to the enclosing worktree root, down three levels, bounded and unfollowing", async () => {
     const top = await mkdtemp(join(tmpdir(), "sssf-tree-"));
     await fakeRepo(join(top, "Projects"), "alpha", [{ adw_id: "a1", status: "success", started_at: "2026-08-01T00:00:00Z" }]);
     await fakeRepo(top, "beta", [], true); // depth 1, pending
-    await fakeRepo(join(top, "Projects", "deep"), "gamma"); // depth 3 — beyond the scan
+    await fakeRepo(join(top, "Projects", "deep"), "gamma"); // depth 3 — the reason MAX_DOWN is 3:
+    //   <cwd>/Projects/deep/gamma is the `~/work/projects/tools/<repo>` shape, and at MAX_DOWN=2 it
+    //   was invisible with no error to say so.
+    await fakeRepo(join(top, "Projects", "deep", "deeper"), "delta"); // depth 4 — still beyond it
     await fakeRepo(join(top, "node_modules"), "dep"); // skipped folder
     await fakeRepo(join(top, ".hidden"), "dot"); // dot-dir
     // A junction/symlink to a repo elsewhere is never entered.
@@ -184,7 +187,7 @@ describe("sssf-viz — pure bits", () => {
     await symlink(join(elsewhere, "linked"), join(top, "Projects", "viaLink"), "junction").catch(() => {});
 
     const fromTop = await findRepos(top);
-    expect(fromTop.map((c) => c.name).sort()).toEqual(["alpha", "beta"]);
+    expect(fromTop.map((c) => c.name).sort()).toEqual(["alpha", "beta", "gamma"]);
     expect(fromTop.find((c) => c.name === "alpha")?.dbPath).toEndWith(join("adws", "adw_data", "sssf.db"));
     expect(fromTop.find((c) => c.name === "beta")?.dbPath).toBeNull();
 

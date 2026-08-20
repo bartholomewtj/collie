@@ -6,6 +6,21 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.41.0] - 2026-08-20
+
+### Fixed
+- A repo nested one folder deeper than `<pane cwd>/<group>/<repo>` is discoverable again. The SSSF traces scan looks down a bounded number of levels from each pane's cwd, and that bound was 2 — so moving a checkout into a `tools/` subfolder (`~/work/projects/tools/repo`, three levels down) silently stopped it being found: no error, no empty state, the lanes mark just never appeared and every ADW run in it was invisible. `MAX_DOWN` is now 3. The cost stays bounded by what already bounded it: `MAX_DIRENTS` caps fan-out per directory, `SKIP_DIRS` and the dot-dir rule prune the expensive subtrees, symlinks and junctions are never entered, and results cache for 30s.
+
+## [0.40.9] - 2026-08-20
+
+### Fixed
+- The pane screen renders its terminal output again. 0.40.8 rewrote `routes/detail.tsx` — a file that change had no reason to touch — and stopped passing `text`, `requestedLines` and `revision` (the mirror content from the pane loader) plus `bridge`/`error`/`stalled` (the header's connection state) to `AgentChat`, and passed an `onClosed` prop that does not exist on it. It also dropped the `seenPaneId` ref, re-introducing the "create a tab from inside an open pane sends me home" bug that ref was written to fix. Reverted to the 0.40.7 file, then given only the one change the tree actually needs: "up" from a pane is now `from` or home, since there is no per-space screen left to land on.
+
+## [0.40.8] - 2026-08-20
+
+### Changed
+- Herd and the space detail screen replaced by one Spaces tree at `/`: everything spaces-and-tabs collapses into a 3-level folder tree with one-child shortcuts, triage dots, and persisted expansion state; `/spaces` and `/space/:spaceId` redirect to `/` with the space expanded.
+
 ## [0.40.7] - 2026-08-20
 
 ### Fixed

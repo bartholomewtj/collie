@@ -13,7 +13,7 @@
  * of the visualiser. Editing the visualiser → restart Collie → it rebuilds.
  *
  * Which db: Herdr's `workspace.list` carries no directory, but every pane reports a `cwd`. For each
- * workspace, look near each pane cwd — up to the enclosing git worktree root, and a bounded two
+ * workspace, look near each pane cwd — up to the enclosing git worktree root, and a bounded three
  * levels down (a pane parked in a folder of repos) — for roots holding `adws/adw_data/sssf.db`. The
  * workspace attaches to the repo with the newest run (a running one first) and the frame opens on
  * that run; several repos give the client a name per repo to pick from. Paths never leave the
@@ -124,8 +124,18 @@ export interface SssfCandidate {
 export const SSSF_PREFIX = "/sssf";
 const DB_REL = join("adws", "adw_data", "sssf.db");
 const MAX_WALK = 8;
-/** Down-scan bounds: how many levels below a pane cwd, how many entries read per directory. */
-const MAX_DOWN = 2;
+/** Down-scan bounds: how many levels below a pane cwd, how many entries read per directory.
+ *
+ * Three, not two, because the common shape is a folder of CATEGORIES of repos, not a folder of
+ * repos: a pane parked in `~/work` reaches `~/work/projects/tools/collie` only at depth 3, and a
+ * repo moved one folder deeper silently stops being discovered — no error, no empty state, the
+ * traces mark just never appears. Two levels covered `<cwd>/<group>/<repo>` and nothing more.
+ *
+ * The cost is bounded the same way it was at two: MAX_DIRENTS caps the fan-out per directory,
+ * SKIP_DIRS and the dot-dir rule prune the expensive subtrees, symlinks/junctions are never
+ * entered, and the whole result is cached for RECHECK_MS. Going deeper still would start paying
+ * real stat() cost on a wide home directory for a shape almost nobody has. */
+const MAX_DOWN = 3;
 const MAX_DIRENTS = 200;
 /** Directory names the down-scan never enters (dot-dirs are skipped too). */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", "venv", "__pycache__"]);
@@ -753,7 +763,7 @@ async function candidateAt(dir: string): Promise<SssfCandidate | null> {
 
 /**
  * Exported for tests. Every SSSF repo near `cwd`: the nearest worktree root at or above it (up to
- * MAX_WALK levels), plus any worktree root up to MAX_DOWN levels below it. The down-scan reads
+ * MAX_WALK levels), plus any worktree root up to MAX_DOWN levels below it (three). The down-scan reads
  * directory names only, never follows symlinks or junctions, skips dot-dirs and the usual
  * dependency/output folders, and reads at most MAX_DIRENTS entries per directory. Roots are
  * realpath'd so the same repo reached two ways is one candidate.
