@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { ChevronDown, ChevronRight, FolderPlus, LayoutGrid, Plus, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderPlus, LayoutGrid, Plus, Search, WifiOff, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/section-header";
@@ -19,7 +19,7 @@ import {
   worstBucket,
 } from "@/lib/spaces";
 import { TRIAGE_STATUS } from "@/lib/triage";
-import { timeAgo } from "@/lib/format";
+import { clockTime, timeAgo } from "@/lib/format";
 import { panePath } from "@/lib/nav";
 import { paneDisplayName, STATUS_LABEL } from "@/lib/types";
 import type { AgentView, TabView, WorkspaceView } from "@/lib/types";
@@ -68,6 +68,9 @@ export interface SpaceTreeProps {
   session?: string;
   readOnly?: boolean;
   onRenamed?: () => void;
+  /** The snapshot on screen is stale — an empty tree then means "we don't know", never "no spaces". */
+  error?: boolean;
+  lastSeenAt?: number;
 }
 
 export function SpaceTree({
@@ -80,6 +83,8 @@ export function SpaceTree({
   session,
   readOnly,
   onRenamed,
+  error = false,
+  lastSeenAt,
 }: SpaceTreeProps) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -202,7 +207,16 @@ export function SpaceTree({
       <div id="spaces-body" className="flex flex-col divide-y divide-border/60">
 
         {workspaces.length === 0 ? (
-          <p className="px-1 py-6 text-center text-sm text-muted-foreground">No spaces yet.</p>
+          error ? (
+            <p className="flex items-center justify-center gap-2 px-1 py-6 text-center text-sm text-muted-foreground">
+              <WifiOff className="size-4" />
+              {lastSeenAt === undefined
+                ? "Disconnected"
+                : `Disconnected — last seen ${clockTime(lastSeenAt)}`}
+            </p>
+          ) : (
+            <p className="px-1 py-6 text-center text-sm text-muted-foreground">No spaces yet.</p>
+          )
         ) : visible.length === 0 ? (
           <p className="px-1 py-6 text-center text-sm text-muted-foreground">
             No space matches “{query}”.

@@ -180,6 +180,7 @@ the unit name; the Herdr action runs from anywhere.
   address, never merge into it** ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md));
   the bridge re-reads the file behind an mtime check, so edits are live and need no restart. The
   file's `[[quick]]` rows do the same to the Quick dock's shipped replies (shells excepted).
+  `keys.toml` does the same for the Keys tray's Presets catalog (`bridge/operator-keys.ts`).
 - **PWA** via `vite-plugin-pwa` (`web/vite.config.ts`): manifest + `sw.js`, registered manually
   from `virtual:pwa-register` in `main.tsx` (bundled = CSP-safe). Install/SW need a **secure
   context** — over plain HTTP they no-op silently (Chrome insecure-origin flag, or HTTPS, to test).

@@ -45,6 +45,8 @@ export function TreeRoute() {
             session={data.session}
             readOnly={isReadOnly(data.device)}
             onRenamed={() => revalidator.revalidate()}
+            error={data.error}
+            lastSeenAt={data.lastSeenAt}
           />
         </main>
         <UpdateBanner className="px-3 pt-3" />

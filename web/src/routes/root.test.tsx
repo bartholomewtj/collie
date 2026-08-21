@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 
-import { BootSplash } from "./root";
+import { BootSplash, shownLastSeenAt } from "./root";
+import type { HomeData, PaneData } from "@/lib/loaders";
 import { CONNECTION_LOST_MS } from "@/hooks/use-connection-lost";
 import { __resetConnectionHealth } from "@/lib/connection-health";
 
@@ -38,5 +39,66 @@ describe("BootSplash — escalates a stuck cold start", () => {
     const icon = container.querySelector("img");
     expect(icon).toHaveAttribute("src", "/favicon.svg");
     expect(icon?.className).toMatch(/grayscale/);
+  });
+});
+
+const NOON = new Date(2026, 0, 2, 12, 5).getTime();
+const AFTERNOON = new Date(2026, 0, 2, 14, 32).getTime();
+
+function home(lastSeenAt?: number): HomeData {
+  return {
+    bridge: "connected",
+    device: undefined,
+    agents: [],
+    shellPanes: [],
+    workspaces: [],
+    tabs: [],
+    sessions: [],
+    session: undefined,
+    snoozedUntil: null,
+    update: undefined,
+    error: true,
+    authError: false,
+    lastSeenAt,
+  };
+}
+
+function pane(overrides: Partial<PaneData>): PaneData {
+  return {
+    paneId: "w1:p1",
+    session: undefined,
+    text: "old terminal text",
+    truncated: false,
+    requestedLines: 600,
+    revision: 0,
+    error: true,
+    authError: false,
+    ...overrides,
+  };
+}
+
+describe("which 'last seen' the connection bar shows", () => {
+  it("uses the snapshot's stamp on the dashboard (no pane route active)", () => {
+    expect(shownLastSeenAt(home(AFTERNOON), undefined)).toBe(AFTERNOON);
+  });
+
+  it("uses the PANE's own stamp while a stale mirror is what's being read", () => {
+    expect(shownLastSeenAt(home(AFTERNOON), pane({ lastSeenAt: NOON }))).toBe(NOON);
+  });
+
+  it("says nothing rather than borrowing the herd's stamp for an undatable mirror", () => {
+    expect(shownLastSeenAt(home(AFTERNOON), pane({ lastSeenAt: undefined }))).toBeUndefined();
+  });
+
+  it("falls back to the snapshot when the stale pane has no text to date", () => {
+    expect(shownLastSeenAt(home(AFTERNOON), pane({ text: "", lastSeenAt: undefined }))).toBe(
+      AFTERNOON,
+    );
+  });
+
+  it("falls back to the snapshot when the pane itself is live", () => {
+    expect(shownLastSeenAt(home(AFTERNOON), pane({ error: false, lastSeenAt: NOON }))).toBe(
+      AFTERNOON,
+    );
   });
 });

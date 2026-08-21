@@ -65,3 +65,12 @@ export function timeAgo(ts: number, now: number = Date.now()): string {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+
+/**
+ * Wall-clock "HH:MM" in the phone's own locale and timezone — for "last seen 14:32" on a
+ * disconnected render. A clock time, not an age: an age has to be recomputed to stay true, and a
+ * screen showing cached data may sit there for minutes without a re-render.
+ */
+export function clockTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}

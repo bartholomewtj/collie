@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useLocation, useParams, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useLocation, useParams, useRouteError, useRouteLoaderData } from "react-router";
 
 import { usePolling } from "@/hooks/use-polling";
 import { usePollBusy } from "@/hooks/use-poll-busy";
@@ -11,7 +11,17 @@ import { DogGallop } from "@/components/dog-gallop";
 import { BottomNav } from "@/components/bottom-nav";
 import { homePath } from "@/lib/nav";
 import { SESSION_PARAM, normalizeSession } from "@/lib/session";
-import type { HomeData } from "@/lib/loaders";
+import { PANE_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
+
+/**
+ * The "last seen" stamp the connection surface should show — the stamp of the data actually on
+ * screen. While a stale pane mirror is what's being read, that pane's stamp wins (undated included);
+ * otherwise the herd's. A stale pane with no text falls through — nothing old is on screen.
+ */
+export function shownLastSeenAt(home: HomeData, pane: PaneData | undefined): number | undefined {
+  if (pane?.error && pane.text) return pane.lastSeenAt;
+  return home.lastSeenAt;
+}
 
 // The data root: owns the snapshot loader, drives polling, and fans the herd out to the child
 // routes via the router's loader data. Mounted only while unlocked (the
@@ -22,6 +32,7 @@ export function RootLayout() {
   // `/pane/:paneId` child is active. useAgentTransitions uses it to suppress a notification for the
   // pane you're already looking at.
   const { paneId } = useParams();
+  const pane = useRouteLoaderData(PANE_ROUTE_ID) as PaneData | undefined;
 
   usePolling(data, paneId);
   // Surface the busy bar when a navigation or a poll runs slow, each against its own threshold —
@@ -51,7 +62,12 @@ export function RootLayout() {
           in amber "reconnecting…" only after ≥4s of sustained trouble (the flicker fix), escalates to a
           red "not connected" cause + Retry/Reload at ≥15s, and flashes green on recovery. Reads the
           same shared-clock signals as the header dog, so the two always agree. */}
-      <ConnectionBanner bridge={data.bridge} error={data.error} authError={data.authError} />
+      <ConnectionBanner
+        bridge={data.bridge}
+        error={data.error}
+        authError={data.authError}
+        lastSeenAt={shownLastSeenAt(data, pane)}
+      />
       <Outlet />
       {showNav && <BottomNav session={data.session} traces={anyTraces} />}
     </div>

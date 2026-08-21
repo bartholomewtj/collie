@@ -6,6 +6,16 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.49.0] - 2026-08-21
+
+### Added
+- Keys tray presets become yours in `keys.toml` next to `commands.toml` — same replace-not-merge rule (ADR 0018)
+- F1–F12 behind an F keys disclosure on the Keys tray
+
+### Fixed
+- A failed fetch with an empty herd says Disconnected, not "No agents running" / "No spaces yet"
+- The connection bar dates a stale pane mirror by that pane's stamp, not the herd's
+
 ## [0.48.2] - 2026-08-21
 
 ### Fixed

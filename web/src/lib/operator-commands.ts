@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { fetchConfig } from "@/lib/api";
-import type { OperatorCommand, OperatorQuickReply } from "@/lib/types";
+import type { OperatorCommand, OperatorKeyRow, OperatorQuickReply } from "@/lib/types";
 
 // The operator's own palette rows AND Quick-dock rows (their `commands.toml`), read from
 // /api/config in one round trip and held in module state. Modelled on the lib/server-build.ts store
@@ -24,6 +24,7 @@ import type { OperatorCommand, OperatorQuickReply } from "@/lib/types";
 
 let current: readonly OperatorCommand[] = [];
 let currentQuick: readonly OperatorQuickReply[] = [];
+let currentKeys: readonly OperatorKeyRow[] = [];
 let inflight: Promise<void> | null = null;
 let loaded = false;
 const listeners = new Set<() => void>();
@@ -40,6 +41,7 @@ export function loadOperatorCommands(): Promise<void> {
     .then((cfg) => {
       current = cfg.operatorCommands ?? [];
       currentQuick = cfg.operatorQuickReplies ?? [];
+      currentKeys = cfg.operatorKeys ?? [];
       loaded = true;
       emit();
     })
@@ -58,6 +60,10 @@ export function getOperatorCommands(): readonly OperatorCommand[] {
 
 export function getOperatorQuickReplies(): readonly OperatorQuickReply[] {
   return currentQuick;
+}
+
+export function getOperatorKeys(): readonly OperatorKeyRow[] {
+  return currentKeys;
 }
 
 export function subscribeOperatorCommands(cb: () => void): () => void {
@@ -84,10 +90,19 @@ export function useOperatorQuickReplies(): readonly OperatorQuickReply[] {
   return useSyncExternalStore(subscribeOperatorCommands, getOperatorQuickReplies, getOperatorQuickReplies);
 }
 
+/** The Keys-tray presets half of the same read. */
+export function useOperatorKeys(): readonly OperatorKeyRow[] {
+  useEffect(() => {
+    void loadOperatorCommands();
+  }, []);
+  return useSyncExternalStore(subscribeOperatorCommands, getOperatorKeys, getOperatorKeys);
+}
+
 /** Test helper — reset module state between cases. */
 export function __resetOperatorCommands(): void {
   current = [];
   currentQuick = [];
+  currentKeys = [];
   inflight = null;
   loaded = false;
   listeners.clear();

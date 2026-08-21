@@ -324,9 +324,23 @@ export interface OperatorCommand {
 }
 
 /**
+ * One operator-declared Keys-tray preset (a `[[keys]]` table in their `keys.toml`). Mirrors
+ * OperatorKeyRow in bridge/types.ts. Resolved against the shipped presets by `ctrlPresetsFor()`.
+ */
+export interface OperatorKeyRow {
+  /** Herdr agent name this applies to, lowercased. Omitted = every agent. */
+  agent?: string;
+  /** The button's text, and its identity within one scope. */
+  label: string;
+  /** Chords in Herdr's `pane.send_keys` spelling; more than one is sent as ONE ordered batch. */
+  keys: string[];
+  /** The operator putting their own row behind the tray's two-tap confirm. */
+  danger?: boolean;
+}
+
+/**
  * One operator-declared one-tap reply (a `[[quick]]` table in their `commands.toml`). Mirrors
- * OperatorQuickReply in bridge/types.ts. Resolved by `quickRepliesFor()`, which hands a pane the
- * operator's groups instead of the shipped set when any of these rows address it.
+ * OperatorQuickReply in bridge/types.ts. Resolved by `quickRepliesFor()`.
  */
 export interface OperatorQuickReply {
   /** Herdr agent name this applies to, lowercased. Omitted = every agent pane. */
@@ -350,6 +364,8 @@ export interface BridgeConfig {
   operatorCommands?: OperatorCommand[];
   /** The operator's own Quick-dock rows. Absent when `commands.toml` declares none. */
   operatorQuickReplies?: OperatorQuickReply[];
+  /** The operator's own Keys-tray presets. Absent when there is no `keys.toml`. */
+  operatorKeys?: OperatorKeyRow[];
 }
 
 /**

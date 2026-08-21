@@ -397,6 +397,26 @@ Same rule as commands: on a pane any of your rows address, the dock is **your ro
 "yes" / "no" if you still want them (`commands.toml.example` does). Shells always keep y / n. Live,
 no restart; reload the page to see them.
 
+### Your own Keys presets
+
+The Keys tray's labelled chords under **Presets** (the shipped Ctrl C/D/U/R/L/Z) become yours in
+`keys.toml` next to `.env`. The rest of the tray — Esc, arrows, Enter, digits, F1–F12 — stays
+fixed; a phone has no other route to those keys.
+
+```bash
+cp keys.toml.example "$(herdr plugin config-dir herdr.collie)/keys.toml"
+```
+
+```toml
+[[keys]]
+scope = "claude"             # optional; omit for every pane
+label = "Yes"
+keys = ["Down", "Enter"]     # one batch; herdr spelling, never tmux's C-c
+# danger = true              # two-tap confirm
+```
+
+Same rule as commands: a pane your rows address shows **your rows only**. Live; reload the page.
+
 ### Multi-session
 
 `COLLIE_MULTI_SESSION=on` (the default) discovers and serves every named Herdr session under your

@@ -47,6 +47,10 @@ function isAbortError(e: unknown): boolean {
 // silent runtime `undefined` from a stale string literal.
 export const ROOT_ROUTE_ID = "root";
 
+// The pane route's id, paired with paneLoader. Used by RootLayout so the connection bar can date
+// the MIRROR on screen rather than the herd behind it.
+export const PANE_ROUTE_ID = "pane";
+
 // The session a loader run was scoped to, read from the request URL's `?s=`. Extracted once per run
 // and threaded into every fetch + cache key so a session switch (a plain URL change picked up by the
 // revalidator) is automatically correct. Undefined = primary.
@@ -79,6 +83,8 @@ export interface HomeData {
   error: boolean;
   /** True when the failed refresh was rejected with HTTP 401 or 403. */
   authError: boolean;
+  /** When this snapshot was last fetched successfully (epoch ms). Absent on a never-fetched empty error. */
+  lastSeenAt?: number;
 }
 
 export interface PaneData {
@@ -97,11 +103,15 @@ export interface PaneData {
   error: boolean;
   /** True when the failed refresh was rejected with HTTP 401 or 403. */
   authError: boolean;
+  /** When this pane's text was last fetched successfully (epoch ms). Absent if never fetched. */
+  lastSeenAt?: number;
 }
 
 // Keep-previous-data cache is now PER-SESSION: switching sessions must not show the other session's
 // herd flagged as stale. Keyed by session name ("" = primary).
 const lastSnapshot = new Map<string, SnapshotResponse>();
+const lastSnapshotAt = new Map<string, number>();
+const lastPaneAt = new Map<string, number>();
 
 // A latched navigation skips the network, so retain whether the last real outcome for each session
 // was an auth rejection. Store only rejected sessions; every other real outcome removes the marker.
@@ -139,7 +149,12 @@ function isPaneUrl(url: string | undefined): boolean {
   }
 }
 
-function toHomeData(snap: SnapshotResponse, session: string | undefined, error: boolean): HomeData {
+function toHomeData(
+  snap: SnapshotResponse,
+  session: string | undefined,
+  error: boolean,
+  lastSeenAt?: number,
+): HomeData {
   return {
     bridge: snap.bridge,
     device: snap.device,
@@ -153,6 +168,7 @@ function toHomeData(snap: SnapshotResponse, session: string | undefined, error: 
     update: snap.update,
     error,
     authError: error && hasAuthError(session),
+    lastSeenAt,
   };
 }
 
@@ -163,7 +179,7 @@ function toHomeData(snap: SnapshotResponse, session: string | undefined, error: 
 function staleHome(session: string | undefined): HomeData {
   const cached = lastSnapshot.get(session ?? "");
   return cached
-    ? toHomeData(cached, session, true)
+    ? toHomeData(cached, session, true, lastSnapshotAt.get(session ?? ""))
     : {
         bridge: undefined,
         device: undefined,
@@ -198,9 +214,11 @@ export async function rootLoader({ request }: { request?: Request } = {}): Promi
 
   try {
     const snap = await fetchSnapshot(session, request?.signal);
+    const at = Date.now();
     lastSnapshot.set(session ?? "", snap);
+    lastSnapshotAt.set(session ?? "", at);
     rememberAuthError(session, false);
-    return toHomeData(snap, session, false);
+    return toHomeData(snap, session, false, at);
   } catch (e) {
     if (isAbortError(e)) throw e; // superseded revalidation — let React Router drop it
     rememberAuthError(session, isAuthError(e));
@@ -279,15 +297,17 @@ export function resetRequestedLines(paneId?: string, session?: string): void {
 // truncated cleared, revision 0 (the prompt-select guard rejects a 0-revision mismatch anyway). Shared
 // by the failed-refresh catch and the offline navigation fast path, so both return the same shape.
 function stalePane(paneId: string, session: string | undefined, lines: number): PaneData {
+  const key = paneKey(paneId, session);
   return {
     paneId,
     session,
-    text: lastPaneText.get(paneKey(paneId, session)) ?? "",
+    text: lastPaneText.get(key) ?? "",
     truncated: false,
     requestedLines: lines,
     revision: 0,
     error: true,
     authError: hasAuthError(session),
+    lastSeenAt: lastPaneAt.get(key),
   };
 }
 
@@ -322,7 +342,9 @@ export async function paneLoader({
     // branch) so the connection bar doesn't flicker on an unchanged poll.
     const read: PaneReadResponse = await fetchPane(paneId, lines, session, request?.signal);
     const text = read.text || lastPaneText.get(key) || "";
+    const at = Date.now();
     rememberPaneText(key, text);
+    lastPaneAt.set(key, at);
     rememberAuthError(session, false);
     return {
       paneId,
@@ -333,6 +355,7 @@ export async function paneLoader({
       revision: read.revision,
       error: false,
       authError: false,
+      lastSeenAt: at,
     };
   } catch (e) {
     if (isAbortError(e)) throw e; // superseded revalidation — let React Router drop it

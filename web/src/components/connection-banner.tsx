@@ -19,6 +19,7 @@ import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useOnline } from "@/hooks/use-online";
 import { isConnecting } from "@/lib/connection";
 import * as api from "@/lib/api";
+import { clockTime } from "@/lib/format";
 import type { BridgeStatus } from "@/lib/types";
 
 interface ConnectionBannerProps {
@@ -28,6 +29,8 @@ interface ConnectionBannerProps {
   error: boolean;
   /** The failed snapshot request was rejected with HTTP 401 or 403. */
   authError: boolean;
+  /** When the data on screen was last actually fetched, if it can be dated. Red copy only. */
+  lastSeenAt?: number;
 }
 
 // The result of the /api/config probe (which never touches Herdr): "unknown" until it resolves,
@@ -52,9 +55,9 @@ export const EXIT_MS = 200;
 // disagree; `connecting` is poll-truth (isConnecting) — navigator.onLine is COPY-only (it picks the
 // red cause), never a gate. Threshold lockstep with the shared clock is proven in use-connection-lost;
 // here we own the amber→red→green state machine and the smooth mount/unmount.
-export function ConnectionBanner({ bridge, error, authError }: ConnectionBannerProps) {
+export function ConnectionBanner({ bridge, error, authError, lastSeenAt }: ConnectionBannerProps) {
   if (authError) return <AuthErrorBanner />;
-  return <ConnectionStateBanner bridge={bridge} error={error} />;
+  return <ConnectionStateBanner bridge={bridge} error={error} lastSeenAt={lastSeenAt} />;
 }
 
 // A refusal is not an outage, so it gets its own surface ahead of the connection state machine: no
@@ -112,7 +115,11 @@ function AuthErrorBanner() {
   );
 }
 
-function ConnectionStateBanner({ bridge, error }: Omit<ConnectionBannerProps, "authError">) {
+function ConnectionStateBanner({
+  bridge,
+  error,
+  lastSeenAt,
+}: Omit<ConnectionBannerProps, "authError">) {
   const stalled = useLoadingStalled();
   const connecting = isConnecting({ bridge, error, stalled });
   const trouble = useConnectionTrouble(connecting);
@@ -204,7 +211,7 @@ function ConnectionStateBanner({ bridge, error }: Omit<ConnectionBannerProps, "a
     setRetrying(false);
   }
 
-  const view = resolveView(shownTone, online, probe);
+  const view = resolveView(shownTone, online, probe, lastSeenAt);
 
   return (
     // Outer grid collapses 0fr → 1fr (an in-flow height animation the layout below rides), fading with
@@ -264,7 +271,7 @@ function ConnectionStateBanner({ bridge, error }: Omit<ConnectionBannerProps, "a
 
 // Copy + tint + icon per tone. Green/amber are fixed; red names the cause — the bridge answering means
 // Herdr is the outage, otherwise onLine decides between a true offline drop and an unreachable Collie.
-function resolveView(tone: Tone, online: boolean, probe: Probe) {
+function resolveView(tone: Tone, online: boolean, probe: Probe, lastSeenAt?: number) {
   if (tone === "green") {
     return { copy: "Connected", Icon: CheckCircle2, row: TINT.done.row, icon: TINT.done.icon } as const;
   }
@@ -279,7 +286,9 @@ function resolveView(tone: Tone, online: boolean, probe: Probe) {
       : probe === "unreachable" && !online
         ? { copy: "Offline — can't reach Collie", Icon: WifiOff }
         : { copy: "Can't reach Collie", Icon: TriangleAlert };
-  return { copy: cause.copy, Icon: cause.Icon, row: TINT.blocked.row, icon: TINT.blocked.icon } as const;
+  const copy =
+    lastSeenAt === undefined ? cause.copy : `${cause.copy} — last seen ${clockTime(lastSeenAt)}`;
+  return { copy, Icon: cause.Icon, row: TINT.blocked.row, icon: TINT.blocked.icon } as const;
 }
 
 const TINT = {

@@ -195,7 +195,8 @@ app. Closing this needs the server-side blocking-message capture described above
   rebuild. On a pane they address they **replace** the shipped catalog rather than merging into it —
   [ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md). The same file's `[[quick]]`
   rows ride the same payload (`operatorQuickReplies`) under the same replace rule and feed the
-  composer's Quick dock (`web/src/lib/quick-replies.ts`).
+  composer's Quick dock (`web/src/lib/quick-replies.ts`). `keys.toml` rides the same `/api/config`
+  payload (`operatorKeys`) and replaces the Keys tray's Presets catalog the same way.
 
 ## 6. Security model
 

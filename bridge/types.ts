@@ -357,6 +357,27 @@ export interface OperatorCommand {
  * yes/no/continue set (same rule as {@link OperatorCommand}, ADR 0018); a pane none address keeps
  * the shipped set. Shells are never addressed — they keep their y/n.
  */
+/**
+ * One operator-declared Keys-tray preset (a `[[keys]]` row in their `keys.toml`). A pane any of
+ * these rows address shows them INSTEAD of the shipped Ctrl presets; a pane none of them address
+ * keeps the shipped ones (ADR 0018, the same rule `commands.toml` follows). Only the PRESETS are
+ * configurable — the tray's keyboard (Esc/arrows/Enter/Tab/Space, modifiers, digits, F1–F12) is
+ * fixed.
+ */
+export interface OperatorKeyRow {
+  /** Herdr agent name this applies to, lowercased. Omitted = every agent. */
+  agent?: string;
+  /** The button's text, and its identity within one scope. */
+  label: string;
+  /**
+   * The chords to send, already normalised to Herdr's `pane.send_keys` spelling. More than one is
+   * sent as ONE batch, in order — the same call a composed key queue makes.
+   */
+  keys: string[];
+  /** The operator putting their own row behind the tray's existing two-tap confirm. */
+  danger: boolean;
+}
+
 export interface OperatorQuickReply {
   /** Herdr agent name this applies to, lowercased. Omitted = every agent pane. */
   agent?: string;
@@ -382,6 +403,8 @@ export interface BridgeConfig {
   operatorCommands?: OperatorCommand[];
   /** The operator's own Quick-dock rows. Absent/empty when `commands.toml` declares none. */
   operatorQuickReplies?: OperatorQuickReply[];
+  /** The operator's own Keys-tray presets. Absent/empty when there is no `keys.toml`. */
+  operatorKeys?: OperatorKeyRow[];
 }
 
 /** Rank for triage ordering — lower sorts first ("NEEDS YOU" at the top). */

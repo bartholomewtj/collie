@@ -38,6 +38,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     journalRoots: { claude: [], codex: [], pi: [], opencode: [], grok: [] },
     submitKeys: ["Enter"],
     commandsFile: "/nope/commands.toml",
+    keysFile: "/nope/keys.toml",
     trustedUser: "",
     trustedUserOptional: false,
     auditContent: "preview",

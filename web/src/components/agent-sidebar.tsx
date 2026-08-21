@@ -21,6 +21,8 @@ interface ThreadSidebarProps {
   onShellsOpenChange?: (open: boolean) => void;
   /** Override the list container padding (e.g. flush inside a bottom sheet). */
   className?: string;
+  /** The snapshot on screen is stale — an empty list then means "we don't know". */
+  error?: boolean;
 }
 
 // The pane switcher behind the swipe-up "Switch pane" sheet: every agent pane grouped and sorted
@@ -42,10 +44,13 @@ export function ThreadSidebar({
   shellsOpen = true,
   onShellsOpenChange,
   className,
+  error = false,
 }: ThreadSidebarProps) {
   if (agents.length === 0 && shellPanes.length === 0) {
     return (
-      <div className="px-4 py-12 text-center text-sm text-muted-foreground">No agents running.</div>
+      <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+        {error ? "Disconnected" : "No agents running."}
+      </div>
     );
   }
 
