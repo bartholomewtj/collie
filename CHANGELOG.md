@@ -8,9 +8,11 @@ All notable changes to Collie are recorded here. The format follows
 
 ## [0.52.4] - 2026-08-21
 
+### Changed
+- Live mirror never wraps. The Wrap lines toggle is gone; swipe sideways for the rest of a row
+
 ### Fixed
-- Grok panes no longer zebra-stripe on the phone: drop the near-black canvas fill, blank vpad rows, scrollbar █, and right-aligned timestamp pad so wrap is ordinary prose
-- Grok edit/diff rows keep their line-number gutter: they pan sideways instead of wrapping under the numbers
+- Grok panes no longer zebra-stripe on the phone: drop the near-black canvas fill, blank vpad rows, scrollbar █, and right-aligned timestamp pad
 
 ## [0.52.3] - 2026-08-21
 

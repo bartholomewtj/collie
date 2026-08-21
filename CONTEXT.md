@@ -211,7 +211,7 @@ every tab the newest session.
 | A harness's **screen** grammar | `web/src/lib/harness/<name>/`, `registry.ts`, `conformance.ts` fixtures, `lib/grammar/*_NOTES.md` | `bridge/` |
 | A harness's **journal** adapter | `bridge/journal/<name>.ts`, `journal/registry.ts`; run `bun scripts/journal-probe.ts` | `web/src/lib/harness/` |
 | Terminal rendering / colours | `web/src/components/ansi-output.tsx`, `lib/ansi.ts`, `index.css` ([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md)) | `bridge/` |
-| Display prefs / wrap / raw terminal | `web/src/hooks/use-display-prefs.ts`, `components/display-prefs.tsx`, `lib/blocks.ts` (`presentLine` noWrap: tables/chrome pan, prose wraps), composer ⚙ | `bridge/` |
+| Display prefs / raw terminal | `web/src/hooks/use-display-prefs.ts`, `components/display-prefs.tsx`, composer ⚙ | `bridge/` |
 | Auth / ingress / host & origin checks | `bridge/config.ts`, `bridge/server.ts` (`guard`, `checkAccess`, `isHostAllowed`), `DEPLOYMENT.md`, [ADR 0023](./.adr/0023-host-validation-is-fail-closed.md) | `web/src/lib/harness/` |
 | Push / notifications | `bridge/notifications.ts`, `notify-prefs.ts`, `snooze.ts`, `push.ts`, `push-endpoint.ts`; `web/src/lib/push.ts`, `sw.ts`, `routes/settings.tsx`; README → Web Push | `state-engine.ts` internals |
 | Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md), [0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)) | — |

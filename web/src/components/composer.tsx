@@ -62,7 +62,6 @@ interface ComposerProps {
   /** Mirror display prefs — the View row lives here, but the mirror (in AgentChat) reads the same
    * single instance, so they're threaded through rather than each calling useDisplayPrefs. */
   prefs: DisplayPrefs;
-  setWrap: (wrap: boolean) => void;
   stepFontSize: (delta: number) => void;
   setRawTerminal: (raw: boolean) => void;
   setTapToFocus: (tapToFocus: boolean) => void;
@@ -78,7 +77,7 @@ interface ComposerProps {
 // sheets) is entirely local; it reaches AgentChat only through `onSent` (to re-follow the tail) and
 // exposes `focusInput` so the mirror tap can bring up the keyboard.
 //
-// "display" joined the drawer union when the permanent icon-only View row was retired: wrap / raw
+// "display" joined the drawer union when the permanent icon-only View row was retired: raw
 // terminal / font size are settings you touch once, so they cost a whole row of a phone viewport for
 // nothing, and the raw-terminal toggle in particular was an unlabelled `>_` glyph nobody could
 // decode. They now live behind the ⚙ on the single Controls row, as labelled rows in the same
@@ -139,7 +138,7 @@ function ComposerDock({
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, text, terminalDraft, rawTerminalDraft, prefs, setWrap, stepFontSize, setRawTerminal, setTapToFocus, onSent },
+  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, text, terminalDraft, rawTerminalDraft, prefs, stepFontSize, setRawTerminal, setTapToFocus, onSent },
   ref,
 ) {
   const revalidator = useRevalidator();
@@ -775,7 +774,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <ComposerDock title="Display" onClose={closeDrawer}>
             <DisplayPrefsContent
               prefs={prefs}
-              setWrap={setWrap}
               stepFontSize={stepFontSize}
               setRawTerminal={setRawTerminal}
               setTapToFocus={setTapToFocus}
@@ -866,7 +864,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               Agent
             </Button>
           )}
-          {/* Display prefs. Not gated on `locked`: wrap/font/raw-terminal are local view state, so a
+          {/* Display prefs. Not gated on `locked`: font/raw-terminal are local view state, so a
               read-only device or a gone pane can still make its mirror readable. */}
           <Button
             variant="ghost"

@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { parseAnsi, type AnsiSegment } from "./ansi";
 import { lineText, presentBlocks, presentLine, presentLines, splitLines, type StyledLine } from "./blocks";
 import { buildBlocks } from "./harness";
-import { isBoxBorder, isHorizontalRule } from "./harness/claude/markers";
 
 // Anchored on this file's directory (not `new URL(import.meta.url)`, which Vite rewrites to an asset).
 const PANES_DIR = join(import.meta.dirname, "..", "fixtures", "panes");
@@ -102,154 +101,30 @@ describe("splitLines — exact text preservation", () => {
   });
 });
 
-describe("presentLines — no-wrap terminal borders and boxes", () => {
-  // This is the complete horizontal subset of the established Claude rule contract. Keep it
-  // independent from the clipping classifier so adding a Claude-accepted horizontal glyph cannot
-  // silently leave it wrapping. Corners, junctions, and vertical box drawing are deliberately absent.
-  const pureHorizontalRuleGlyphs = [
-    ..."─━┄┅┈┉╌╍═╴╶╸╺╼╾",
-    ...Array.from({ length: 0x2594 - 0x2581 + 1 }, (_, i) => String.fromCodePoint(0x2581 + i)),
-    ..."‒–—―",
-  ];
-
-  it("clips every established pure horizontal rule glyph only at the long-border threshold", () => {
-    for (const glyph of pureHorizontalRuleGlyphs) {
-      // Claude recognizes rules at three glyphs; visual clipping remains intentionally stricter.
-      expect(isHorizontalRule(glyph.repeat(3)), glyph).toBe(true);
-      expect(presentLines(splitLines(parseAnsi(glyph.repeat(19))))[0]!.noWrap, glyph).toBeUndefined();
-      expect(presentLines(splitLines(parseAnsi(glyph.repeat(20))))[0]!.noWrap, glyph).toBe(true);
-    }
-  });
-
-  it("marks an ANSI-segmented border", () => {
-    const border = "─".repeat(20);
-    const ansi = presentLines(
-      splitLines(parseAnsi(`${ESC}[31m${border.slice(0, 10)}${ESC}[34m${border.slice(10)}${ESC}[0m`)),
-    )[0]!;
-
-    expect(ansi.noWrap).toBe(true);
-    expect(ansi.segments).toHaveLength(2);
-    expect(joinLines([ansi])).toBe(border);
-  });
-
-  it("presents a single StyledLine directly via presentLine", () => {
-    const rawLine = splitLines(parseAnsi("│ col 1      │ col 2      │"))[0]!;
-    const presented = presentLine(rawLine);
-    expect(presented.noWrap).toBe(true);
-    expect(lineText(presented)).toBe("│ col 1      │ col 2      │");
-  });
-
-  it("clips at twenty glyphs and not below", () => {
-    expect(presentLines(splitLines(parseAnsi("─".repeat(19))))[0]!.noWrap).toBeUndefined();
-    expect(presentLines(splitLines(parseAnsi("─".repeat(20))))[0]!.noWrap).toBe(true);
-  });
-
-  // The clip rule and the input-box grammar both call a line a "border", for different consumers
-  // (see rule-glyphs.ts). A labelled border is the case where they must visibly disagree: the guard
-  // has to recognise it, and clipping it would crop the session label out of view. Pinned across
-  // both modules so a future edit to either cannot quietly align them.
-  it("never clips a labelled input-box border the guard depends on", () => {
-    const labelled = `${"─".repeat(20)} japanese technical troubleshooting ${"─".repeat(2)}`;
-    expect(isBoxBorder(labelled)).toBe(true);
-    expect(presentLines(splitLines(parseAnsi(labelled)))[0]!.noWrap).toBeUndefined();
-  });
-
-  it.each([
-    ["short Unicode rule", "─".repeat(19)],
-    ["ASCII rule", "-".repeat(40)],
-    ["labeled border", `${"─".repeat(20)} Pi ${"─".repeat(20)}`],
-    ["mixed rule row", "─".repeat(19) + "╌"],
-    ["mixed content", `${"─".repeat(20)}x`],
-    ["short rounded box", `╭${"─".repeat(10)}╮`],
-    ["prose", "This ordinary prose should retain its normal wrapping behavior."],
-    ["prose with interior vertical bar", "Prose with an interior │ column separator should wrap."],
-    ["two-pipe shell snippet", `| ${"col".repeat(10)} |`],
-    [
-      "boxed prose",
-      `│ Yes. Tap the image button on the reply box. This is a long answer. │`,
-    ],
-    ["boxed grok draft", "│ > this is a long draft that will not fit on one row │"],
-    ["markdown numbered list", "     1. #140 — src/gene_analyser/cli.py serve binds"],
-    ["ISO date", "  2026-08-21 handoff after 0.52.3"],
-  ])("does not mark %s", (_name, text) => {
-    expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBeUndefined();
-  });
-
-  // Superseded pins: square table edges, vertical runs, corner runs, and long rounded boxes now clip.
-  it.each([
-    ["table edge (square)", `┌${"─".repeat(40)}┐`],
-    ["corner row", "┌".repeat(40)],
-    ["vertical row", "│".repeat(40)],
-    ["enclosed box/table row", `│ ${"col 1".padEnd(10)} │ ${"col 2".padEnd(10)} │`],
-    ["padded composer chrome", `│ >${" ".repeat(40)}│`],
-    ["junction row", `├──${"─".repeat(15)}──┤`],
-    ["short rounded box ≥ 20 chars", `╭${"─".repeat(19)}╮`],
-    ["GFM pipe table row", "| Flag | Default | Type | Applies to | Notes |"],
-    ["GFM delimiter row", "|---|---|---|---|---|"],
-    ["Grok diff context row", "       38  ## Open"],
-    ["Grok diff blank numbered row", "       39"],
-    [
-      "Grok diff delete row",
-      "       45  - claudeSSSF #68 — pi Git Bash `grep | head` hang on Windows",
-    ],
-    [
-      "Grok diff insert row",
-      "       42  - claudeSSSF #68 -- pi Git Bash `grep | head` hang on Windows",
-    ],
-  ])("marks %s as noWrap", (_name, text) => {
-    expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBe(true);
-  });
-
-  it("leaves short enclosed box rows (< 20 chars) wrapping", () => {
-    expect(presentLines(splitLines(parseAnsi("│ a │ b │")))[0]!.noWrap).toBeUndefined();
-  });
-
-  // Grok/omp composer chrome: a rounded full-width box. Wrap-on would otherwise turn each
-  // 200-column `╭─╮` / `╰─╯` into a wall of `─` on a phone.
-  it("clips a long rounded box border, including Grok's labelled bottom", () => {
-    const top = `  ╭${"─".repeat(40)}╮  `;
-    const bottom = `  ╰${"─".repeat(20)} Grok 4.6 (high) · always-approve ─╯`;
-    expect(presentLines(splitLines(parseAnsi(top)))[0]!.noWrap).toBe(true);
-    expect(presentLines(splitLines(parseAnsi(bottom)))[0]!.noWrap).toBe(true);
-  });
-});
-
-describe("presentLines — full-width highlight rows and padding strip", () => {
-  it("strips trailing pad from a full-width inverted highlight and still wraps (it is prose, not a table)", () => {
+describe("presentLines — padding strip", () => {
+  it("strips trailing pad from a full-width inverted highlight and keeps its background", () => {
     const line = `${ESC}[7mHighlighted header${" ".repeat(30)}${ESC}[27m`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBeUndefined();
     expect(lineText(presented)).toBe("Highlighted header");
     expect(presented.segments[0]!.bg).toBeDefined();
   });
 
-  it("does not mark a highlight row without trailing padding", () => {
-    const line = `${ESC}[7mHighlighted header${ESC}[27m`;
-    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBeUndefined();
-    expect(lineText(presented)).toBe("Highlighted header");
-  });
-
-  it("strips a highlight row with leading unpainted indent and trailing painted pad, and wraps it", () => {
+  it("strips a highlight row with leading unpainted indent and trailing painted pad", () => {
     const line = `   ${ESC}[44mTitle${" ".repeat(20)}${ESC}[0m`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBeUndefined();
     expect(lineText(presented)).toBe("   Title");
   });
 
-  it("wraps a long highlighted prose line after stripping the terminal-width pad", () => {
+  it("strips terminal-width pad from a long highlighted prose line", () => {
     const prose = "Yes. Tap the image button on the reply box. This is a long painted message.";
     const line = `${ESC}[7m${prose}${" ".repeat(40)}${ESC}[27m`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBeUndefined();
     expect(lineText(presented)).toBe(prose);
   });
 
-  it("does not mark a highlighted word followed by unstyled trailing spaces", () => {
+  it("strips unstyled trailing spaces after a highlighted word", () => {
     const line = `${ESC}[44mWord${ESC}[0m${" ".repeat(20)}`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBeUndefined();
-    // The trailing spaces are still stripped by step 4:
     expect(lineText(presented)).toBe("Word");
   });
 
@@ -357,7 +232,7 @@ describe("buildBlocks — Claude grammars (ctx.agent === 'claude')", () => {
     expect(blockText(prompt.lines)).toContain("Enter to select"); // the replaced footer lives here
   });
 
-  it("keeps the plan fixture's long dashed separators as clipped raw rows", () => {
+  it("keeps the plan fixture's long dashed separators as raw rows", () => {
     const blocks = presentBlocks(
       buildBlocks(fixtureLines("claude--plan-approval.txt"), { agent: "claude" }),
     );
@@ -366,7 +241,6 @@ describe("buildBlocks — Claude grammars (ctx.agent === 'claude')", () => {
 
     const dashedRules = raw.lines.filter((line) => lineText(line).trim().startsWith("╌"));
     expect(dashedRules).toHaveLength(2);
-    expect(dashedRules.every((line) => line.noWrap)).toBe(true);
   });
 
   it("strips trailing input-box chrome when there is no menu (single raw block)", () => {
@@ -464,7 +338,7 @@ describe("presentLines — Grok canvas fill and scrollbar pad", () => {
     expect(presented.segments[0]!.bg).toBe("var(--ansi-1)");
   });
 
-  it("collapses a right-aligned timestamp pad so wrap does not invent empty rows", () => {
+  it("collapses a right-aligned timestamp pad", () => {
     const line = `     Yes. Tap the image button.${" ".repeat(40)}3:01 PM`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
     expect(lineText(presented)).toBe("     Yes. Tap the image button.  3:01 PM");
@@ -496,12 +370,6 @@ describe("presentBlocks — agent neutrality (claude, grok, agy/undefined)", () 
 
     expect(claudeBlocks[0]!.lines).toEqual(grokBlocks[0]!.lines);
     expect(grokBlocks[0]!.lines).toEqual(agyBlocks[0]!.lines);
-
-    const presentedLines = agyBlocks[0]!.lines;
-    expect(presentedLines[0]!.noWrap).toBe(true);
-    expect(presentedLines[1]!.noWrap).toBe(true);
-    expect(presentedLines[2]!.noWrap).toBe(true);
-    expect(presentedLines[3]!.noWrap).toBeUndefined();
   });
 
   it("applies the same highlight and trailing-strip presentation for claude and agy", () => {
@@ -516,11 +384,8 @@ describe("presentBlocks — agent neutrality (claude, grok, agy/undefined)", () 
     const agyBlocks = presentBlocks(buildBlocks(splitLines(parsed), { agent: undefined }));
 
     expect(claudeBlocks[0]!.lines).toEqual(agyBlocks[0]!.lines);
-    expect(claudeBlocks[0]!.lines[0]!.noWrap).toBeUndefined();
     expect(claudeBlocks[0]!.lines[0]!.segments[0]!.text).toBe("Highlighted header");
-    expect(claudeBlocks[0]!.lines[1]!.noWrap).toBeUndefined();
     expect(claudeBlocks[0]!.lines[1]!.segments[0]!.text).toBe("Padded status");
-    expect(claudeBlocks[0]!.lines[2]!.noWrap).toBeUndefined();
   });
 });
 

@@ -41,11 +41,11 @@ const DISPLAY_PREFS_KEY = "collie:display-prefs:v5";
 /** Persist display prefs. Defaults to grammars on (raw terminal off) — the tests that lift menus
  *  need that, now that raw terminal is the empty-storage default. */
 function writeDisplayPrefs(
-  partial: Partial<{ wrap: boolean; fontSize: number; rawTerminal: boolean; tapToFocus: boolean }> = {},
+  partial: Partial<{ fontSize: number; rawTerminal: boolean; tapToFocus: boolean }> = {},
 ) {
   localStorage.setItem(
     DISPLAY_PREFS_KEY,
-    JSON.stringify({ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true, ...partial }),
+    JSON.stringify({ fontSize: 11, rawTerminal: false, tapToFocus: true, ...partial }),
   );
 }
 

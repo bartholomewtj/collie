@@ -1,7 +1,6 @@
 // Chrome stripping for the Grok Build TUI. Peels the full-width composer box (and the hint row
-// under it) off the tail so Collie does not wrap those 200-column `─` borders into a wall of
-// lines on a phone. Tightens the remaining transcript rows: Grok right-aligns timestamps by
-// padding every line to the terminal width, and that pad also wraps into a huge empty gap.
+// under it) off the tail — Collie has its own composer. Tightens remaining transcript rows:
+// Grok right-aligns timestamps by padding every line to the terminal width.
 //
 // Conservative: the box has to match as a whole at the tail. Unsure → return the buffer untouched
 // (same reference), which is the T1 raw-mirror fallback.
@@ -152,7 +151,7 @@ export function composerPrompt(lines: StyledLine[]): string | null {
 }
 
 /**
- * Collapse Grok's right-aligned pad (timestamp / counters) so wrap does not invent empty rows.
+ * Collapse Grok's right-aligned pad (timestamp / counters).
  * Leaves ordinary prose and short gaps alone.
  */
 export function tightenText(text: string): string {

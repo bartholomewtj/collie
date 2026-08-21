@@ -23,7 +23,6 @@
 // extractors, and dialog grammars.
 
 import type { AnsiSegment } from "./ansi";
-import { BOX_ENCLOSURE_GLYPH_CLASS, PURE_HORIZONTAL_RULE_GLYPH_CLASS } from "./rule-glyphs";
 import type { PromptModel } from "./harness/prompt-model";
 import type { WizardModel } from "./harness/wizard-model";
 import type { PreviewSelectModel } from "./harness/preview-model";
@@ -50,12 +49,6 @@ export type { MenuModel, MenuAction, MenuNav, MenuLeftRight } from "./harness/me
 /** One visual line: the styled segments that make it up, with the line-terminating "\n" removed. */
 export interface StyledLine {
   segments: AnsiSegment[];
-  /**
-   * Keep this line on one visual row when the mirror wraps: long horizontal rules, rounded box
-   * borders, enclosed table/chrome rows, or a line-number gutter (Grok edit/diff). Boxed or
-   * highlighted *prose* wraps.
-   */
-  noWrap?: true;
 }
 
 /** A run of raw terminal output. Renders as verbatim styled text (the T1 mirror). */
@@ -180,22 +173,17 @@ function styledLine(segments: AnsiSegment[]): StyledLine {
 }
 
 // -------------------------------------------------------------------------------------------------
-// Presentation pass: noWrap classification, trailing-padding stripping, and Grok canvas cleanup.
+// Presentation pass: trailing-padding stripping and Grok canvas cleanup.
 //
 // This pass runs between `buildBlocks` and the renderer (ansi-output.tsx). `splitLines` stays byte-
 // exact so safety-critical consumers (reply guard, statusline extractors, dialog grammars) see exact
-// pane bytes. `presentLine` / `presentLines` / `presentBlocks` classify rows that should stay on one
-// visual row when the mirror wraps (the renderer pans those runs sideways instead of clipping), and
-// strip trailing padded spaces (≥ 2 spaces) so full-width coloured lines do not wrap into extra
-// coloured rows. Highlighted or boxed *prose* is not marked noWrap — only tables, borders, and
-// empty/padded box chrome.
+// pane bytes. The mirror always pans (no wrap), so this pass does not classify rows.
 //
 // Grok paints every transcript row to the pane width with a near-black canvas fill (rgb(20,20,20)
-// plus a █ scrollbar cell) and a blank vpad row between markdown lines. On a phone those pads wrap
-// into zebra bars. This pass drops that canvas fill (user-prompt / code-block greys stay), strips
-// trailing █, and removes coloured all-space vpad rows. Plain unstyled blank lines are kept.
+// plus a █ scrollbar cell) and a blank vpad row between markdown lines. This pass drops that canvas
+// fill (user-prompt / code-block greys stay), strips trailing █, collapses right-aligned timestamp
+// pads, and removes coloured all-space vpad rows. Plain unstyled blank lines are kept.
 
-const MIN_NO_WRAP_BORDER_LENGTH = 20;
 const MIN_TRAILING_PAD = 2;
 // Grok's scrollbar thumb. Same alphabet grok/markers.ts rstrip already uses; presentLine has to
 // know it too because Raw terminal (the default) skips that adapter.
@@ -205,62 +193,6 @@ const FULL_BLOCK = "\u2588";
 const CANVAS_BG_MAX = 32;
 const CANVAS_BG_SPREAD = 8;
 const CANVAS_RGB = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/;
-
-const PURE_HORIZONTAL_BORDER = new RegExp(
-  `^([${PURE_HORIZONTAL_RULE_GLYPH_CLASS}])\\1{${MIN_NO_WRAP_BORDER_LENGTH - 1},}$`,
-);
-const ROUNDED_BOX_BORDER = new RegExp(
-  `^[╭╰]─{${MIN_NO_WRAP_BORDER_LENGTH},}[\\s\\S]*[╮╯]$`,
-);
-const BOX_ENCLOSURE_START_END = new RegExp(
-  `^[${BOX_ENCLOSURE_GLYPH_CLASS}][\\s\\S]*[${BOX_ENCLOSURE_GLYPH_CLASS}]$`,
-  "u",
-);
-const ENCLOSURE_GLYPH_RE = new RegExp(`[${BOX_ENCLOSURE_GLYPH_CLASS}]`, "gu");
-const CHROME_STRIP_RE = new RegExp(
-  `[${PURE_HORIZONTAL_RULE_GLYPH_CLASS}${BOX_ENCLOSURE_GLYPH_CLASS}\\s]`,
-  "gu",
-);
-
-// Grok edit/diff rows: indent, then a 1–4 digit file line number, then two spaces (or the rest
-// of the row is blank). The number is a gutter, not a markdown list (`1. item`) or a date
-// (`2026-08-21`). Wrapping these on a phone drops the continuation under the gutter and piles
-// red/green dual lines on top of each other — they pan as a group like a table.
-const LINE_NUMBER_GUTTER = /^\s{2,}\d{1,4}(?:  |\s*$)/;
-
-function isLineNumberGutterRow(text: string): boolean {
-  return LINE_NUMBER_GUTTER.test(text);
-}
-
-// GFM / ASCII pipe tables: `| a | b |` and the delimiter row. Two pipes (`| foo |`) is a shell
-// snippet, not a table; three or more plus the 20-cell floor is the same bar the box-enclosure
-// classifier uses, so a short `| a | b |` still wraps.
-function isAsciiPipeTableRow(trimmed: string): boolean {
-  if (trimmed.length < MIN_NO_WRAP_BORDER_LENGTH) return false;
-  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return false;
-  let pipes = 0;
-  for (let i = 0; i < trimmed.length; i++) {
-    if (trimmed.charCodeAt(i) === 0x7c) {
-      pipes++;
-      if (pipes >= 3) return true;
-    }
-  }
-  return false;
-}
-
-// Enclosed rows pan only when they are a table (3+ vertical/corner glyphs) or chrome
-// (interior is padding and box-drawing). A `│ long sentence of prose │` row wraps — otherwise
-// wrap-on is just a sideways scroller for every boxed message.
-function isEnclosedTableOrChrome(trimmed: string): boolean {
-  if (trimmed.length < MIN_NO_WRAP_BORDER_LENGTH) return false;
-  if (!BOX_ENCLOSURE_START_END.test(trimmed)) return false;
-
-  const marks = trimmed.match(ENCLOSURE_GLYPH_RE);
-  if (marks && marks.length >= 3) return true;
-
-  const leftover = trimmed.slice(1, -1).replace(CHROME_STRIP_RE, "");
-  return leftover.length <= 2;
-}
 
 function isPadChar(c: string): boolean {
   return c === " " || c === "\t" || c === FULL_BLOCK;
@@ -325,8 +257,8 @@ function hasBackground(line: StyledLine): boolean {
 }
 
 // Same job as grok/chrome.ts `tightenText`: Grok (and others) right-align a short token with a
-// long space run. On a phone that run wraps into empty rows. Applied here so Raw terminal still
-// gets it. No-op when the adapter already collapsed the gap to two spaces.
+// long space run. Applied here so Raw terminal still gets it. No-op when the adapter already
+// collapsed the gap to two spaces.
 const RIGHT_ALIGN_PAD = /^(.*?)\s{8,}(\S.{0,40})$/;
 
 function removeChars(segments: AnsiSegment[], start: number, count: number): AnsiSegment[] {
@@ -394,23 +326,13 @@ function stripTrailingSpaces(segments: AnsiSegment[], count: number): AnsiSegmen
 }
 
 /**
- * Classify a line's `noWrap` wrap policy, strip trailing padded spaces / █, and drop Grok's
- * near-black canvas fill. Operates purely on presentation: classifies on the original text
- * before stripping.
+ * Strip trailing padded spaces / █ and drop Grok's near-black canvas fill.
+ * Operates purely on presentation.
  */
 export function presentLine(line: StyledLine): StyledLine {
   if (line.segments.length === 0) return line;
 
   const text = lineText(line);
-  const trimmed = text.trim();
-
-  const shouldNoWrap =
-    PURE_HORIZONTAL_BORDER.test(trimmed) ||
-    ROUNDED_BOX_BORDER.test(trimmed) ||
-    isEnclosedTableOrChrome(trimmed) ||
-    isAsciiPipeTableRow(trimmed) ||
-    isLineNumberGutterRow(text);
-
   let newSegments = line.segments;
   if (isPresentBlank(text)) {
     newSegments = [];
@@ -423,15 +345,8 @@ export function presentLine(line: StyledLine): StyledLine {
     newSegments = stripCanvasBg(newSegments);
   }
 
-  const segmentsChanged = newSegments !== line.segments;
-  const noWrapVal = shouldNoWrap ? true : undefined;
-  const noWrapChanged = line.noWrap !== noWrapVal;
-
-  if (!segmentsChanged && !noWrapChanged) return line;
-
-  return shouldNoWrap
-    ? { segments: newSegments, noWrap: true }
-    : { segments: newSegments };
+  if (newSegments === line.segments) return line;
+  return { segments: newSegments };
 }
 
 /**

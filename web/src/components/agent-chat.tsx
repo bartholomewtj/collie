@@ -118,7 +118,7 @@ export function AgentChat({
   // last snapshot's status as current while we're reconnecting/lost, and restores instantly on recovery.
   const connecting = isConnecting({ bridge, error, stalled });
   // Single display-prefs instance: the View controls (in <Composer>) write it, the mirror reads it.
-  const { prefs, setWrap, stepFontSize, setRawTerminal, setTapToFocus } = useDisplayPrefs();
+  const { prefs, stepFontSize, setRawTerminal, setTapToFocus } = useDisplayPrefs();
   // Raw-terminal escape hatch: when on, every Claude grammar is bypassed and the plain mirror shows,
   // so a mis-detected/mis-rendered dialog can always be driven by hand with the keys pad.
   const grammarsOn = !prefs.rawTerminal;
@@ -818,7 +818,6 @@ export function AgentChat({
               {display ? (
                 <AnsiOutput
                   text={display}
-                  wrap={prefs.wrap}
                   fontSize={prefs.fontSize}
                   query={findOpen ? findQuery : ""}
                   currentMatch={findOpen ? currentMatch : -1}
@@ -914,7 +913,6 @@ export function AgentChat({
             terminalDraft={terminalDraft}
             rawTerminalDraft={rawTerminalDraft}
             prefs={prefs}
-            setWrap={setWrap}
             stepFontSize={stepFontSize}
             setRawTerminal={setRawTerminal}
             setTapToFocus={setTapToFocus}
