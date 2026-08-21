@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import agents, control, git_helper
+from . import agents, control, git_helper, quality_scope
 from .console import Console
 from .data_types import AgentCall, EnvelopeBase, EventRecord, Phase, PhaseParams
 from .utils import ensure_dir, now_iso
@@ -31,7 +31,13 @@ class PhaseHandle:
                                           payload=payload))
         self.run.console.note(", ".join(f"{k}: {v}" for k, v in payload.items()))
         if self.phase.params.kind == "engineer" and "input" in payload:
-            self.run.tracer.session_request(self.run.adw_id, str(payload["input"]))
+            text = str(payload["input"])
+            # Parse here, from the full prompt. Do not catch — a throw fails
+            # the request phase. Do not read sessions.request (truncated) or
+            # SELECT payload_json FROM events. Empty list = nothing named;
+            # leaving this unset (None) is "never captured".
+            self.run.out_of_scope = quality_scope.parse_out_of_scope(text)
+            self.run.tracer.session_request(self.run.adw_id, text)
 
     def call(self, call: AgentCall) -> EnvelopeBase:
         if self.phase.params.kind != "agent":
@@ -63,6 +69,9 @@ class Run:
         # of re-run.
         self.budget_usd = control.budget_from_env()
         self.completed_envelopes = tracer.completed_envelopes(adw_id)
+        # None = request never captured. Capture in PhaseHandle.log sets a
+        # list (maybe empty). enforce() fail-closes on None.
+        self.out_of_scope: list[str] | None = None
         if self.completed_envelopes:
             self.console.note(
                 f"resuming: {len(self.completed_envelopes)} phase(s) already "
