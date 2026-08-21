@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.1] - 2026-08-21
+
+### Changed
+- Live-run traces dots use the console running colour, not Tailwind emerald
+
 ## [0.52.0] - 2026-08-21
 
 ### Changed

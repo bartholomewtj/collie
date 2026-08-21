@@ -634,8 +634,8 @@ export function AgentChat({
         //
         // Traces (the lanes mark) opens the SSSF visualiser scoped to the ADW runs THIS pane
         // launched — the tracer wrote the pane's HERDR_PANE_ID on each run, so this is attribution,
-        // not a guess from cwd. Offered only when the pane has at least one such run; a green dot
-        // means one is still going. Back from there returns here.
+        // not a guess from cwd. Offered only when the pane has at least one such run; a running
+        // dot means one is still going. Back from there returns here.
         //
         // The status pill is dimmed while the connection isn't live, so a frozen "working"/"idle"
         // from the last snapshot doesn't masquerade as current. A bare shell shows a muted "shell" tag.
@@ -665,7 +665,7 @@ export function AgentChat({
                   {runLive && (
                     <span
                       aria-hidden="true"
-                      className="absolute right-1 top-1 size-1.5 rounded-full bg-emerald-400 ring-2 ring-background"
+                      className="absolute right-1 top-1 size-1.5 rounded-full bg-status-running ring-2 ring-background"
                     />
                   )}
                 </button>
