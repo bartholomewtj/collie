@@ -184,8 +184,9 @@ function styledLine(segments: AnsiSegment[]): StyledLine {
 // This pass runs between `buildBlocks` and the renderer (ansi-output.tsx). `splitLines` stays byte-
 // exact so safety-critical consumers (reply guard, statusline extractors, dialog grammars) see exact
 // pane bytes. `presentLine` / `presentLines` / `presentBlocks` classify rows that should stay on one
-// visual row when the mirror wraps, and strip trailing padded spaces (≥ 2 spaces) so full-width
-// coloured lines do not wrap into extra coloured rows.
+// visual row when the mirror wraps (the renderer pans those runs sideways instead of clipping), and
+// strip trailing padded spaces (≥ 2 spaces) so full-width coloured lines do not wrap into extra
+// coloured rows.
 
 const MIN_NO_WRAP_BORDER_LENGTH = 20;
 const MIN_TRAILING_PAD = 2;
@@ -200,6 +201,22 @@ const BOX_ENCLOSURE_START_END = new RegExp(
   `^[${BOX_ENCLOSURE_GLYPH_CLASS}][\\s\\S]*[${BOX_ENCLOSURE_GLYPH_CLASS}]$`,
   "u",
 );
+
+// GFM / ASCII pipe tables: `| a | b |` and the delimiter row. Two pipes (`| foo |`) is a shell
+// snippet, not a table; three or more plus the 20-cell floor is the same bar the box-enclosure
+// classifier uses, so a short `| a | b |` still wraps.
+function isAsciiPipeTableRow(trimmed: string): boolean {
+  if (trimmed.length < MIN_NO_WRAP_BORDER_LENGTH) return false;
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return false;
+  let pipes = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed.charCodeAt(i) === 0x7c) {
+      pipes++;
+      if (pipes >= 3) return true;
+    }
+  }
+  return false;
+}
 
 function isFullWidthHighlight(line: StyledLine, text: string): boolean {
   if (isBlank(text)) return false;
@@ -262,6 +279,7 @@ export function presentLine(line: StyledLine): StyledLine {
     PURE_HORIZONTAL_BORDER.test(trimmed) ||
     ROUNDED_BOX_BORDER.test(trimmed) ||
     (trimmed.length >= MIN_NO_WRAP_BORDER_LENGTH && BOX_ENCLOSURE_START_END.test(trimmed)) ||
+    isAsciiPipeTableRow(trimmed) ||
     isFullWidthHighlight(line, text);
 
   let newSegments = line.segments;
