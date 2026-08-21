@@ -108,10 +108,10 @@ const NO_MATCHES: FindMatch[] = [];
 const LINK_CLASS =
   "underline decoration-1 underline-offset-2 break-all cursor-pointer py-[0.35em]";
 
-// Consecutive noWrap rows (tables, box chrome, highlight bars) share one horizontal scroller so
-// columns stay aligned while you pan. `inline-block` + `align-bottom` keeps the terminal grid's
-// line advance (same reason as the old clip span). `overflow-hidden` was the previous treatment
-// and cropped the table; pan is the point of marking the row noWrap.
+// Consecutive noWrap rows (tables, box chrome) share one horizontal scroller so columns stay
+// aligned while you pan. `inline-block` + `align-bottom` keeps the terminal grid's line advance
+// (same reason as the old clip span). `overflow-hidden` was the previous treatment and cropped
+// the table; pan is the point of marking the row noWrap. Boxed/highlighted prose is not noWrap.
 const PAN_GROUP_CLASS =
   "inline-block w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain align-bottom whitespace-pre break-normal [touch-action:pan-x_pan-y]";
 

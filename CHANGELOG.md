@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.2] - 2026-08-21
+
+### Changed
+- Composer typing box uses a muted grey focus border instead of the bright you-blue ring
+
+### Fixed
+- Wrap lines wraps boxed and highlighted prose; only tables, borders, and empty box chrome pan sideways
+
 ## [0.52.1] - 2026-08-21
 
 ### Changed

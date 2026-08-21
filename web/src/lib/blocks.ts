@@ -52,7 +52,7 @@ export interface StyledLine {
   segments: AnsiSegment[];
   /**
    * Keep this line on one visual row when the mirror wraps: long horizontal rules, rounded box
-   * borders, enclosed table/box rows, or full-width highlight rows.
+   * borders, or enclosed table/chrome rows. Boxed or highlighted *prose* wraps.
    */
   noWrap?: true;
 }
@@ -186,7 +186,8 @@ function styledLine(segments: AnsiSegment[]): StyledLine {
 // pane bytes. `presentLine` / `presentLines` / `presentBlocks` classify rows that should stay on one
 // visual row when the mirror wraps (the renderer pans those runs sideways instead of clipping), and
 // strip trailing padded spaces (≥ 2 spaces) so full-width coloured lines do not wrap into extra
-// coloured rows.
+// coloured rows. Highlighted or boxed *prose* is not marked noWrap — only tables, borders, and
+// empty/padded box chrome.
 
 const MIN_NO_WRAP_BORDER_LENGTH = 20;
 const MIN_TRAILING_PAD = 2;
@@ -200,6 +201,11 @@ const ROUNDED_BOX_BORDER = new RegExp(
 const BOX_ENCLOSURE_START_END = new RegExp(
   `^[${BOX_ENCLOSURE_GLYPH_CLASS}][\\s\\S]*[${BOX_ENCLOSURE_GLYPH_CLASS}]$`,
   "u",
+);
+const ENCLOSURE_GLYPH_RE = new RegExp(`[${BOX_ENCLOSURE_GLYPH_CLASS}]`, "gu");
+const CHROME_STRIP_RE = new RegExp(
+  `[${PURE_HORIZONTAL_RULE_GLYPH_CLASS}${BOX_ENCLOSURE_GLYPH_CLASS}\\s]`,
+  "gu",
 );
 
 // GFM / ASCII pipe tables: `| a | b |` and the delimiter row. Two pipes (`| foo |`) is a shell
@@ -218,19 +224,18 @@ function isAsciiPipeTableRow(trimmed: string): boolean {
   return false;
 }
 
-function isFullWidthHighlight(line: StyledLine, text: string): boolean {
-  if (isBlank(text)) return false;
-  const trailingCount = text.length - text.trimEnd().length;
-  if (trailingCount < MIN_TRAILING_PAD) return false;
+// Enclosed rows pan only when they are a table (3+ vertical/corner glyphs) or chrome
+// (interior is padding and box-drawing). A `│ long sentence of prose │` row wraps — otherwise
+// wrap-on is just a sideways scroller for every boxed message.
+function isEnclosedTableOrChrome(trimmed: string): boolean {
+  if (trimmed.length < MIN_NO_WRAP_BORDER_LENGTH) return false;
+  if (!BOX_ENCLOSURE_START_END.test(trimmed)) return false;
 
-  const firstNonSpaceIdx = line.segments.findIndex((s) => /\S/.test(s.text));
-  if (firstNonSpaceIdx === -1) return false;
+  const marks = trimmed.match(ENCLOSURE_GLYPH_RE);
+  if (marks && marks.length >= 3) return true;
 
-  for (let i = firstNonSpaceIdx; i < line.segments.length; i++) {
-    const seg = line.segments[i]!;
-    if (seg.bg === undefined && seg.style?.backgroundColor === undefined) return false;
-  }
-  return true;
+  const leftover = trimmed.slice(1, -1).replace(CHROME_STRIP_RE, "");
+  return leftover.length <= 2;
 }
 
 function stripTrailingSpaces(segments: AnsiSegment[], count: number): AnsiSegment[] {
@@ -278,9 +283,8 @@ export function presentLine(line: StyledLine): StyledLine {
   const shouldNoWrap =
     PURE_HORIZONTAL_BORDER.test(trimmed) ||
     ROUNDED_BOX_BORDER.test(trimmed) ||
-    (trimmed.length >= MIN_NO_WRAP_BORDER_LENGTH && BOX_ENCLOSURE_START_END.test(trimmed)) ||
-    isAsciiPipeTableRow(trimmed) ||
-    isFullWidthHighlight(line, text);
+    isEnclosedTableOrChrome(trimmed) ||
+    isAsciiPipeTableRow(trimmed);
 
   let newSegments = line.segments;
   if (isBlank(text)) {

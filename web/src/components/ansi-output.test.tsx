@@ -127,6 +127,15 @@ describe("mirror line wrapping", () => {
     expect(pan.textContent).toBe(row);
   });
 
+  it("wraps boxed prose instead of panning it like a table", () => {
+    const row = "│ Yes. Tap the image button on the reply box. This is a long boxed message. │";
+    const { container } = render(<AnsiOutput text={`${row}\n`} />);
+    const pre = container.querySelector("pre")!;
+    expect(pre.querySelector("[data-mirror-pan]")).toBeNull();
+    expect(pre.className).toContain("whitespace-pre-wrap");
+    expect(pre.textContent).toBe(`${row}\n`);
+  });
+
   it("groups consecutive table rows into one pan scroller so columns stay aligned", () => {
     const r1 = "| Flag | Default | Type | Applies to | Notes |";
     const r2 = "|------|---------|------|------------|-------|";
@@ -139,20 +148,21 @@ describe("mirror line wrapping", () => {
     expect(container.querySelector("pre")!.textContent).toBe(text);
   });
 
-  it("pans a full-width highlight row, keeps its background, and strips trailing spaces", () => {
+  it("strips trailing spaces from a full-width highlight row, keeps its background, and wraps it like prose", () => {
     const highlight = `${ESC}[7mHighlight bar${" ".repeat(30)}${ESC}[27m`;
     const { container } = render(<AnsiOutput text={`${highlight}\n`} />);
-    const pan = container.querySelector("[data-mirror-pan]")!;
-    expect(pan).not.toBeNull();
-    expect(pan.textContent).toBe("Highlight bar");
-    const span = pan.querySelector("span") as HTMLElement;
+    const pre = container.querySelector("pre")!;
+    expect(pre.querySelector("[data-mirror-pan]")).toBeNull();
+    expect(pre.textContent).toBe("Highlight bar\n");
+    const span = [...pre.querySelectorAll("span")].find((s) => s.textContent === "Highlight bar") as HTMLElement;
     expect(span.style.backgroundColor).toBe("rgb(250, 250, 250)");
   });
 
   it("renders a coloured padded row trimmed to visible text, and strips pure-space coloured lines completely", () => {
     const padded = `${ESC}[41mok${" ".repeat(60)}${ESC}[0m`;
     const { container: paddedCont } = render(<AnsiOutput text={`${padded}\n`} />);
-    const paddedSpan = paddedCont.querySelector("[data-mirror-pan] span") as HTMLElement;
+    expect(paddedCont.querySelector("[data-mirror-pan]")).toBeNull();
+    const paddedSpan = [...paddedCont.querySelectorAll("span")].find((s) => s.textContent === "ok") as HTMLElement;
     expect(paddedSpan.textContent).toBe("ok");
     expect(paddedSpan.style.backgroundColor).toBe("var(--ansi-1)");
 
