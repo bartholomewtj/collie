@@ -1,8 +1,8 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.49.0** (`b9031b1`), tagged **v0.49.0**.
+_Last handoff: 2026-08-21 — `main` at **0.51.0** (`353f85c`), tagged **v0.51.0**.
 Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. `web/dist` is
-`0.49.0+b9031b1-dirty` (dirty = untracked files under `adws/adw_data/`, leave them). One listener
+`0.51.0+353f85c-dirty` (dirty = untracked files under `adws/adw_data/`, leave them). One listener
 on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
@@ -10,9 +10,9 @@ Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered
 
 ## Where this stopped
 
-0.49.0 is tagged and rebuilt. #111 landed `keys.toml`, F1–F12, and honest Disconnected copy. Not a
-full upstream merge. Phone: hard-refresh / reopen the PWA. Copy `keys.toml.example` next to `.env`
-if you want custom Key presets.
+0.51.0 is tagged, rebuilt, and restarted. #114 last-seen + `--major` (ADR 0025), #115 config-dir
+`(OI)(CI)` ACLs, #116 Herdr actions via `build/collie-action-v1.exe`. Phone: hard-refresh / reopen
+the PWA. `herdr plugin action invoke update --plugin herdr.collie` works on this box.
 
 ## Resume with
 
@@ -20,7 +20,7 @@ if you want custom Key presets.
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # expect v0.49.0
+git describe --tags --abbrev=0                        # expect v0.51.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -39,24 +39,26 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Remaining upstream (inspect, do not merge the 45 as a blob): offline cache (`last-seen.ts`),
-   `--major` update gate on top of ADR 0019 + this-fork tags. Skip a re-port of 0.30–0.31.1.
-2. Parked: #55 ACL follow-up — `Protect-CollieSecret` on the config dir must not strip child ACLs.
-3. Parked: in-app update banner points at the Herdr `update` action, `platform_unsupported` on Windows.
+1. Parked: send this fork's security fixes upstream to AltanS/collie.
+2. Parked: `push-keys` / `push-test` Herdr actions are still POSIX-only (the Windows ctl has no
+   wrappers; PATH's bash is the WSL stub).
+3. Do not `git merge upstream/main`. Inspect leftovers; skip a re-port of 0.30–0.31.1.
 
 ## Open
 
-- No issue: leftover upstream (last-seen / `--major`). Cherry-pick, do not `git merge upstream/main`.
 - Parked: send the security fixes upstream to AltanS/collie.
-- Parked: #55 ACL follow-up (see above).
+- Parked: Windows `push-keys` / `push-test` Herdr actions.
 
 ## Watch out for
 
-- **Restarting can lock the config dir.** `Protect-CollieSecret` on the directory + `/inheritance:r`
-  without object/container inherit left `exec-bridge.vbs` with no ACEs. If start fails with access
-  denied there, `icacls <file> /grant:r "$env:USERDOMAIN\$env:USERNAME:(F)"` on every file in
-  `%APPDATA%\herdr\plugins\config\herdr.collie\`, then `collie-ctl.ps1 start`. Do not
-  `taskkill /IM bun.exe`.
+- **Herdr rejects duplicate action ids.** Canonical `update` / `restart` / `update-major` are the
+  Windows exe. POSIX twins are `*-posix`. Banner copy stays `invoke update`.
+- **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`. Windows Herdr
+  actions must not call `bash`.
+- **Restarting can still lock a file** if an ACE is missing. Recovery:
+  `icacls <file> /grant:r "$env:USERDOMAIN\$env:USERNAME:(F)"` on the file, then
+  `collie-ctl.ps1 start`. Directory protect now grants `(OI)(CI)(F)` so new children inherit.
+  Do not `taskkill /IM bun.exe`.
 - **Raw terminal on means no prompt buttons and no idle-tail / commands-only collapse.** 0.45.0
   default. Grammar / hide-live bugs need ⚙ → Raw terminal off.
 - **Do not trust an ADW's own success line.** The denylist rolls back named files, but still
@@ -65,7 +67,6 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
   is the commit being served; `staleBuild` is the mtime guard. Local curl gets `identity required`.
 - **`run_quality()` publishes `web/dist`.** SDLC inner loop (`run_tests()`) does not build.
 - **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
-- **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`.
 - **CI has no `uv`.** Factory tests go through the `factory unittests` job, not `bun test`.
 - **Do not `git merge upstream/main`.** Git still thinks you split at 0.29.0. Port leftovers only.
 - Never `taskkill /IM bun.exe`.
