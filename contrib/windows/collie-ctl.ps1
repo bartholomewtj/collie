@@ -589,41 +589,174 @@ function Get-CollieNewestReleaseTag {
   return ""
 }
 
+function Get-CollieManifestVersion([string]$Root = $script:PluginRoot) {
+  $path = Join-Path $Root "herdr-plugin.toml"
+  if (-not (Test-Path -LiteralPath $path)) { return "" }
+  foreach ($line in Get-Content -LiteralPath $path) {
+    if ($line -match '^version\s*=\s*"([^"]*)"') { return $Matches[1] }
+  }
+  return ""
+}
+
+function Get-CollieMajor([string]$Version) {
+  if ($Version -match '^(\d+)\.') { return [int]$Matches[1] }
+  return $null
+}
+
+function Get-CollieRemoteReleaseTags {
+  $output = & git -C $script:PluginRoot ls-remote --tags origin 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    throw "could not list the upstream release tags - is the remote reachable?"
+  }
+  $byName = @{}
+  foreach ($line in @($output)) {
+    if ($line -notmatch '^([0-9a-f]+)\s+refs/tags/(.+)$') { continue }
+    $sha = $Matches[1]
+    $name = $Matches[2]
+    $peeled = $false
+    if ($name.EndsWith("^{}")) {
+      $peeled = $true
+      $name = $name.Substring(0, $name.Length - 3)
+    }
+    if ($name -notmatch '^v(\d+)\.(\d+)\.(\d+)$') { continue }
+    if ($byName.ContainsKey($name) -and $byName[$name].Peeled -and -not $peeled) { continue }
+    $byName[$name] = [pscustomobject]@{
+      Major = [int]$Matches[1]
+      Minor = [int]$Matches[2]
+      Patch = [int]$Matches[3]
+      Tag = $name
+      Commit = $sha
+      Peeled = $peeled
+    }
+  }
+  return @($byName.Values)
+}
+
+function Get-CollieReleaseInMajor($Tags, [int]$Major) {
+  $in = @($Tags | Where-Object { $_.Major -eq $Major } | Sort-Object Major, Minor, Patch)
+  if ($in.Count -eq 0) { return $null }
+  return $in[-1]
+}
+
+function Get-CollieNextMajorRelease($Tags, [int]$Major) {
+  $higher = @($Tags | Where-Object { $_.Major -gt $Major } | Sort-Object Major, Minor, Patch)
+  if ($higher.Count -eq 0) { return $null }
+  $next = $higher[0].Major
+  $in = @($higher | Where-Object { $_.Major -eq $next })
+  return $in[-1]
+}
+
+function Write-CollieMajorAnnouncement($Higher) {
+  if (-not $Higher) { return }
+  $ver = $Higher.Tag.Substring(1)
+  Write-Output "note: Collie $ver is out - a NEW MAJOR, which a routine update never takes."
+  Write-Output "      Read its release notes, then consent to it with:  herdr plugin action invoke update-major --plugin herdr.collie"
+}
+
+function Set-CollieManagedTag([string]$Target) {
+  if ([string]::IsNullOrWhiteSpace($Target)) {
+    throw "no vX.Y.Z release tag found on origin; refuse to update to unverified origin HEAD (override with COLLIE_UPDATE_REF=<tag-or-ref>)"
+  }
+  Write-Output "updating Collie (Herdr-managed checkout: fetch + detach onto $Target)..."
+  $shallow = (& git -C $script:PluginRoot rev-parse --is-shallow-repository | Out-String).Trim()
+  Assert-LastExit "git shallow check"
+  $depth = if ($shallow -eq "true") { @("--depth", "1") } else { @() }
+  & git -C $script:PluginRoot fetch @depth origin tag $Target
+  Assert-LastExit "git fetch"
+  & git -C $script:PluginRoot checkout -q --detach --force "refs/tags/$Target"
+  Assert-LastExit "git checkout"
+  $exactTag = (& git -C $script:PluginRoot describe --tags --exact-match 2>$null | Out-String).Trim()
+  if ($exactTag -ne $Target) {
+    throw "checkout landed at '$exactTag', expected tag '$Target'"
+  }
+  $head = (& git -C $script:PluginRoot log -1 --format="%h %s" | Out-String).Trim()
+  Assert-LastExit "git log"
+  Write-Output "now at $Target ($head)"
+}
+
+function Update-CollieManagedCheckout([string]$Installed, [bool]$Cross) {
+  if (-not [string]::IsNullOrWhiteSpace($env:COLLIE_UPDATE_REF)) {
+    Set-CollieManagedTag $env:COLLIE_UPDATE_REF
+    return
+  }
+  $tags = @(Get-CollieRemoteReleaseTags)
+  $major = Get-CollieMajor $Installed
+  if ($null -eq $major) {
+    Write-Output "updating Collie (Herdr-managed checkout: no readable version - pinning to newest release tag)..."
+    Set-CollieManagedTag (Get-CollieNewestReleaseTag)
+    return
+  }
+  $higher = Get-CollieNextMajorRelease $tags $major
+  if ($Cross) {
+    if (-not $higher) {
+      Write-Output "no release above major $major exists yet - nothing to cross to."
+      return
+    }
+    $crossVer = $higher.Tag.Substring(1)
+    Write-Output "crossing to Collie $crossVer (major flag given: consented)..."
+    Set-CollieManagedTag $higher.Tag
+    return
+  }
+  $best = Get-CollieReleaseInMajor $tags $major
+  if (-not $best) {
+    Write-Output "no release of major $major yet - leaving this checkout where it is."
+    Write-CollieMajorAnnouncement $higher
+    return
+  }
+  $head = (& git -C $script:PluginRoot rev-parse HEAD | Out-String).Trim()
+  $bestVersion = [version]$best.Tag.Substring(1)
+  $installedVersion = $null
+  if ($Installed -match '^(\d+\.\d+\.\d+)') {
+    $installedVersion = [version]$Matches[1]
+  }
+  if ($best.Commit -eq $head -or ($installedVersion -and $bestVersion -le $installedVersion)) {
+    Write-Output "already current - $($best.Tag) is the newest release of major $major."
+    Write-CollieMajorAnnouncement $higher
+    return
+  }
+  Set-CollieManagedTag $best.Tag
+  Write-CollieMajorAnnouncement $higher
+}
+
+function Update-CollieLinkedCheckout([string]$Installed, [bool]$Cross) {
+  & git -C $script:PluginRoot fetch origin
+  Assert-LastExit "git fetch"
+  $ref = (& git -C $script:PluginRoot rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null | Out-String).Trim()
+  if ($ref) {
+    $fetched = ""
+    $toml = & git -C $script:PluginRoot show "${ref}:herdr-plugin.toml" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $toml) {
+      foreach ($line in @($toml -split "`n")) {
+        if ($line -match '^version\s*=\s*"([^"]*)"') { $fetched = $Matches[1]; break }
+      }
+    }
+    $from = Get-CollieMajor $Installed
+    $to = Get-CollieMajor $fetched
+    if (-not $Cross -and $null -ne $from -and $null -ne $to -and $to -gt $from) {
+      Write-Output "refusing to update: $Installed -> $fetched ($ref) crosses a MAJOR version."
+      Write-Output "A major means you have to change something - so it is never taken by a routine update."
+      Write-Output "Read its release notes, then consent to it with:  herdr plugin action invoke update-major --plugin herdr.collie"
+      Write-Output "(nothing was pulled - this checkout is unchanged)"
+      return
+    }
+  }
+  Write-Output "updating Collie (git pull --ff-only)..."
+  & git -C $script:PluginRoot pull --ff-only
+  Assert-LastExit "git pull"
+}
+
 function Update-CollieCheckout {
   if (-not (Test-CollieGitCommand @("rev-parse", "--git-dir"))) {
     throw "not a git checkout - refresh with: herdr plugin install AltanS/collie --yes"
   }
 
+  $cross = @($CommandArgs) -contains "--major"
+  $installed = Get-CollieManifestVersion
   if (-not (Test-CollieManagedCheckout)) {
-    Write-Output "updating Collie (git pull --ff-only)..."
-    & git -C $script:PluginRoot pull --ff-only
-    Assert-LastExit "git pull"
+    Update-CollieLinkedCheckout $installed $cross
     return
   }
-
-  $target = $env:COLLIE_UPDATE_REF
-  if ([string]::IsNullOrWhiteSpace($target)) {
-    $target = Get-CollieNewestReleaseTag
-  }
-  if ([string]::IsNullOrWhiteSpace($target)) {
-    throw "no vX.Y.Z release tag found on origin; refuse to update to unverified origin HEAD (override with COLLIE_UPDATE_REF=<tag-or-ref>)"
-  }
-
-  Write-Output "updating Collie (Herdr-managed checkout: fetch + detach onto tag $target)..."
-  $shallow = (& git -C $script:PluginRoot rev-parse --is-shallow-repository | Out-String).Trim()
-  Assert-LastExit "git shallow check"
-  $depth = if ($shallow -eq "true") { @("--depth", "1") } else { @() }
-  & git -C $script:PluginRoot fetch @depth origin tag $target
-  Assert-LastExit "git fetch"
-  & git -C $script:PluginRoot checkout -q --detach --force "refs/tags/$target"
-  Assert-LastExit "git checkout"
-  $exactTag = (& git -C $script:PluginRoot describe --tags --exact-match 2>$null | Out-String).Trim()
-  if ($exactTag -ne $target) {
-    throw "checkout landed at '$exactTag', expected tag '$target'"
-  }
-  $head = (& git -C $script:PluginRoot log -1 --format="%h %s" | Out-String).Trim()
-  Assert-LastExit "git log"
-  Write-Output "now at $target ($head)"
+  Update-CollieManagedCheckout $installed $cross
 }
 
 function Refresh-CollieRegistry {

@@ -948,9 +948,20 @@ advance_origin() {
 
 # Run update_checkout() against an arbitrary checkout, with the control script's own PLUGIN_ROOT
 # repointed at it (sourcing computes PLUGIN_ROOT from BASH_SOURCE, so it must be overridden after).
-# Optional second argument injects extra environment lines (e.g. export COLLIE_UPDATE_REF=v0.29.0).
+# An argument starting with `export ` injects environment (e.g. export COLLIE_UPDATE_REF=v0.29.0);
+# remaining args are passed to update_checkout (e.g. --major).
 run_update_checkout() {
-  local root="$1" extra_env="${2:-}" harness="${CASE_DIR}/update-harness.sh"
+  local root="$1"; shift
+  local extra_env=""
+  if [ "${1-}" != "${1#export }" ]; then
+    extra_env="$1"
+    shift
+  fi
+  local quoted="" a
+  for a in "$@"; do
+    quoted+=" $(printf '%q' "$a")"
+  done
+  local harness="${CASE_DIR}/update-harness.sh"
   cat > "$harness" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -960,9 +971,53 @@ export PATH="$BIN_DIR:$BASE_PATH"
 ${extra_env}
 source "$CTL"
 PLUGIN_ROOT="$root"
-update_checkout
+update_checkout${quoted}
 EOF
   bash "$harness" 2>&1
+}
+
+# One release on ORIGIN_DIR: a commit that carries the manifest version target selection reads, plus
+# its `v<x.y.z>` tag. `-a` makes it annotated — the remote lists an annotated tag TWICE (once at the
+# tag object, once peeled at the commit) and only the peeled line names a commit, so at least one
+# fixture tag must be annotated or that half of the parser is never exercised.
+origin_release() {
+  printf '%s\n' "$1" > "${ORIGIN_DIR}/VERSION"
+  printf 'id = "herdr.collie"\nversion = "%s"\n' "$1" > "${ORIGIN_DIR}/herdr-plugin.toml"
+  git_q -C "$ORIGIN_DIR" add -A
+  git_q -C "$ORIGIN_DIR" commit -qm "release $1"
+  if [ "${2-}" = "-a" ]; then
+    git_q -C "$ORIGIN_DIR" tag -a "v$1" -m "$1"
+  else
+    git_q -C "$ORIGIN_DIR" tag "v$1"
+  fi
+}
+
+# A local origin carrying real releases in major 9, plus refs the strict filter must ignore. The tip
+# is left ABOVE the newest release tag, so a target selection that lands on the branch tip instead of
+# a tag is visible rather than accidentally right.
+stage_tagged_origin() {
+  ORIGIN_DIR="${CASE_DIR}/origin"
+  mkdir -p "$ORIGIN_DIR"
+  git_q -C "$ORIGIN_DIR" init -q -b main
+  origin_release 9.9.9 -a
+  origin_release 9.10.0
+  printf 'junk\n' > "${ORIGIN_DIR}/VERSION"
+  git_q -C "$ORIGIN_DIR" add -A
+  git_q -C "$ORIGIN_DIR" commit -qm "not a release"
+  git_q -C "$ORIGIN_DIR" tag v9.11.0-beta.1
+  git_q -C "$ORIGIN_DIR" tag v9.11
+  git_q -C "$ORIGIN_DIR" tag latest
+}
+
+# A Herdr-managed (detached, shallow) checkout of ORIGIN_DIR at ref $1. Echoes its path.
+stage_managed_at() {
+  local root="${CASE_DIR}/managed"
+  mkdir -p "$root"
+  git_q -C "$root" init -q
+  git_q -C "$root" remote add origin "$ORIGIN_DIR"
+  git_q -C "$root" fetch -q --depth 1 origin "$1"
+  git_q -C "$root" checkout -q --detach FETCH_HEAD
+  printf '%s' "$root"
 }
 
 # The #63 regression: a Herdr-managed checkout must advance to the newest release tag — even with a
@@ -1189,6 +1244,136 @@ test_update_reports_a_non_git_checkout() {
   set -e
   [ "$rc" -ne 0 ] || fail "update_checkout on a non-git tree reported success"
   assert_contains "$out" "herdr plugin install AltanS/collie"
+}
+
+# ── The major gate (ADR 0025, on top of ADR 0019's tag pin) ───────────────────────────────────────
+# `update` follows RELEASE TAGS inside the installed major, never origin HEAD. These drive the real
+# git grammar against throwaway repos.
+
+# A routine update takes the newest release INSIDE the installed major: not the branch tip, not the
+# globally-highest tag, and not any of the refs that merely look like one.
+test_update_targets_the_highest_release_in_the_major() {
+  setup_case update-in-major
+  stage_tagged_origin
+  origin_release 10.0.0          # a major is out — and is not this install's to take
+  local root; root="$(stage_managed_at refs/tags/v9.9.9)"
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_contains "$out" "detach onto v9.10.0"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$(git -C "$ORIGIN_DIR" rev-parse 'v9.10.0^{commit}')"
+  assert_eq "$(cat "${root}/VERSION")" "9.10.0"
+  assert_contains "$out" "Collie 10.0.0 is out — a NEW MAJOR"
+  assert_contains "$out" "update-major --plugin herdr.collie"
+}
+
+# At the top of its major with a major out: nothing to take, said out loud, and nothing moved.
+test_update_holds_at_a_major_boundary() {
+  setup_case update-major-hold
+  stage_tagged_origin
+  origin_release 10.0.0
+  local root; root="$(stage_managed_at refs/tags/v9.10.0)"
+  local at; at="$(git -C "$root" rev-parse HEAD)"
+
+  local out; out="$(run_update_checkout "$root")" || fail "a routine update at a boundary must succeed: $out"
+  assert_contains "$out" "already current — v9.10.0"
+  assert_contains "$out" "Collie 10.0.0 is out — a NEW MAJOR"
+  assert_contains "$out" "herdr plugin action invoke update-major --plugin herdr.collie"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$at"
+}
+
+# `--major` is the consent, and it buys exactly ONE crossing: an install two majors behind lands on
+# the next major that has a release, so the notes that apply are the ones the operator just read.
+test_update_major_crosses_exactly_one_major() {
+  setup_case update-major-cross
+  stage_tagged_origin
+  origin_release 10.0.0
+  origin_release 11.0.0
+  local root; root="$(stage_managed_at refs/tags/v9.10.0)"
+
+  local out; out="$(run_update_checkout "$root" --major)" || fail "update --major failed: $out"
+  assert_contains "$out" "crossing to Collie 10.0.0"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$(git -C "$ORIGIN_DIR" rev-parse 'v10.0.0^{commit}')"
+  assert_eq "$(cat "${root}/VERSION")" "10.0.0"
+  git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1 &&
+    fail "crossing a major must leave the managed checkout detached"
+  out="$(run_update_checkout "$root" --major)" || fail "second crossing failed: $out"
+  assert_contains "$out" "crossing to Collie 11.0.0"
+}
+
+# A manifest we cannot read a major out of must never strand the install, and must never fall back
+# to origin HEAD (ADR 0019). Pin to the newest release tag and SAY that is what happened.
+test_update_falls_back_to_newest_tag_without_a_readable_version() {
+  setup_case update-unknown-version
+  stage_tagged_origin
+  local root; root="$(stage_managed_at refs/tags/v9.9.9)"
+  rm -f "${root}/herdr-plugin.toml"
+
+  local out; out="$(run_update_checkout "$root")" || fail "update_checkout failed: $out"
+  assert_contains "$out" "no readable version — pinning to newest release tag"
+  assert_eq "$(git -C "$root" describe --tags --exact-match)" "v9.10.0"
+  assert_eq "$(cat "${root}/VERSION")" "9.10.0"
+}
+
+# The linked clone's gate is a PRE-FLIGHT, because its target is a branch tip rather than a tag: read
+# the manifest at the commit the pull would take, refuse before pulling, and pull nothing.
+test_update_refuses_a_major_on_a_linked_clone() {
+  setup_case update-linked-major
+  stage_tagged_origin
+  local root="${CASE_DIR}/clone"
+  git_q clone -q -b main "$ORIGIN_DIR" "$root"   # its manifest still says 9.10.0
+  origin_release 10.0.0                          # …and origin/main now says 10.0.0
+  local at; at="$(git -C "$root" rev-parse HEAD)"
+
+  local out; out="$(run_update_checkout "$root")" || fail "a refusal must still succeed: $out"
+  assert_contains "$out" "crosses a MAJOR version"
+  assert_contains "$out" "herdr plugin action invoke update-major --plugin herdr.collie"
+  assert_contains "$out" "nothing was pulled"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$at"
+}
+
+# A clone kept on a NON-DEFAULT branch is judged by ITS OWN upstream, never by the remote's default
+# tip. `origin/main` is a major ahead here; `origin/maint` is not, and it is the only thing
+# `git pull --ff-only` would ever take.
+test_update_judges_a_clones_own_upstream() {
+  setup_case update-maintenance-branch
+  stage_tagged_origin
+  git_q -C "$ORIGIN_DIR" branch maint v9.10.0
+  local root="${CASE_DIR}/maint"
+  git_q clone -q -b maint "$ORIGIN_DIR" "$root"
+  origin_release 10.0.0                       # main crosses a major; maint does not
+  git_q -C "$ORIGIN_DIR" checkout -q maint
+  printf '9-maint\n' > "${ORIGIN_DIR}/VERSION"
+  git_q -C "$ORIGIN_DIR" add -A
+  git_q -C "$ORIGIN_DIR" commit -qm "a 9.x fix"
+  git_q -C "$ORIGIN_DIR" checkout -q main
+
+  local out; out="$(run_update_checkout "$root")" ||
+    fail "update refused a within-major pull on a maintenance branch: $out"
+  assert_contains "$out" "git pull --ff-only"
+  assert_eq "$(cat "${root}/VERSION")" "9-maint"
+  assert_eq "$(git -C "$root" symbolic-ref --short HEAD)" "maint"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$(git -C "$ORIGIN_DIR" rev-parse maint)"
+}
+
+# A branch with NO upstream: nothing to gate, and nothing to pull either — git's own "no tracking
+# information" is the whole answer, and a pull that cannot happen cannot cross a major.
+test_update_leaves_a_branch_without_an_upstream_to_git() {
+  setup_case update-no-upstream
+  stage_tagged_origin
+  local root="${CASE_DIR}/no-upstream"
+  git_q clone -q -b main "$ORIGIN_DIR" "$root"
+  git_q -C "$root" checkout -q -b local-only
+  origin_release 10.0.0
+  local at; at="$(git -C "$root" rev-parse HEAD)"
+
+  set +e
+  local out; out="$(run_update_checkout "$root")"; local rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a branch with no upstream reported a successful update"
+  assert_eq "$(git -C "$root" rev-parse HEAD)" "$at"
+  case "$out" in
+    *MAJOR*) fail "a branch with no upstream was refused by the major gate instead of by git" ;;
+  esac
 }
 
 # `herdr plugin link` re-registers the plugin as source.kind=local, and Herdr then REFUSES
@@ -1685,6 +1870,13 @@ test_update_honours_an_explicit_ref_override
 test_update_is_idempotent_on_the_newest_tag
 test_update_fast_forwards_a_linked_clone
 test_update_reports_a_non_git_checkout
+test_update_targets_the_highest_release_in_the_major
+test_update_holds_at_a_major_boundary
+test_update_major_crosses_exactly_one_major
+test_update_falls_back_to_newest_tag_without_a_readable_version
+test_update_refuses_a_major_on_a_linked_clone
+test_update_judges_a_clones_own_upstream
+test_update_leaves_a_branch_without_an_upstream_to_git
 test_registry_refresh_skips_a_managed_checkout
 test_tailscale_hosts_systemd_injection
 test_env_is_parsed_not_executed

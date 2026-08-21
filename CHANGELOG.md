@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.50.0] - 2026-08-21
+
+### Added
+- Cold-boot offline cache: a discarded PWA still shows the last herd and pane, dated, until the tunnel is back
+- Routine `update` stays inside the installed major; `update --major` / the `update-major` action is the consent to cross (ADR 0025)
+
 ## [0.49.0] - 2026-08-21
 
 ### Added

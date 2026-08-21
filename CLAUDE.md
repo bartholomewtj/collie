@@ -78,13 +78,16 @@ page and shows the command to run. Pushing a `v*` tag auto-creates that GitHub R
 commands) via `.github/workflows/release.yml`. **Always express user-facing update/restart
 instructions as Herdr plugin actions** — `herdr plugin action invoke update --plugin herdr.collie`
 (or `restart`) — never `collie-ctl.sh …` / `systemctl … collie`, which depend on the caller's cwd and
-the unit name; the Herdr action runs from anywhere.
+the unit name; the Herdr action runs from anywhere. Routine `update` stays inside the installed
+major; crossing one is `herdr plugin action invoke update-major --plugin herdr.collie`
+([ADR 0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)).
 
 ## Build / run (operational facts that are easy to forget)
 
 - **There are two checkout shapes, and `update` handles both.** `herdr plugin install` does not clone
-  — it leaves a **detached, shallow** checkout that `update` pins to the newest `v*` tag
-  ([ADR 0019](./.adr/0019-update-pins-to-the-newest-release-tag.md)), so `git pull` cannot run there;
+  — it leaves a **detached, shallow** checkout that `update` pins to the newest `v*` tag **of the
+  installed major** ([ADR 0019](./.adr/0019-update-pins-to-the-newest-release-tag.md),
+  [ADR 0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)), so `git pull` cannot run there;
   a linked clone sits on a branch and fast-forwards it. One predicate (`git symbolic-ref -q HEAD`)
   picks the strategy, and the same predicate stops `update` re-linking a managed checkout — a re-link
   re-registers the plugin as local and Herdr then refuses `herdr plugin install`, the operator's only
