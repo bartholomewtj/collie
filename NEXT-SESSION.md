@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.48.2** (`b9b635d`), tagged **v0.48.2**.
+_Last handoff: 2026-08-21 — `main` at **0.48.2** (`f2f42e2`), tagged **v0.48.2**.
 Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. `web/dist` is `0.48.2+0a3a128-dirty` (dirty = untracked files under `adws/adw_data/`, leave them). One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
@@ -8,7 +8,7 @@ Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered
 
 ## Where this stopped
 
-#69 is closed. Out-of-scope names are a permissions denylist (PR #107): parsed once at request capture, denied in `permissions.enforce()`, rolled back, fail-closed if the request was never captured. PR #94 closed without merging. PRs #102 and #107 merged. App version unchanged (factory code). Do not rebuild.
+#105 is closed. Factory tests stay `python3 -m unittest` (PR #109): standing rule in both test-file docstrings, separate CI job (`setup-python` 3.12, `PYTHONPATH=adws`, pip of the ADW deps, no `uv`). No Bun wrapper under `scripts/`. App version unchanged. Do not rebuild.
 
 ## Resume with
 
@@ -31,18 +31,18 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.test_permissions
 ```
 
+CI runs those as the `factory unittests` job, separate from `bun run test`.
+
 ## Next thing to do
 
-1. **#105** — factory tests stay `python3 -m unittest`. Never add a Bun file under `scripts/` that spawns them. Optional: a **separate** CI job with `actions/setup-python` 3.12, `PYTHONPATH=adws`, no `uv`. Put that rule in the test-file docstrings. No version bump unless you touch `scripts/` on main.
-2. Pull upstream (`git fetch upstream`; AltanS/collie `main` has moved, tag `v0.32.0`). Merge on a branch as in #35.
-3. Parked unless you want it: #55 follow-up — `Protect-CollieSecret` on the config dir must not strip child ACLs (`(OI)(CI)(F)` or skip the directory and only harden `.env`).
+1. Pull upstream (`git fetch upstream`; AltanS/collie `main` has moved, tag `v0.32.0`, ~45 commits). Merge on a branch as in #35. Keep fail-closed Host/identity/loopback. Bump *this* fork's SemVer for the *sum*. Not an ADW.
+2. Parked unless you want it: #55 follow-up — `Protect-CollieSecret` on the config dir must not strip child ACLs (`(OI)(CI)(F)` or skip the directory and only harden `.env`).
+3. Parked: in-app update banner tells you to run the Herdr `update` action, which is `platform_unsupported` on Windows.
 
 ## Open
 
-- **#105** — factory tests: `python3 -m unittest`, never bun/`uv`.
-- No issue: in-app update banner tells you to run the Herdr `update` action, which is
-  `platform_unsupported` on Windows. Tag is `v0.48.2`, so the banner version is not a lie.
 - No issue: pull upstream regularly (`git fetch upstream`, merge on a branch as in #35).
+- No issue: in-app update banner points at the Herdr `update` action, `platform_unsupported` on Windows. Tag is `v0.48.2`, so the banner version is not a lie.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: #55 ACL follow-up (see above).
 
@@ -62,6 +62,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 - **`run_quality()` publishes `web/dist`.** SDLC inner loop (`run_tests()`) does not build.
 - **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
 - **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`.
-- **CI has no `uv`.** A test that shells out to `uv` will pass here and fail on GitHub.
+- **CI has no `uv`.** Factory tests go through the `factory unittests` job, not `bun test`.
+  A test that shells out to `uv` will pass here and fail on GitHub.
 - Never `taskkill /IM bun.exe`.
 - If `AGENTS.md` or `GEMINI.md` reappear, delete them. `CLAUDE.md` is the working agreement.
