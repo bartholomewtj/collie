@@ -64,7 +64,13 @@ windows_user_principal() {
 
 harden_windows_acl() {
   command -v icacls >/dev/null 2>&1 || return 0
-  icacls "$1" /inheritance:r /grant:r "$(windows_user_principal):F" >/dev/null 2>&1 || true
+  # Directories need (OI)(CI) so children inherit. A file-only (F) grant plus /inheritance:r
+  # leaves later files in the dir (exec-bridge.vbs) with no ACEs.
+  if [ -d "$1" ]; then
+    icacls "$1" /inheritance:r /grant:r "$(windows_user_principal):(OI)(CI)(F)" >/dev/null 2>&1 || true
+  else
+    icacls "$1" /inheritance:r /grant:r "$(windows_user_principal):F" >/dev/null 2>&1 || true
+  fi
 }
 
 # True when `icacls <path>` shows the current user with (F) and no inherited ACEs. That is the

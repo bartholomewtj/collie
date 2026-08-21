@@ -46,10 +46,18 @@ $script:PidFile = Join-Path $script:ConfigDir "collie-processes"
 # NTFS analogue of chmod 600/700: strip inherited ACEs and grant only the current user Full
 # Control. chmod through MSYS is a no-op on NTFS, so the bash side's POSIX hardening never took
 # effect here. Failure warns rather than throws — start must not brick over an ACL it can't set.
+#
+# Directories must grant (OI)(CI) so children inherit. A grant of (F) on the directory object
+# alone plus /inheritance:r leaves later files (exec-bridge.vbs) with no ACEs.
 function Protect-CollieSecret([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return }
   $user = if ($env:USERDOMAIN) { "$env:USERDOMAIN\$env:USERNAME" } else { $env:USERNAME }
-  & icacls.exe $Path /inheritance:r /grant:r "${user}:(F)" *> $null
+  $grant = if (Test-Path -LiteralPath $Path -PathType Container) {
+    "${user}:(OI)(CI)(F)"
+  } else {
+    "${user}:(F)"
+  }
+  & icacls.exe $Path /inheritance:r /grant:r $grant *> $null
   if ($LASTEXITCODE -ne 0) {
     Write-Warning "could not restrict ACL on $Path (icacls exit $LASTEXITCODE)"
   }

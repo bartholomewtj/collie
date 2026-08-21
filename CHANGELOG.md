@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.50.1] - 2026-08-21
+
+### Fixed
+- Windows: protecting the config dir now grants (OI)(CI) so new files inherit the operator's ACE; a file-only grant left exec-bridge.vbs with no ACEs after start
+
 ## [0.50.0] - 2026-08-21
 
 ### Added
