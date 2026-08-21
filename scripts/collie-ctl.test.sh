@@ -1733,6 +1733,7 @@ EOF
 
   local log; log="$(cat "$icacls_log")"
   assert_contains "$log" "$CONFIG_DIR /inheritance:r"
+  assert_contains "$log" "(OI)(CI)(F)"
   assert_contains "$log" "${CONFIG_DIR}/.env /inheritance:r"
 }
 

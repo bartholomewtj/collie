@@ -42,7 +42,15 @@ COLLIE_HOST="127.0.0.1"
   Protect-CollieSecret $script:ConfigDir
   $dirAcl = (& icacls.exe $script:ConfigDir | Out-String)
   Assert-Equal ($dirAcl -match '\(I\)') $false "config dir ACL inheritance stripped"
-  Assert-Equal ([regex]::IsMatch($dirAcl, [regex]::Escape("$env:USERNAME:(F)"), 'IgnoreCase')) $true "config dir current user FullControl"
+  Assert-Equal ([regex]::IsMatch($dirAcl, [regex]::Escape("$env:USERNAME:(OI)(CI)(F)"), 'IgnoreCase')) $true "config dir ACE propagates to children"
+  $existingChild = Join-Path $script:ConfigDir "already-there.txt"
+  "keep" | Set-Content -LiteralPath $existingChild -Encoding Ascii
+  Protect-CollieSecret $script:ConfigDir
+  Assert-Equal (Get-Content -LiteralPath $existingChild -Raw).Trim() "keep" "protecting the dir does not lock existing children"
+  $newChild = Join-Path $script:ConfigDir "born-after.txt"
+  "ok" | Set-Content -LiteralPath $newChild -Encoding Ascii
+  $newAcl = (& icacls.exe $newChild | Out-String)
+  Assert-Equal ([regex]::IsMatch($newAcl, [regex]::Escape($env:USERNAME), 'IgnoreCase')) $true "a file created after protect still names the current user"
 
   $originalPluginRoot = $script:PluginRoot
   $script:PluginRoot = Join-Path $temp "launcher plugin & space"
