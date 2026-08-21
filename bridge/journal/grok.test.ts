@@ -5,10 +5,13 @@ import { join } from "node:path";
 
 import {
   extractGrokUserSpeech,
+  foldGrokHint,
   grokJournal,
   GrokTranscriptSource,
   isGrokSessionId,
+  lastGrokUserQueries,
   parseGrokTranscript,
+  scoreGrokHint,
 } from "./grok.ts";
 
 const SID = "01a00e2f-d3f3-7290-bc3d-fd276f91e272";
@@ -186,6 +189,105 @@ describe("GrokTranscriptSource", () => {
     const adapter = grokJournal(root);
     expect(adapter.agent).toBe("grok");
     expect(await adapter.inferFromCwd?.(cwd)).toEqual({ kind: "id", value: SID });
+    await rm(base, { recursive: true, force: true });
+  });
+});
+
+describe("scoreGrokHint / lastGrokUserQueries", () => {
+  test("unwraps the last spoken user turns, newest first", () => {
+    const text = [
+      userQuery("first question goes here"),
+      assistant("ok"),
+      userQuery("second question goes here"),
+    ].join("\n");
+    expect(lastGrokUserQueries(text, 2)).toEqual([
+      "second question goes here",
+      "first question goes here",
+    ]);
+  });
+
+  test("scores a viewport that contains this session's last user turn", () => {
+    const hint = foldGrokHint(
+      "     > review the geneanalysis project in detail                                  3:01 PM",
+    );
+    expect(
+      scoreGrokHint(hint, null, ["review the geneanalysis project in detail"]),
+    ).toBeGreaterThan(0);
+    expect(scoreGrokHint(hint, null, ["collie scrollable history from other tabs"])).toBe(0);
+  });
+
+  test("scores a generated title that appears in the hint", () => {
+    expect(scoreGrokHint(foldGrokHint("Collie history leak"), "Collie history leak", [])).toBeGreaterThan(
+      1000,
+    );
+  });
+});
+
+describe("GrokTranscriptSource — several panes, one cwd", () => {
+  const OLDER_Q = "review the geneanalysis project in detail";
+  const NEWER_Q = "collie scrollable history shows history from other tabs";
+
+  async function twoPanes() {
+    const created = `${tmpdir()}/collie-grok-${Math.floor(performance.now() * 1000)}`;
+    await mkdir(created, { recursive: true });
+    const base = await realpath(created);
+    const root = join(base, "sessions");
+    const cwd = "C:\\ClaudeOS";
+    const cwdDir = join(root, encodeURIComponent(cwd));
+    await mkdir(join(cwdDir, SID), { recursive: true });
+    await mkdir(join(cwdDir, OLDER), { recursive: true });
+    const newerLog = join(cwdDir, SID, "chat_history.jsonl");
+    const olderLog = join(cwdDir, OLDER, "chat_history.jsonl");
+    await Bun.write(olderLog, userQuery(OLDER_Q));
+    await Bun.write(newerLog, userQuery(NEWER_Q));
+    await Bun.write(join(cwdDir, OLDER, "summary.json"), JSON.stringify({ generated_title: "Geneanalysis review" }));
+    await Bun.write(join(cwdDir, SID, "summary.json"), JSON.stringify({ generated_title: "Collie history leak" }));
+    const older = new Date("2026-01-01T00:00:00Z");
+    const newer = new Date("2026-01-01T00:01:00Z");
+    await utimes(olderLog, older, older);
+    await utimes(newerLog, newer, newer);
+    return { base, root, cwd };
+  }
+
+  test("shared cwd + hint picks the matching session, not the newest", async () => {
+    const { base, root, cwd } = await twoPanes();
+    const src = new GrokTranscriptSource(root);
+    const hint = `     > ${OLDER_Q}                                  3:01 PM`;
+    expect(
+      await src.inferFromCwd({ cwd, paneId: "w1:p1", hint, sharedCwd: true }),
+    ).toEqual({ kind: "id", value: OLDER });
+    expect(
+      await src.inferFromCwd({ cwd, paneId: "w1:p2", hint: `     > ${NEWER_Q}                                  3:02 PM`, sharedCwd: true }),
+    ).toEqual({ kind: "id", value: SID });
+    await rm(base, { recursive: true, force: true });
+  });
+
+  test("shared cwd without a hint does not guess the newest session", async () => {
+    const { base, root, cwd } = await twoPanes();
+    expect(await new GrokTranscriptSource(root).inferFromCwd({ cwd, paneId: "w1:p1", sharedCwd: true })).toBeNull();
+    await rm(base, { recursive: true, force: true });
+  });
+
+  test("a later poll without a hint reuses the pane's bound session", async () => {
+    const { base, root, cwd } = await twoPanes();
+    const src = new GrokTranscriptSource(root);
+    await src.inferFromCwd({ cwd, paneId: "w1:p1", hint: `> ${OLDER_Q}`, sharedCwd: true });
+    expect(await src.inferFromCwd({ cwd, paneId: "w1:p1", sharedCwd: true })).toEqual({
+      kind: "id",
+      value: OLDER,
+    });
+    await rm(base, { recursive: true, force: true });
+  });
+
+  test("a unique hint can steal a session previously bound to another pane", async () => {
+    const { base, root, cwd } = await twoPanes();
+    const src = new GrokTranscriptSource(root);
+    await src.inferFromCwd({ cwd, paneId: "w1:p1", hint: `> ${NEWER_Q}`, sharedCwd: true });
+    expect(
+      await src.inferFromCwd({ cwd, paneId: "w1:p2", hint: `> ${NEWER_Q}`, sharedCwd: true }),
+    ).toEqual({ kind: "id", value: SID });
+    // p1's bind was stolen; without a hint it must not keep serving p2's log.
+    expect(await src.inferFromCwd({ cwd, paneId: "w1:p1", sharedCwd: true })).toBeNull();
     await rm(base, { recursive: true, force: true });
   });
 });

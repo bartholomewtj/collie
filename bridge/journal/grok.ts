@@ -19,8 +19,12 @@
 // synthesised from the row bytes — same job, same failure mode as Codex (journal/codex.ts).
 //
 // HOW THE SESSION IS NAMED. Herdr has no grok integration as of this writing, so a grok pane
-// arrives with no agent_session. The adapter therefore also implements inferFromCwd: the log
-// layout is keyed on the pane cwd, and the newest session dir under that cwd is the live one.
+// arrives with no agent_session. The adapter therefore also implements inferFromCwd. Logs live
+// at `~/.grok/sessions/<encodeURIComponent(cwd)>/<uuid>/`, so every grok tab in one space shares
+// a directory. "Newest session under that cwd" is only safe when THIS pane is the only grok pane
+// there. When several tabs share the cwd, we match the live viewport / terminal title against
+// each session's last user turns (and remember the bind) instead of handing every tab the same
+// newest log.
 
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -29,6 +33,7 @@ import { containedRealpath, exists, loadTail, rootList, statFile } from "./files
 import { clamp, MAX_RESULT_CHARS, MAX_TEXT_CHARS, stripAnsi, summarizeToolInput } from "./text.ts";
 import type {
   AgentSessionRef,
+  InferSessionOpts,
   JournalAdapter,
   TranscriptEntry,
   TranscriptPart,
@@ -88,6 +93,60 @@ export function extractGrokUserSpeech(raw: string): string | null {
     return inner === "" ? null : inner;
   }
   return text;
+}
+
+/** Collapse whitespace so a TUI-wrapped user line still matches the journal query. */
+export function foldGrokHint(s: string): string {
+  return s.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Last spoken user turns in a Grok log, newest first. Walks from the end so a tail-read
+ * (partial first line) still yields the queries on screen now.
+ */
+export function lastGrokUserQueries(text: string, n = 3): string[] {
+  const found: string[] = [];
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0 && found.length < n; i--) {
+    const line = lines[i]!.trim();
+    if (line === "") continue;
+    let row: GrokRow;
+    try {
+      row = JSON.parse(line) as GrokRow;
+    } catch {
+      continue;
+    }
+    if (row.type !== "user" || typeof row.synthetic_reason === "string") continue;
+    const speech = extractGrokUserSpeech(contentText(row.content));
+    if (speech !== null) found.push(speech);
+  }
+  return found;
+}
+
+const MIN_TITLE_CHARS = 8;
+const MIN_QUERY_CHARS = 12;
+const QUERY_PREFIX_CHARS = 80;
+
+/** How well a live pane hint (viewport + title) matches a session's title and last user turns. */
+export function scoreGrokHint(foldedHint: string, title: string | null, queries: string[]): number {
+  if (foldedHint === "") return 0;
+  let score = 0;
+  if (title) {
+    const t = foldGrokHint(title);
+    if (t.length >= MIN_TITLE_CHARS && foldedHint.includes(t)) score += 1000 + t.length;
+  }
+  for (const q of queries) {
+    const f = foldGrokHint(q);
+    if (f.length >= MIN_QUERY_CHARS && foldedHint.includes(f)) {
+      score += f.length;
+      continue;
+    }
+    if (f.length >= 24) {
+      const prefix = f.slice(0, QUERY_PREFIX_CHARS);
+      if (foldedHint.includes(prefix)) score += prefix.length;
+    }
+  }
+  return score;
 }
 
 function parseToolArgs(raw: unknown): unknown {
@@ -190,6 +249,8 @@ function normalizeCwd(cwd: string): string {
 
 export class GrokTranscriptSource implements TranscriptSource {
   private readonly pathCache = new Map<string, string>();
+  /** paneId → the session we last bound it to, so a later poll doesn't guess newest. */
+  private readonly paneBind = new Map<string, { cwd: string; sessionId: string }>();
   private readonly roots: string[];
 
   constructor(roots: string | readonly string[]) {
@@ -232,17 +293,79 @@ export class GrokTranscriptSource implements TranscriptSource {
     return null;
   }
 
-  /** Newest session under this pane's cwd — what we use when Herdr reported no session at all. */
-  async inferFromCwd(cwd: string): Promise<AgentSessionRef | null> {
-    if (cwd.trim() === "") return null;
-    const want = normalizeCwd(cwd);
+  /**
+   * Pick the session for a grok pane when Herdr named none.
+   *
+   * One grok pane at this cwd → newest session, same as before. Several grok panes at this cwd
+   * (tabs in one space) → match the live hint against each session's last user turns; never hand
+   * every tab the same newest log. A bind is remembered per paneId so a later poll without a hint
+   * still returns this pane's session.
+   */
+  async inferFromCwd(cwdOrOpts: string | InferSessionOpts): Promise<AgentSessionRef | null> {
+    const opts: InferSessionOpts = typeof cwdOrOpts === "string" ? { cwd: cwdOrOpts } : cwdOrOpts;
+    if (opts.cwd.trim() === "") return null;
+    const want = normalizeCwd(opts.cwd);
     for (const root of this.roots) {
-      const sessionDir = await this.cwdDir(root, cwd, want);
+      const sessionDir = await this.cwdDir(root, opts.cwd, want);
       if (sessionDir === null) continue;
-      const id = await newestSessionId(sessionDir);
-      if (id !== null) return { kind: "id", value: id };
+      const listed = await listSessionIds(sessionDir);
+      if (listed.length === 0) continue;
+
+      if (!opts.sharedCwd) {
+        const id = listed[0]!.id;
+        if (opts.paneId) this.paneBind.set(opts.paneId, { cwd: want, sessionId: id });
+        return { kind: "id", value: id };
+      }
+
+      const cached = opts.paneId ? this.paneBind.get(opts.paneId) : undefined;
+      const cacheHit =
+        cached !== undefined &&
+        cached.cwd === want &&
+        listed.some((s) => s.id === cached.sessionId);
+
+      const folded = opts.hint ? foldGrokHint(opts.hint) : "";
+      if (folded !== "") {
+        const ids = new Set(listed.slice(0, FINGERPRINT_SESSIONS).map((s) => s.id));
+        if (cacheHit) ids.add(cached.sessionId);
+        const ranked = await this.scoreSessions(
+          sessionDir,
+          listed.filter((s) => ids.has(s.id)),
+          folded,
+        );
+        const best = uniqueBest(ranked);
+        if (best !== null) {
+          if (opts.paneId) {
+            for (const [paneId, bind] of this.paneBind) {
+              if (paneId !== opts.paneId && bind.cwd === want && bind.sessionId === best) {
+                this.paneBind.delete(paneId);
+              }
+            }
+            this.paneBind.set(opts.paneId, { cwd: want, sessionId: best });
+          }
+          return { kind: "id", value: best };
+        }
+      }
+
+      if (cacheHit) return { kind: "id", value: cached.sessionId };
+      // Several panes, no evidence this pane owns a session — do not guess newest.
+      return null;
     }
     return null;
+  }
+
+  private async scoreSessions(
+    sessionDir: string,
+    listed: { id: string; mtimeMs: number }[],
+    foldedHint: string,
+  ): Promise<{ id: string; score: number }[]> {
+    const out: { id: string; score: number }[] = [];
+    for (const s of listed) {
+      const title = await grokGeneratedTitle(sessionDir, s.id);
+      const tail = await grokLogTail(sessionDir, s.id);
+      const queries = tail === null ? [] : lastGrokUserQueries(tail, 3);
+      out.push({ id: s.id, score: scoreGrokHint(foldedHint, title, queries) });
+    }
+    return out;
   }
 
   private async cwdDir(root: string, cwd: string, want: string): Promise<string | null> {
@@ -275,14 +398,19 @@ export class GrokTranscriptSource implements TranscriptSource {
   load = loadTail;
 }
 
-async function newestSessionId(sessionDir: string): Promise<string | null> {
+/** How many of the newest sessions we fingerprint against a live pane. */
+const FINGERPRINT_SESSIONS = 16;
+/** Bytes of chat_history.jsonl we read from the end to recover the last user turns. */
+const FINGERPRINT_TAIL_BYTES = 64 * 1024;
+
+async function listSessionIds(sessionDir: string): Promise<{ id: string; mtimeMs: number }[]> {
   let names: string[];
   try {
     names = await readdir(sessionDir);
   } catch {
-    return null;
+    return [];
   }
-  let best: { id: string; mtimeMs: number } | null = null;
+  const out: { id: string; mtimeMs: number }[] = [];
   for (const name of names) {
     if (!isGrokSessionId(name)) continue;
     const log = join(sessionDir, name, LOG_NAME);
@@ -292,9 +420,55 @@ async function newestSessionId(sessionDir: string): Promise<string | null> {
     } catch {
       continue;
     }
-    if (!best || st.mtimeMs > best.mtimeMs) best = { id: name, mtimeMs: st.mtimeMs };
+    out.push({ id: name, mtimeMs: st.mtimeMs });
   }
-  return best?.id ?? null;
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs || a.id.localeCompare(b.id));
+  return out;
+}
+
+async function grokGeneratedTitle(sessionDir: string, id: string): Promise<string | null> {
+  const candidate = join(sessionDir, id, "summary.json");
+  const real = await containedRealpath(candidate, sessionDir);
+  if (real === null) return null;
+  try {
+    const raw = await Bun.file(real).text();
+    const parsed = JSON.parse(raw) as { generated_title?: unknown };
+    return typeof parsed.generated_title === "string" && parsed.generated_title.trim() !== ""
+      ? parsed.generated_title.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function grokLogTail(sessionDir: string, id: string): Promise<string | null> {
+  const candidate = join(sessionDir, id, LOG_NAME);
+  const real = await containedRealpath(candidate, sessionDir);
+  if (real === null) return null;
+  try {
+    const file = Bun.file(real);
+    const size = file.size;
+    return size <= FINGERPRINT_TAIL_BYTES
+      ? await file.text()
+      : await file.slice(size - FINGERPRINT_TAIL_BYTES).text();
+  } catch {
+    return null;
+  }
+}
+
+function uniqueBest(ranked: { id: string; score: number }[]): string | null {
+  let best: { id: string; score: number } | null = null;
+  let tied = false;
+  for (const r of ranked) {
+    if (r.score <= 0) continue;
+    if (best === null || r.score > best.score) {
+      best = r;
+      tied = false;
+    } else if (r.score === best.score && r.id !== best.id) {
+      tied = true;
+    }
+  }
+  return best !== null && !tied ? best.id : null;
 }
 
 /** Grok's journal adapter. `agent` matches the Herdr snapshot's `agent` string. */
