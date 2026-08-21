@@ -43,11 +43,13 @@ last crash. Config is the usual `.env` in the plugin config dir
 of the process, whichever shell you typed in); the other verbs (`build`, `status`, `push-keys`, …)
 still run in bash.
 
-**Herdr's action buttons stay POSIX.** [`herdr-plugin.toml`](../../herdr-plugin.toml) declares
-`linux`/`macos` only and its actions shell out to `bash`, and this directory deliberately doesn't
-change that. Drive the lifecycle from PowerShell as above, or — if you want the buttons — point a
-local edit of the manifest's `[[actions]]` at `build\collie-action-v1.exe` (which `build` produces
-for exactly that purpose) and add `windows` to `platforms`. That edit is yours to carry.
+**Herdr's action buttons on this fork run the launcher in this directory.**
+[`herdr-plugin.toml`](../../herdr-plugin.toml) includes `windows`. Lifecycle actions
+(`start`/`stop`/`restart`/`update`/`update-major`/…) call `build\collie-action-v1.exe`
+(which `build` produces) so `herdr plugin action invoke update --plugin herdr.collie`
+is the same command the in-app banner copies. PATH's `bash.exe` is the WSL stub and
+cannot be the action command here. POSIX twins of those verbs are `*-posix` and
+do not appear on Windows. Drive the lifecycle from PowerShell as above if you prefer.
 
 **The version gate is skipped on this path.** `scripts/check-version.sh` is a maintainer release
 gate and needs bash; operators never need it. Run it from WSL or Git Bash if you're cutting a

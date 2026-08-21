@@ -8,8 +8,8 @@
 > **This checkout runs on Windows** (`C:\ClaudeOS\Projects\tools\collie`, fork of `AltanS/collie`, remote
 > `bartholomewtj/collie`). Upstream and the docs assume Linux + systemd; on this box the bridge is
 > started/stopped by `contrib/windows/collie-ctl.ps1` (Task Scheduler job is `wscript.exe` +
-> `exec-bridge.vbs`, no console window) and the Herdr `update`/`restart` plugin actions
-> answer `platform_unsupported`. Current version and session state: [`NEXT-SESSION.md`](./NEXT-SESSION.md).
+> `exec-bridge.vbs`, no console window). Herdr `update`/`restart`/`update-major` actions run
+> `build/collie-action-v1.exe`. Current version and session state: [`NEXT-SESSION.md`](./NEXT-SESSION.md).
 
 ---
 

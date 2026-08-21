@@ -589,16 +589,16 @@ isn't in the path at all, [`DEPLOYMENT.md`](./DEPLOYMENT.md) has the rest:
 
 ## Windows (experimental)
 
-The **bridge** runs on Windows against Herdr's Windows beta; the **launcher** does not. Herdr there
-exposes its control socket as a *named pipe* named after the full socket path, not an AF_UNIX
-socket, so Collie dials it through `node:net` instead of `Bun.connect` — one shim,
-[`bridge/dial.ts`](./bridge/dial.ts), which explains the mapping at the top of the file.
+The **bridge** runs on Windows against Herdr's Windows beta. Herdr there exposes its control socket
+as a *named pipe* named after the full socket path, not an AF_UNIX socket, so Collie dials it through
+`node:net` instead of `Bun.connect` — one shim, [`bridge/dial.ts`](./bridge/dial.ts), which explains
+the mapping at the top of the file.
 
 What that means in practice:
 
-- **Run the bridge directly** — `bun run bridge/index.ts`. There's no systemd unit, and the Herdr
-  action buttons shell out to `bash`, so they only work if Git Bash is on `PATH`. The manifest
-  therefore still declares `linux`/`macos` only, rather than advertising buttons that may not fire.
+- **Lifecycle is Task Scheduler**, via [`contrib/windows/`](./contrib/windows/README.md). Herdr
+  action buttons (`update`, `restart`, `update-major`, …) run `build/collie-action-v1.exe`; PATH's
+  `bash.exe` is the WSL stub and cannot be the command. POSIX twins of those verbs are `*-posix`.
 - **`tailscale serve` isn't wired up here.** Use the
   [Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) posture: loopback bind, your own ingress in front, `COLLIE_PUBLIC_HOSTS` pinned. The security
   rules in [§Security](#%EF%B8%8F-security--read-before-you-run-it) are not relaxed on Windows.

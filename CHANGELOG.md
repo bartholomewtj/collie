@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.51.0] - 2026-08-21
+
+### Added
+- Windows: Herdr plugin actions (`update`, `restart`, `update-major`, …) run `build/collie-action-v1.exe` instead of returning `platform_unsupported`. Banner copy is unchanged and now works on this host.
+
 ## [0.50.1] - 2026-08-21
 
 ### Fixed
