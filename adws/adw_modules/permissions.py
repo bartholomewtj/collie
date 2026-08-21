@@ -24,9 +24,15 @@ A breach is NOT a gate violation. Gates are for work an agent can be asked to
 redo; a breach cannot be corrected by re-prompting, because the write already
 happened. It aborts the phase and names every offending path.
 
-Two keys drive it, both in sssf.config.yaml:
+Three keys drive it:
     defaults.protected_files   paths no agent may touch unless it names them itself
     agents[].writes      None = unrestricted · [] = read-only · [...] = only these
+    run.out_of_scope     denylist from the request's Out of scope section.
+                         None = request never captured (fail closed for repo
+                         writes). [] = nothing named (gate is a no-op).
+                         Naming a file forbids every edit to that file, even
+                         when `writes:` would have allowed it. Session runtime
+                         (`always_writable`) is not blocked.
 """
 
 from __future__ import annotations
@@ -36,6 +42,7 @@ import subprocess
 from pathlib import Path
 
 from .data_types import AgentConfig, SSSFConfig
+from .quality_scope import denied_match
 
 
 class PermissionBreach(RuntimeError):
@@ -175,10 +182,21 @@ def always_writable(cfg: SSSFConfig) -> list[str]:
     return [cfg.defaults.data_dir.rstrip("/") + "/"]
 
 
-def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig) -> bool:
-    """Session runtime first, then the agent's own list, then what is protected."""
+def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig,
+              denied: list[str] | None = None) -> bool:
+    """Session runtime first, then the denylist, then writes, then protected.
+
+    `denied=None` means the request was never captured — fail closed for every
+    repo path. `denied=[]` means the section named nothing, so the gate is a
+    no-op. A match on the denylist beats `writes:` (suffix match is denylist
+    only; the allowlist still uses `_matches`). Session runtime stays writable.
+    """
     if any(_matches(path, p) for p in always_writable(cfg)):
         return True
+    if denied is None:
+        return False
+    if any(denied_match(name, path) for name in denied):
+        return False
     if any(_matches(path, p) for p in (agent.writes or [])):
         return True                      # naming a path is what unlocks a protected one
     if any(_matches(path, p) for p in cfg.defaults.protected_files):
@@ -226,14 +244,20 @@ def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]
         run.console.note(f"{agent.name} {undone}")
     after = snapshot(run)
     touched = changed_paths(before, after)
-    breaches = [p for p in touched if not permitted(p, agent, run.cfg)]
+    denied = getattr(run, "out_of_scope", None)
+    breaches = [p for p in touched if not permitted(p, agent, run.cfg, denied)]
     if not breaches:
         return touched
 
     outcomes = {p: _roll_back(run, p, before, after) for p in breaches}
-    scope = ("read-only" if agent.writes == []
-             else f"limited to {agent.writes}" if agent.writes
-             else f"barred from {run.cfg.defaults.protected_files}")
+    if denied is None:
+        scope = "blocked: request was never captured (out-of-scope list unset)"
+    else:
+        scope = ("read-only" if agent.writes == []
+                 else f"limited to {agent.writes}" if agent.writes
+                 else f"barred from {run.cfg.defaults.protected_files}")
+        if denied:
+            scope += f"; out of scope {denied}"
     detail = "\n".join(f"  - {p} — {outcome}" for p, outcome in outcomes.items())
     raise PermissionBreach(
         f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}")
