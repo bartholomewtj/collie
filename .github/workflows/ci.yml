@@ -44,6 +44,7 @@ jobs:
   # Factory tests live under adws/, not scripts/. A Bun wrapper that shells
   # out to them (uv or python3) would put factory tests on the app suite and
   # fail on GitHub, which has no uv (#105). Separate job, python3, no uv.
+  # pip gets the ADW inline-script deps so CaptureOnLog can import runner.
   factory:
     name: factory unittests
     runs-on: ubuntu-latest
@@ -56,5 +57,5 @@ jobs:
         env:
           PYTHONPATH: adws
         run: |
-          python -m pip install --disable-pip-version-check "pydantic>=2"
+          python -m pip install --disable-pip-version-check pydantic python-dotenv pyyaml rich
           python -m unittest adw_modules.test_out_of_scope adw_modules.test_permissions
