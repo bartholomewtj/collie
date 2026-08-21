@@ -1,4 +1,9 @@
-"""#103 / #106 — out-of-scope denylist on permitted() / enforce()."""
+"""#103 / #106 — out-of-scope denylist on permitted() / enforce().
+
+Python unittest, not bun/`uv`, not part of `bun test ./scripts`:
+
+    PYTHONPATH=adws python3 -m unittest adw_modules.test_permissions
+"""
 from __future__ import annotations
 
 import unittest

@@ -1,4 +1,9 @@
-"""#104 — named Out of scope: files vs a change-set. Parser + match contract."""
+"""#104 — named Out of scope: files vs a change-set. Parser + match contract.
+
+Python unittest, not bun/`uv`, not part of `bun test ./scripts`:
+
+    PYTHONPATH=adws python3 -m unittest adw_modules.test_out_of_scope
+"""
 from __future__ import annotations
 
 import unittest
