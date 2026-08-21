@@ -105,6 +105,21 @@ export interface TranscriptSource {
  *
  * `parse` is PURE — no fs, no clock — so every harness's grammar is table-testable under `bun test`.
  */
+/**
+ * How a cwd-keyed harness (Grok) picks a session when Herdr named none.
+ *
+ * A string is the pane cwd — treated as a single-pane lookup (newest session under that cwd).
+ * The object form is what the history route passes: several grok tabs in one space share a cwd,
+ * so "newest" would hand every tab the same log. `hint` is the live viewport / terminal title;
+ * `sharedCwd` is true when another live pane has that cwd.
+ */
+export type InferSessionOpts = {
+  cwd: string;
+  paneId?: string;
+  hint?: string;
+  sharedCwd?: boolean;
+};
+
 export interface JournalAdapter {
   readonly agent: string;
   readonly source: TranscriptSource;
@@ -113,5 +128,5 @@ export interface JournalAdapter {
    * When Herdr named no session, find one from the pane's cwd. Optional: only harnesses whose log
    * layout is keyed by cwd (Grok) implement it. A miss is `null`, same as "no-log".
    */
-  inferFromCwd?(cwd: string): Promise<AgentSessionRef | null>;
+  inferFromCwd?(cwdOrOpts: string | InferSessionOpts): Promise<AgentSessionRef | null>;
 }

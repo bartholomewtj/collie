@@ -256,6 +256,7 @@ export function startServer(opts: {
         // Decorate working agent panes with runningCommand when their journal tail shows a tool
         // call with no result yet. Stamped at serialise time (like withActivity) so the state engine
         // stays a pure Herdr poller. Omitted when cfg.transcript is off (transcripts is null).
+        const cwdMateCount = countPanesPerAgentCwd(agents);
         const decoratedAgents =
           transcripts && journals
             ? await Promise.all(
@@ -266,7 +267,14 @@ export function startServer(opts: {
                     if (!adapter) return p;
                     const ref =
                       p.agentSession ??
-                      (adapter.inferFromCwd && p.cwd ? await adapter.inferFromCwd(p.cwd) : null);
+                      (adapter.inferFromCwd && p.cwd
+                        ? await adapter.inferFromCwd({
+                            cwd: p.cwd,
+                            paneId: p.paneId,
+                            hint: p.terminalTitle,
+                            sharedCwd: (cwdMateCount.get(agentCwdKey(p)) ?? 0) > 1,
+                          })
+                        : null);
                     if (!ref) return p;
                     const running = await transcripts.runningCommand(adapter, ref);
                     return running === true ? { ...p, runningCommand: true } : p;
@@ -382,7 +390,7 @@ export function startServer(opts: {
 
         if (!action && req.method === "GET") return readPane(herdr, cfg, paneId, url, req);
         if (action === "history" && req.method === "GET")
-          return paneHistory(cfg, journals, transcripts, rt.engine, paneId, url, req);
+          return paneHistory(cfg, journals, transcripts, rt.engine, herdr, paneId, url, req);
         if (action === "reply" && req.method === "POST") return replyPane(herdr, cfg, paneId, req, audit, device, session);
         if (action === "keys" && req.method === "POST") return keysPane(herdr, cfg, paneId, req, audit, device, session);
         if (action === "upload" && req.method === "POST") return uploadPane(cfg, paneId, req, audit, device, session);
@@ -679,6 +687,51 @@ export function historyParams(url: URL): { limit: number; before?: string } {
   return { limit, ...(before && before.length <= 100 ? { before } : {}) };
 }
 
+function agentCwdKey(pane: { agent: string; cwd: string }): string {
+  return `${pane.agent}\0${pane.cwd}`;
+}
+
+function countPanesPerAgentCwd(panes: AgentView[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const p of panes) {
+    if (p.cwd === "") continue;
+    const key = agentCwdKey(p);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function cwdSharedBySibling(agents: AgentView[], shellPanes: AgentView[], pane: AgentView): boolean {
+  return [...agents, ...shellPanes].some(
+    (a) => a.paneId !== pane.paneId && a.agent === pane.agent && a.cwd === pane.cwd,
+  );
+}
+
+/**
+ * Live text used to pick THIS grok pane's session when several tabs share a cwd.
+ *
+ * `visible` + `text` — never `recent`. A `recent` read of a pane on the alt screen can scroll the
+ * operator's terminal (HERDR_API.md); history is on-demand but still must not move their screen.
+ */
+async function paneHistoryHint(herdr: HerdrClient, pane: AgentView): Promise<string | undefined> {
+  const parts: string[] = [];
+  if (pane.terminalTitle) parts.push(pane.terminalTitle);
+  if (typeof herdr.readPane !== "function") {
+    return parts.length > 0 ? parts.join("\n") : undefined;
+  }
+  try {
+    const lines =
+      pane.readableLines !== undefined && pane.readableLines > 0
+        ? Math.min(pane.readableLines, 120)
+        : 80;
+    const read = await herdr.readPane(pane.paneId, "visible", lines, "text");
+    if (read.text.trim() !== "") parts.push(read.text);
+  } catch {
+    // Best-effort: title / a remembered bind still work if the read fails.
+  }
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 /**
  * GET /api/pane/:id/history — the conversation history the pane's terminal cannot provide.
  *
@@ -692,6 +745,7 @@ async function paneHistory(
   journals: Record<string, JournalAdapter> | null,
   transcripts: TranscriptStore | null,
   engine: StateEngine,
+  herdr: HerdrClient,
   paneId: string,
   url: URL,
   req: Request,
@@ -711,10 +765,19 @@ async function paneHistory(
   // harness isn't supported" from "this pane never started one"; both mean there's nothing to show.
   const adapter = adapterFor(journals, pane.agent);
   if (adapter === undefined) return unavailable("no-session");
-  // Herdr has no grok integration, so a grok pane arrives with no session ref. Infer from cwd.
+  // Herdr has no grok integration, so a grok pane arrives with no session ref. Infer from cwd —
+  // and when several grok tabs share that cwd, from the live viewport, so this pane's history is
+  // not a sibling tab's (journal/grok.ts).
   const session =
     pane.agentSession ??
-    (adapter.inferFromCwd !== undefined && pane.cwd ? await adapter.inferFromCwd(pane.cwd) : null);
+    (adapter.inferFromCwd !== undefined && pane.cwd
+      ? await adapter.inferFromCwd({
+          cwd: pane.cwd,
+          paneId,
+          hint: await paneHistoryHint(herdr, pane),
+          sharedCwd: cwdSharedBySibling(agents, shellPanes, pane),
+        })
+      : null);
   if (!session) return unavailable("no-session");
 
   try {

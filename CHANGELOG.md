@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.3] - 2026-08-21
+
+### Fixed
+- Grok Conversation history is per-tab: several grok tabs in one space no longer all show the newest session's log
+
 ## [0.52.2] - 2026-08-21
 
 ### Changed
