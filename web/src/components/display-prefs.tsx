@@ -63,7 +63,7 @@ export function DisplayPrefsContent({
     <div className="divide-y divide-border/60 border-t border-border/60 bg-muted/30 px-3 py-1">
       <Row
         label="Wrap lines"
-        hint="Off shows column-faithful output for TUI tables — you pan instead."
+        hint="On wraps prose; tables still pan. Off pans the whole mirror, column-faithful."
         htmlFor="pref-wrap"
         control={
           <Switch

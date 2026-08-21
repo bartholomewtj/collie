@@ -133,10 +133,10 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
   });
 
   it("presents a single StyledLine directly via presentLine", () => {
-    const rawLine = splitLines(parseAnsi("│ single enclosed row │"))[0]!;
+    const rawLine = splitLines(parseAnsi("│ col 1      │ col 2      │"))[0]!;
     const presented = presentLine(rawLine);
     expect(presented.noWrap).toBe(true);
-    expect(lineText(presented)).toBe("│ single enclosed row │");
+    expect(lineText(presented)).toBe("│ col 1      │ col 2      │");
   });
 
   it("clips at twenty glyphs and not below", () => {
@@ -164,6 +164,11 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
     ["prose", "This ordinary prose should retain its normal wrapping behavior."],
     ["prose with interior vertical bar", "Prose with an interior │ column separator should wrap."],
     ["two-pipe shell snippet", `| ${"col".repeat(10)} |`],
+    [
+      "boxed prose",
+      `│ Yes. Tap the image button on the reply box. This is a long answer. │`,
+    ],
+    ["boxed grok draft", "│ > this is a long draft that will not fit on one row │"],
   ])("does not mark %s", (_name, text) => {
     expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBeUndefined();
   });
@@ -174,6 +179,7 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
     ["corner row", "┌".repeat(40)],
     ["vertical row", "│".repeat(40)],
     ["enclosed box/table row", `│ ${"col 1".padEnd(10)} │ ${"col 2".padEnd(10)} │`],
+    ["padded composer chrome", `│ >${" ".repeat(40)}│`],
     ["junction row", `├──${"─".repeat(15)}──┤`],
     ["short rounded box ≥ 20 chars", `╭${"─".repeat(19)}╮`],
     ["GFM pipe table row", "| Flag | Default | Type | Applies to | Notes |"],
@@ -197,10 +203,10 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
 });
 
 describe("presentLines — full-width highlight rows and padding strip", () => {
-  it("marks a full-width inverted highlight row with trailing spaces and strips the pad", () => {
+  it("strips trailing pad from a full-width inverted highlight and still wraps (it is prose, not a table)", () => {
     const line = `${ESC}[7mHighlighted header${" ".repeat(30)}${ESC}[27m`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBe(true);
+    expect(presented.noWrap).toBeUndefined();
     expect(lineText(presented)).toBe("Highlighted header");
     expect(presented.segments[0]!.bg).toBeDefined();
   });
@@ -212,11 +218,19 @@ describe("presentLines — full-width highlight rows and padding strip", () => {
     expect(lineText(presented)).toBe("Highlighted header");
   });
 
-  it("marks a highlight row with leading unpainted indent and trailing painted pad", () => {
+  it("strips a highlight row with leading unpainted indent and trailing painted pad, and wraps it", () => {
     const line = `   ${ESC}[44mTitle${" ".repeat(20)}${ESC}[0m`;
     const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
-    expect(presented.noWrap).toBe(true);
+    expect(presented.noWrap).toBeUndefined();
     expect(lineText(presented)).toBe("   Title");
+  });
+
+  it("wraps a long highlighted prose line after stripping the terminal-width pad", () => {
+    const prose = "Yes. Tap the image button on the reply box. This is a long painted message.";
+    const line = `${ESC}[7m${prose}${" ".repeat(40)}${ESC}[27m`;
+    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    expect(presented.noWrap).toBeUndefined();
+    expect(lineText(presented)).toBe(prose);
   });
 
   it("does not mark a highlighted word followed by unstyled trailing spaces", () => {
@@ -435,9 +449,9 @@ describe("presentBlocks — agent neutrality (claude, grok, agy/undefined)", () 
     const agyBlocks = presentBlocks(buildBlocks(splitLines(parsed), { agent: undefined }));
 
     expect(claudeBlocks[0]!.lines).toEqual(agyBlocks[0]!.lines);
-    expect(claudeBlocks[0]!.lines[0]!.noWrap).toBe(true);
+    expect(claudeBlocks[0]!.lines[0]!.noWrap).toBeUndefined();
     expect(claudeBlocks[0]!.lines[0]!.segments[0]!.text).toBe("Highlighted header");
-    expect(claudeBlocks[0]!.lines[1]!.noWrap).toBe(true);
+    expect(claudeBlocks[0]!.lines[1]!.noWrap).toBeUndefined();
     expect(claudeBlocks[0]!.lines[1]!.segments[0]!.text).toBe("Padded status");
     expect(claudeBlocks[0]!.lines[2]!.noWrap).toBeUndefined();
   });
