@@ -163,7 +163,7 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
     ["short rounded box", `╭${"─".repeat(10)}╮`],
     ["prose", "This ordinary prose should retain its normal wrapping behavior."],
     ["prose with interior vertical bar", "Prose with an interior │ column separator should wrap."],
-    ["ASCII table row", `| ${"col".repeat(10)} |`],
+    ["two-pipe shell snippet", `| ${"col".repeat(10)} |`],
   ])("does not mark %s", (_name, text) => {
     expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBeUndefined();
   });
@@ -176,6 +176,8 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
     ["enclosed box/table row", `│ ${"col 1".padEnd(10)} │ ${"col 2".padEnd(10)} │`],
     ["junction row", `├──${"─".repeat(15)}──┤`],
     ["short rounded box ≥ 20 chars", `╭${"─".repeat(19)}╮`],
+    ["GFM pipe table row", "| Flag | Default | Type | Applies to | Notes |"],
+    ["GFM delimiter row", "|---|---|---|---|---|"],
   ])("marks %s as noWrap", (_name, text) => {
     expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBe(true);
   });

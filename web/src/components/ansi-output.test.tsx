@@ -70,75 +70,89 @@ describe("mirror line wrapping", () => {
     expect(cls).not.toContain("whitespace-pre-wrap");
   });
 
-  it("keeps a marked ANSI border to one clipped row without changing its text, styles, links, or find offsets", () => {
+  it("keeps a marked ANSI border to one pannable row without changing its text, styles, links, or find offsets", () => {
     const border = `  ${"─".repeat(20)}`;
     const text = `ordinary prose\n${ESC}[41m${border.slice(0, 12)}${ESC}[44m${border.slice(12)}${ESC}[0m\nsee https://herdr.dev/docs\n`;
     const { container } = render(<AnsiOutput text={text} query="───" />);
     const pre = container.querySelector("pre")!;
-    const clipped = pre.querySelector("span.inline-block")!;
+    const pan = pre.querySelector("[data-mirror-pan]")!;
 
-    expect(clipped.className).toContain("max-w-full");
-    expect(clipped.className).toContain("overflow-hidden");
-    // `overflow-hidden` gives an inline-block a bottom-edge baseline; align it to the line box's
-    // bottom so the border keeps the terminal grid's one-row line advance.
-    expect(clipped.className).toContain("align-bottom");
-    expect(clipped.className).toContain("whitespace-pre");
-    expect(clipped.className).not.toContain("whitespace-nowrap");
-    expect(clipped.className).toContain("break-normal");
-    expect(clipped.textContent).toBe(border);
-    expect(clipped.children).toHaveLength(2);
-    expect((clipped.children[0] as HTMLElement).style.backgroundColor).toBe("var(--ansi-1)");
-    expect((clipped.children[1] as HTMLElement).style.backgroundColor).toBe("var(--ansi-4)");
-    expect(clipped.querySelector("[data-find-match]")).not.toBeNull();
+    expect(pan.className).toContain("max-w-full");
+    expect(pan.className).toContain("overflow-x-auto");
+    expect(pan.className).not.toContain("overflow-hidden");
+    // overflow-x-auto on inline-block still gives a bottom-edge baseline; align it to the line
+    // box's bottom so the border keeps the terminal grid's one-row line advance.
+    expect(pan.className).toContain("align-bottom");
+    expect(pan.className).toContain("whitespace-pre");
+    expect(pan.className).not.toContain("whitespace-nowrap");
+    expect(pan.className).toContain("break-normal");
+    expect(pan.textContent).toBe(border);
+    expect(pan.children).toHaveLength(2);
+    expect((pan.children[0] as HTMLElement).style.backgroundColor).toBe("var(--ansi-1)");
+    expect((pan.children[1] as HTMLElement).style.backgroundColor).toBe("var(--ansi-4)");
+    expect(pan.querySelector("[data-find-match]")).not.toBeNull();
     expect(pre.querySelector("a")?.textContent).toBe("https://herdr.dev/docs");
     expect(pre.textContent).toBe(`ordinary prose\n${border}\nsee https://herdr.dev/docs\n`);
   });
 
-  it("clips a plain border only while wrapping, leaving ordinary output and wrap-off panning alone", () => {
+  it("pans a plain border only while wrapping, leaving ordinary output and wrap-off panning alone", () => {
     const border = `  ${"─".repeat(20)}`;
     const { container: plain } = render(<AnsiOutput text={`${border}\n`} />);
-    expect(plain.querySelector("span.inline-block")?.textContent).toBe(border);
+    expect(plain.querySelector("[data-mirror-pan]")?.textContent).toBe(border);
 
     const { container: wrapped } = render(<AnsiOutput text={`unbroken-${"x".repeat(40)}\n`} />);
     const wrappedPre = wrapped.querySelector("pre")!;
     expect(wrappedPre.className).toContain("break-words");
-    expect(wrappedPre.querySelector("span.inline-block")).toBeNull();
+    expect(wrappedPre.querySelector("[data-mirror-pan]")).toBeNull();
 
     const { container: panned } = render(<AnsiOutput text={`${border}\n`} wrap={false} />);
     const pannedPre = panned.querySelector("pre")!;
     expect(pannedPre.className).toContain("overflow-x-auto");
-    expect(pannedPre.querySelector("span.inline-block")).toBeNull();
+    expect(pannedPre.querySelector("[data-mirror-pan]")).toBeNull();
     expect(pannedPre.textContent).toBe(`${border}\n`);
   });
 
-  it("clips a long rounded box border while wrapping (Grok/omp composer chrome)", () => {
+  it("pans a long rounded box border while wrapping (Grok/omp composer chrome)", () => {
     const top = `  ╭${"─".repeat(40)}╮`;
     const { container } = render(<AnsiOutput text={`${top}\n`} />);
-    expect(container.querySelector("span.inline-block")?.textContent).toBe(top);
+    expect(container.querySelector("[data-mirror-pan]")?.textContent).toBe(top);
   });
 
-  it("clips a wide enclosed table/box row while wrapping", () => {
+  it("pans a wide enclosed table/box row while wrapping", () => {
     const row = "│ col 1      │ col 2      │";
     const { container } = render(<AnsiOutput text={`${row}\n`} />);
-    const clipped = container.querySelector("span.inline-block")!;
-    expect(clipped).not.toBeNull();
-    expect(clipped.textContent).toBe(row);
+    const pan = container.querySelector("[data-mirror-pan]")!;
+    expect(pan).not.toBeNull();
+    expect(pan.className).toContain("overflow-x-auto");
+    expect(pan.textContent).toBe(row);
   });
 
-  it("clips a full-width highlight row, keeps its background, and strips trailing spaces", () => {
+  it("groups consecutive table rows into one pan scroller so columns stay aligned", () => {
+    const r1 = "| Flag | Default | Type | Applies to | Notes |";
+    const r2 = "|------|---------|------|------------|-------|";
+    const r3 = "| --wrap | on | bool | grok, agy, claude | Prose wraps |";
+    const text = `intro\n${r1}\n${r2}\n${r3}\noutro\n`;
+    const { container } = render(<AnsiOutput text={text} />);
+    const pans = container.querySelectorAll("[data-mirror-pan]");
+    expect(pans).toHaveLength(1);
+    expect(pans[0]!.textContent).toBe(`${r1}\n${r2}\n${r3}`);
+    expect(container.querySelector("pre")!.textContent).toBe(text);
+  });
+
+  it("pans a full-width highlight row, keeps its background, and strips trailing spaces", () => {
     const highlight = `${ESC}[7mHighlight bar${" ".repeat(30)}${ESC}[27m`;
     const { container } = render(<AnsiOutput text={`${highlight}\n`} />);
-    const clipped = container.querySelector("span.inline-block")!;
-    expect(clipped).not.toBeNull();
-    expect(clipped.textContent).toBe("Highlight bar");
-    const span = clipped.querySelector("span") as HTMLElement;
+    const pan = container.querySelector("[data-mirror-pan]")!;
+    expect(pan).not.toBeNull();
+    expect(pan.textContent).toBe("Highlight bar");
+    const span = pan.querySelector("span") as HTMLElement;
     expect(span.style.backgroundColor).toBe("rgb(250, 250, 250)");
   });
 
   it("renders a coloured padded row trimmed to visible text, and strips pure-space coloured lines completely", () => {
     const padded = `${ESC}[41mok${" ".repeat(60)}${ESC}[0m`;
     const { container: paddedCont } = render(<AnsiOutput text={`${padded}\n`} />);
-    const paddedSpan = paddedCont.querySelector("span.inline-block span") as HTMLElement;
+    const paddedSpan = paddedCont.querySelector("[data-mirror-pan] span") as HTMLElement;
     expect(paddedSpan.textContent).toBe("ok");
     expect(paddedSpan.style.backgroundColor).toBe("var(--ansi-1)");
 
@@ -163,7 +177,7 @@ describe("mirror line wrapping", () => {
     const { container: panned } = render(<AnsiOutput text={`${tableRow}\n`} wrap={false} />);
     const pannedPre = panned.querySelector("pre")!;
     expect(pannedPre.className).toContain("overflow-x-auto");
-    expect(pannedPre.querySelector("span.inline-block")).toBeNull();
+    expect(pannedPre.querySelector("[data-mirror-pan]")).toBeNull();
     expect(pannedPre.textContent).toBe(`${tableRow}\n`);
   });
 });
