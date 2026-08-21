@@ -7,7 +7,7 @@ import { TraceRoute, TracesRoute } from "@/routes/traces";
 import { DetailRoute } from "@/routes/detail";
 import { HistoryRoute } from "@/routes/history";
 import { SettingsRoute } from "@/routes/settings";
-import { historyLoader, rootLoader, paneLoader, ROOT_ROUTE_ID } from "@/lib/loaders";
+import { historyLoader, rootLoader, paneLoader, PANE_ROUTE_ID, ROOT_ROUTE_ID } from "@/lib/loaders";
 
 // We don't use view transitions. React Router persists an "applied view transitions" map to
 // sessionStorage ("remix-router-transitions") and replays a phantom same-location transition on every
@@ -41,7 +41,7 @@ export const router = createBrowserRouter([
       { path: "traces", element: <TracesRoute /> },
       { path: "traces/:spaceId/:repo", element: <TraceRoute /> },
       { path: "settings", element: <SettingsRoute /> },
-      { path: "pane/:paneId", loader: paneLoader, element: <DetailRoute /> },
+      { id: PANE_ROUTE_ID, path: "pane/:paneId", loader: paneLoader, element: <DetailRoute /> },
       {
         path: "pane/:paneId/history",
         loader: historyLoader,

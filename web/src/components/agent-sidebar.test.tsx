@@ -23,6 +23,12 @@ describe("ThreadSidebar", () => {
     expect(screen.getByText("No agents running.")).toBeInTheDocument();
   });
 
+  it("never claims an empty herd on a stale render", () => {
+    render(<ThreadSidebar agents={[]} currentPaneId="" onSelect={vi.fn()} error />);
+    expect(screen.queryByText("No agents running.")).not.toBeInTheDocument();
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+  });
+
   it("groups agents into the same triage sections the dashboard uses", () => {
     render(
       <ThreadSidebar agents={[...fixtureAgents, idleAgent]} currentPaneId="" onSelect={vi.fn()} />,

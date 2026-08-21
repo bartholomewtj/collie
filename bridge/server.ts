@@ -9,6 +9,7 @@ import type { HerdrClient, PaneRead } from "./herdr-client.ts";
 import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
 import { createOperatorCommands, createOperatorQuickReplies } from "./operator-commands.ts";
+import { createOperatorKeys } from "./operator-keys.ts";
 import {
   DEFAULT_PROMPT_TAIL_LINES,
   verifyExpectedPrompt,
@@ -177,6 +178,7 @@ export function startServer(opts: {
   // One reader per process; it owns the mtime cache that keeps commands.toml off the hot path.
   const operatorCommands = createOperatorCommands(cfg.commandsFile);
   const operatorQuickReplies = createOperatorQuickReplies(cfg.commandsFile);
+  const operatorKeys = createOperatorKeys(cfg.keysFile);
   const journals = cfg.transcript ? buildJournalRegistry(cfg.journalRoots) : null;
   const transcripts = cfg.transcript ? new TranscriptStore() : null;
   // Grok (and any future cwd-keyed harness) can offer history without Herdr naming a session.
@@ -405,6 +407,7 @@ export function startServer(opts: {
         // with no restart. The path is cfg's, never the request's.
         const mine = await operatorCommands();
         const quick = await operatorQuickReplies();
+        const myKeys = await operatorKeys();
         return json({
           push: push.enabled,
           vapidPublicKey: push.publicKey,
@@ -415,6 +418,7 @@ export function startServer(opts: {
           // ships the same payload as before.
           ...(mine.length > 0 ? { operatorCommands: mine } : {}),
           ...(quick.length > 0 ? { operatorQuickReplies: quick } : {}),
+          ...(myKeys.length > 0 ? { operatorKeys: myKeys } : {}),
         } satisfies BridgeConfig, req.headers.get("accept-encoding"));
       }
       if (pathname === "/api/subscribe" && req.method === "POST") {

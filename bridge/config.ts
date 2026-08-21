@@ -154,6 +154,11 @@ export interface Config {
    */
   commandsFile: string;
   /**
+   * Where the operator's Keys-tray preset rows live — `keys.toml`, the sibling of `commands.toml`
+   * in the same dir, read the same way (bridge/operator-keys.ts) and likewise never read here.
+   */
+  keysFile: string;
+  /**
    * Tailscale identity gate. If set, requests must carry a `Tailscale-User-Login` header (injected by
    * `tailscale serve`) matching this login. A mismatching login is rejected, and so is an ABSENT one
    * — `tailscale serve` injects no identity for TAGGED nodes, so tolerating an absent header handed
@@ -353,6 +358,7 @@ export function loadConfig(): Config {
     },
     submitKeys: submitKeys.length ? submitKeys : ["Enter"],
     commandsFile: join(configDir, "commands.toml"),
+    keysFile: join(configDir, "keys.toml"),
     trustedUser: process.env.COLLIE_TRUSTED_USER ?? "",
     trustedUserOptional: envBool("COLLIE_TRUSTED_USER_OPTIONAL", false),
     auditContent: envEnum("COLLIE_AUDIT_CONTENT", ["preview", "none"] as const, "preview"),

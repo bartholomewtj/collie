@@ -55,6 +55,7 @@ describe("rootLoader", () => {
     expect(stale.bridge).toBe("connected"); // from the cached snapshot
     expect(stale.agents).toHaveLength(2);
     expect(stale.agents[0]!.paneId).toBe(fixtureAgents[0]!.paneId);
+    expect(stale.lastSeenAt).toEqual(expect.any(Number));
   });
 
   it("does not mark a network error as an auth error", async () => {
@@ -72,6 +73,7 @@ describe("rootLoader", () => {
     expect(data.error).toBe(true);
     expect(data.agents).toEqual([]);
     expect(data.bridge).toBeUndefined();
+    expect(data.lastSeenAt).toBeUndefined();
   });
 
   it("treats a cold-start TimeoutError as an error snapshot, NOT a rethrow to the error boundary", async () => {

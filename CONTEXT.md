@@ -88,6 +88,8 @@
 | `push-endpoint.ts` | Subscription endpoint validation (push-service host allowlist) + caps — closes the SSRF (issue #7). |
 | `prompt-binding.ts` | Normalises a rendered prompt region so `expected_prompt` survives redraws. |
 | `operator-commands.ts` | Reads the operator's `commands.toml` (`[[commands]]`, `[[quick]]`) behind an mtime check; rows replace, never merge ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md)). |
+| `operator-file.ts` | Shared mtime-checked TOML reader for `commands.toml` and `keys.toml`. |
+| `operator-keys.ts` | Reads `keys.toml` Keys-tray preset rows — same replace rule as commands. |
 | `uploads.ts` | Uploaded images → `<stateDir>/uploads/`, referenced by path in the send. Magic-byte checked. |
 | `update.ts` | Update-availability signal on `/api/snapshot.update` — polls this fork's newest `v*` tag (`COLLIE_UPDATE_REPO`). |
 | `sessions.ts` | Multi-session: several named Herdr sessions, `?s=<name>` picks one. |
@@ -212,7 +214,7 @@ hide the session; the tail is never hidden.
 | Push / notifications | `bridge/notifications.ts`, `notify-prefs.ts`, `snooze.ts`, `push.ts`, `push-endpoint.ts`; `web/src/lib/push.ts`, `sw.ts`, `routes/settings.tsx`; README → Web Push | `state-engine.ts` internals |
 | Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md)) | — |
 | Routes / navigation | `web/src/router.tsx`, `lib/loaders.ts`, `routes/`, `components/app-header.tsx`, `bottom-nav.tsx`, `lib/nav.ts` | `bridge/` |
-| Operator rows (`commands.toml`) | `bridge/operator-commands.ts`, `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts`, `commands.toml.example` | — |
+| Operator rows (`commands.toml` / `keys.toml`) | `bridge/operator-commands.ts`, `bridge/operator-keys.ts`, `web/src/lib/{agent-commands,quick-replies,operator-commands,operator-keys,operator-scope}.ts`, `commands.toml.example`, `keys.toml.example` | — |
 | SSSF traces | `bridge/sssf-viz.ts`, `web/src/components/sssf-frame.tsx`, `routes/traces.tsx` | `herdr-client.ts` |
 | Windows control path | `contrib/windows/collie-ctl.ps1` (+ `.test.ps1`), generated `exec-bridge.vbs` in the plugin config dir, `contrib/windows/README.md`, `scripts/collie-ctl.sh` (the delegation) | — |
 | Version / release | `herdr-plugin.toml`, `package.json`, `web/package.json`, `CHANGELOG.md` → `scripts/check-version.sh` | code |

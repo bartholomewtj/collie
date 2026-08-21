@@ -930,6 +930,7 @@ export function AgentChat({
           agents={agents}
           shellPanes={shellPanes}
           currentPaneId={paneId}
+          error={error}
           onSelect={switchTo}
           recentOpen={dash.prefs.recentOpen}
           onRecentOpenChange={dash.setRecentOpen}
