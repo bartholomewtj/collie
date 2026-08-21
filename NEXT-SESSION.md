@@ -1,8 +1,8 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.49.0** (`1cc2397`). Tag is still **v0.48.2** until you
-cut `v0.49.0`. Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`.
-`web/dist` is still `0.48.2+0a3a128-dirty` — rebuild if you want 0.49.0 on the phone. One listener
+_Last handoff: 2026-08-21 — `main` at **0.49.0** (`b9031b1`), tagged **v0.49.0**.
+Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. `web/dist` is
+`0.49.0+b9031b1-dirty` (dirty = untracked files under `adws/adw_data/`, leave them). One listener
 on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
@@ -10,9 +10,9 @@ Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered
 
 ## Where this stopped
 
-#111 merged. Item 6 from the upstream take-list: `keys.toml` (Keys tray Presets, ADR 0018, grok on
-the scope ladder), F1–F12, and a failed empty fetch says Disconnected dated by the data on screen.
-Not a full upstream merge. Quick replies and fail-closed gates untouched.
+0.49.0 is tagged and rebuilt. #111 landed `keys.toml`, F1–F12, and honest Disconnected copy. Not a
+full upstream merge. Phone: hard-refresh / reopen the PWA. Copy `keys.toml.example` next to `.env`
+if you want custom Key presets.
 
 ## Resume with
 
@@ -20,13 +20,12 @@ Not a full upstream merge. Quick replies and fail-closed gates untouched.
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # still v0.48.2 until you tag
+git describe --tags --abbrev=0                        # expect v0.49.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
-To put 0.49.0 on the phone: `bun run build`, reopen the PWA, then
-`git tag -a v0.49.0 -m "Collie 0.49.0" && git push origin v0.49.0`.
-Copy `keys.toml.example` next to `.env` if you want custom Key presets.
+Do **not** rebuild/restart unless `web/dist/build-info.json` is behind `main` or the bridge is down.
+Phone must hard-refresh / reopen the PWA after a rebuild.
 
 Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_tests()` in
 `adws/adw_modules/quality.py`. Do **not** run `run_quality()` casually — `build` rewrites live
@@ -40,17 +39,16 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Tag `v0.49.0` and rebuild if you want it on the phone. Otherwise leave `web/dist` as 0.48.2.
-2. Remaining upstream (inspect, do not merge the 45 as a blob): offline cache (`last-seen.ts`),
+1. Remaining upstream (inspect, do not merge the 45 as a blob): offline cache (`last-seen.ts`),
    `--major` update gate on top of ADR 0019 + this-fork tags. Skip a re-port of 0.30–0.31.1.
-3. Parked: #55 ACL follow-up; Windows `update` action is `platform_unsupported`.
+2. Parked: #55 ACL follow-up — `Protect-CollieSecret` on the config dir must not strip child ACLs.
+3. Parked: in-app update banner points at the Herdr `update` action, `platform_unsupported` on Windows.
 
 ## Open
 
-- No issue: tag `v0.49.0` when you ship it. Banner still points at `v0.48.2` until then.
 - No issue: leftover upstream (last-seen / `--major`). Cherry-pick, do not `git merge upstream/main`.
 - Parked: send the security fixes upstream to AltanS/collie.
-- Parked: #55 ACL follow-up (`Protect-CollieSecret` on the config dir can strip child ACLs).
+- Parked: #55 ACL follow-up (see above).
 
 ## Watch out for
 
