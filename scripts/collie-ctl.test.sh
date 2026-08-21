@@ -953,7 +953,9 @@ advance_origin() {
 run_update_checkout() {
   local root="$1"; shift
   local extra_env=""
-  if [ "${1-}" != "${1#export }" ]; then
+  # ${1#export } under `set -u` is an unbound-variable error when no extra args were passed
+  # (CI: `1: unbound variable`). Gate on `-n` first.
+  if [ -n "${1:-}" ] && [ "$1" != "${1#export }" ]; then
     extra_env="$1"
     shift
   fi
