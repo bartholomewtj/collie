@@ -1,14 +1,18 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.48.2** (`f2f42e2`), tagged **v0.48.2**.
-Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`. `web/dist` is `0.48.2+0a3a128-dirty` (dirty = untracked files under `adws/adw_data/`, leave them). One listener on `:8787`._
+_Last handoff: 2026-08-21 — `main` at **0.49.0** (`1cc2397`). Tag is still **v0.48.2** until you
+cut `v0.49.0`. Bridge: `C:\claudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`.
+`web/dist` is still `0.48.2+0a3a128-dirty` — rebuild if you want 0.49.0 on the phone. One listener
+on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
 
 ## Where this stopped
 
-#105 is closed. Factory tests stay `python3 -m unittest` (PR #109): standing rule in both test-file docstrings, separate CI job (`setup-python` 3.12, `PYTHONPATH=adws`, pip of the ADW deps, no `uv`). No Bun wrapper under `scripts/`. App version unchanged. Do not rebuild.
+#111 merged. Item 6 from the upstream take-list: `keys.toml` (Keys tray Presets, ADR 0018, grok on
+the scope ladder), F1–F12, and a failed empty fetch says Disconnected dated by the data on screen.
+Not a full upstream merge. Quick replies and fail-closed gates untouched.
 
 ## Resume with
 
@@ -16,12 +20,13 @@ Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # expect v0.48.2
+git describe --tags --abbrev=0                        # still v0.48.2 until you tag
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
-Do **not** rebuild/restart unless `web/dist/build-info.json` is behind `main` or the bridge is down.
-Phone must hard-refresh / reopen the PWA after a rebuild.
+To put 0.49.0 on the phone: `bun run build`, reopen the PWA, then
+`git tag -a v0.49.0 -m "Collie 0.49.0" && git push origin v0.49.0`.
+Copy `keys.toml.example` next to `.env` if you want custom Key presets.
 
 Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_tests()` in
 `adws/adw_modules/quality.py`. Do **not** run `run_quality()` casually — `build` rewrites live
@@ -35,16 +40,17 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Pull upstream (`git fetch upstream`; AltanS/collie `main` has moved, tag `v0.32.0`, ~45 commits). Merge on a branch as in #35. Keep fail-closed Host/identity/loopback. Bump *this* fork's SemVer for the *sum*. Not an ADW.
-2. Parked unless you want it: #55 follow-up — `Protect-CollieSecret` on the config dir must not strip child ACLs (`(OI)(CI)(F)` or skip the directory and only harden `.env`).
-3. Parked: in-app update banner tells you to run the Herdr `update` action, which is `platform_unsupported` on Windows.
+1. Tag `v0.49.0` and rebuild if you want it on the phone. Otherwise leave `web/dist` as 0.48.2.
+2. Remaining upstream (inspect, do not merge the 45 as a blob): offline cache (`last-seen.ts`),
+   `--major` update gate on top of ADR 0019 + this-fork tags. Skip a re-port of 0.30–0.31.1.
+3. Parked: #55 ACL follow-up; Windows `update` action is `platform_unsupported`.
 
 ## Open
 
-- No issue: pull upstream regularly (`git fetch upstream`, merge on a branch as in #35).
-- No issue: in-app update banner points at the Herdr `update` action, `platform_unsupported` on Windows. Tag is `v0.48.2`, so the banner version is not a lie.
+- No issue: tag `v0.49.0` when you ship it. Banner still points at `v0.48.2` until then.
+- No issue: leftover upstream (last-seen / `--major`). Cherry-pick, do not `git merge upstream/main`.
 - Parked: send the security fixes upstream to AltanS/collie.
-- Parked: #55 ACL follow-up (see above).
+- Parked: #55 ACL follow-up (`Protect-CollieSecret` on the config dir can strip child ACLs).
 
 ## Watch out for
 
@@ -63,6 +69,6 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 - **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
 - **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`.
 - **CI has no `uv`.** Factory tests go through the `factory unittests` job, not `bun test`.
-  A test that shells out to `uv` will pass here and fail on GitHub.
+- **Do not `git merge upstream/main`.** Git still thinks you split at 0.29.0. Port leftovers only.
 - Never `taskkill /IM bun.exe`.
 - If `AGENTS.md` or `GEMINI.md` reappear, delete them. `CLAUDE.md` is the working agreement.
