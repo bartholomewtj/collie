@@ -197,7 +197,9 @@ placeholder ([ADR 0010](./.adr/0010-long-sends-are-verified-via-the-paste-placeh
 `journal/registry.ts` picks the adapter by harness → adapter resolves the session file →
 `files.ts containedRealpath` → parse → `TranscriptEntry[]` → `routes/history.tsx`. The pane also
 stacks the newest journal turns above the live TUI (`use-inline-history.ts`) so sending does not
-hide the session; the tail is never hidden.
+hide the session; the tail is never hidden. Grok has no Herdr session id: `inferFromCwd` matches
+this pane's viewport when several grok tabs share a cwd (`journal/grok.ts`), rather than handing
+every tab the newest session.
 
 ---
 
@@ -231,7 +233,7 @@ hide the session; the tail is never hidden.
 | Pane is raw TUI / no prompt buttons | `web/src/hooks/use-display-prefs.ts` · `components/display-prefs.tsx` · composer ⚙ |
 | Send didn't land / wrong verification | `web/src/lib/reply-action.ts` · `dialog-guard.ts` · `bridge/server.ts sendReplySteps` · `checkPromptBinding` · `lib/harness/claude/paste.ts` |
 | Composer / keys / type-into-terminal | `web/src/components/composer.tsx` · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` ([ADR 0005](./.adr/0005-a-composed-key-queue-never-outlives-its-dock.md)) |
-| History empty / wrong | `bridge/journal/registry.ts` · `journal/<harness>.ts` · `journal/files.ts` · `web/src/routes/history.tsx` · `web/src/hooks/use-inline-history.ts` |
+| History empty / wrong | `bridge/journal/registry.ts` · `journal/<harness>.ts` (Grok: `inferFromCwd` in `journal/grok.ts`) · `journal/files.ts` · `web/src/routes/history.tsx` · `web/src/hooks/use-inline-history.ts` |
 | Long-press rename / close | `web/src/hooks/use-long-press.ts` · `components/*-actions-sheet.tsx` · `action-sheet-rows.tsx` |
 | Operator rows / Quick dock / palette | `bridge/operator-commands.ts` · `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts` · `commands.toml.example` |
 | Push not arriving / notification prefs | `bridge/notifications.ts` · `notify-prefs.ts` · `snooze.ts` · `push.ts` · `web/src/lib/push.ts` · `sw.ts` · `scripts/collie-ctl.sh push-test` |

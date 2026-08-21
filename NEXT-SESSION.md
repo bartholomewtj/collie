@@ -1,18 +1,19 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.52.2** (`70c1bea`). Newest tag is still
-**v0.52.1** — 0.52.2 is untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler
-`herdr.collie`. `web/dist` is `0.52.2+70c1bea-dirty` (dirty = untracked files under
-`adws/adw_data/`, leave them). One listener on `:8787`._
+_Last handoff: 2026-08-21 — `main` at **0.52.3**. Newest tag is still **v0.52.1** — 0.52.2
+and 0.52.3 are untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler
+`herdr.collie`. `web/dist` is `0.52.2+70c1bea-dirty` (stamp only — leave it). One listener
+on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
 
 ## Where this stopped
 
-0.52.2 is on `main` and rebuilt (frontend only — no restart). #120 muted the composer focus
-ring and made Wrap lines wrap boxed/highlighted prose (tables still pan). Phone: hard-refresh /
-reopen the PWA. #119 console restyle and traces-dot colour are in too (0.52.0 / 0.52.1).
+0.52.3 is on `main` and the bridge was restarted. #122 makes Grok Conversation history per-tab:
+several grok tabs in one space no longer all show the newest session's log. #121 caught README /
+CONTEXT up to wrap-on. Phone: reopen the PWA if history still looks shared (bridge change, no
+frontend rebuild). #120 wrap/focus and #119 console restyle are in too.
 
 ## Resume with
 
@@ -20,12 +21,13 @@ reopen the PWA. #119 console restyle and traces-dot colour are in too (0.52.0 / 
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.52.1; main is 0.52.2
+git describe --tags --abbrev=0                        # newest tag is v0.52.1; main is 0.52.3
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
-Do **not** rebuild/restart unless `web/dist/build-info.json` is behind `main` or the bridge is down.
-Phone must hard-refresh / reopen the PWA after a rebuild.
+Do **not** rebuild just to clear the 0.52.2 dist stamp. The history fix is in the bridge
+(already restarted). Rebuild only if a UI bug will not reproduce. Phone must hard-refresh /
+reopen the PWA after a rebuild.
 
 Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_tests()` in
 `adws/adw_modules/quality.py`. Do **not** run `run_quality()` casually — `build` rewrites live
@@ -39,20 +41,26 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Tag **v0.52.2** (`git tag -a v0.52.2 -m "Collie 0.52.2" && git push origin v0.52.2`) — on
-   `main`, not tagged yet.
+1. Tag **v0.52.2** at `70c1bea` and **v0.52.3** at current `main`
+   (`git tag -a v0.52.2 70c1bea -m "Collie 0.52.2" && git tag -a v0.52.3 -m "Collie 0.52.3" && git push origin v0.52.2 v0.52.3`).
 2. Parked: send this fork's security fixes upstream to AltanS/collie.
 3. Parked: `push-keys` / `push-test` Herdr actions are still POSIX-only (the Windows ctl has no
    wrappers; PATH's bash is the WSL stub).
 
 ## Open
 
-- Tag v0.52.2 (release is on main, tag is not).
+- Tag v0.52.2 (`70c1bea`) and v0.52.3 (current main). Releases are on main, tags are not.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
 
 ## Watch out for
 
+- **Grok history is per-tab now.** Several grok panes in one space share a cwd; the adapter
+  matches the live viewport to that pane's session (`bridge/journal/grok.ts`). Empty history
+  on a grok tab usually means the visible screen has no distinctive user turn yet — do not
+  "fix" it by picking newest.
+- **`collie-ctl.ps1 status` can WARN "cannot reach Herdr" while the bridge is fine.** The probe
+  hits `/api/snapshot`, which needs identity. Trust `[events] stream up` in the log, not that WARN.
 - **Herdr rejects duplicate action ids.** Canonical `update` / `restart` / `update-major` are the
   Windows exe. POSIX twins are `*-posix`. Banner copy stays `invoke update`.
 - **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`. Windows Herdr
