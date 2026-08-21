@@ -212,7 +212,7 @@ hide the session; the tail is never hidden.
 | Display prefs / wrap / raw terminal | `web/src/hooks/use-display-prefs.ts`, `components/display-prefs.tsx`, composer ⚙ | `bridge/` |
 | Auth / ingress / host & origin checks | `bridge/config.ts`, `bridge/server.ts` (`guard`, `checkAccess`, `isHostAllowed`), `DEPLOYMENT.md`, [ADR 0023](./.adr/0023-host-validation-is-fail-closed.md) | `web/src/lib/harness/` |
 | Push / notifications | `bridge/notifications.ts`, `notify-prefs.ts`, `snooze.ts`, `push.ts`, `push-endpoint.ts`; `web/src/lib/push.ts`, `sw.ts`, `routes/settings.tsx`; README → Web Push | `state-engine.ts` internals |
-| Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md)) | — |
+| Update / release path | `bridge/update.ts`, `web/src/lib/self-update.ts`, `scripts/collie-ctl.sh update`, `contrib/windows/collie-ctl.ps1`, `herdr-plugin.toml` actions, `.github/workflows/release.yml` ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [0019](./.adr/0019-update-pins-to-the-newest-release-tag.md), [0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)) | — |
 | Routes / navigation | `web/src/router.tsx`, `lib/loaders.ts`, `routes/`, `components/app-header.tsx`, `bottom-nav.tsx`, `lib/nav.ts` | `bridge/` |
 | Operator rows (`commands.toml` / `keys.toml`) | `bridge/operator-commands.ts`, `bridge/operator-keys.ts`, `web/src/lib/{agent-commands,quick-replies,operator-commands,operator-keys,operator-scope}.ts`, `commands.toml.example`, `keys.toml.example` | — |
 | SSSF traces | `bridge/sssf-viz.ts`, `web/src/components/sssf-frame.tsx`, `routes/traces.tsx` | `herdr-client.ts` |
@@ -235,7 +235,7 @@ hide the session; the tail is never hidden.
 | Long-press rename / close | `web/src/hooks/use-long-press.ts` · `components/*-actions-sheet.tsx` · `action-sheet-rows.tsx` |
 | Operator rows / Quick dock / palette | `bridge/operator-commands.ts` · `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts` · `commands.toml.example` |
 | Push not arriving / notification prefs | `bridge/notifications.ts` · `notify-prefs.ts` · `snooze.ts` · `push.ts` · `web/src/lib/push.ts` · `sw.ts` · `scripts/collie-ctl.sh push-test` |
-| Update banner / update command | `bridge/update.ts` · `web/src/lib/self-update.ts` · `components/update-banner.tsx` · `contrib/windows/collie-ctl.ps1 update` |
+| Update banner / update command | `bridge/update.ts` · `web/src/lib/self-update.ts` · `components/update-banner.tsx` · `contrib/windows/collie-ctl.ps1 update` · `web/src/lib/last-seen.ts` (cold-boot cache) |
 | Image upload | `bridge/uploads.ts` · `server.ts uploadPane` · `web/src/components/composer.tsx` |
 | "Connection lost" banner / offline | `web/src/lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `components/connection-banner.tsx` |
 | Draft lost / restored wrongly | `web/src/lib/drafts.ts` · `hooks/use-terminal-draft.ts` |

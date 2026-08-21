@@ -502,10 +502,11 @@ The checkout *is* the plugin, and Herdr has no `plugin update` of its own. One c
 scripts/collie-ctl.sh update    # or: herdr plugin action invoke update --plugin herdr.collie
 ```
 
-It advances the checkout, rebuilds the UI and restarts the bridge (re-execing itself, so it's safe
-even when the update rewrites the script). Confirm via the footer build stamp. Pinned to a version
-with `--ref`? Keep refreshing with `herdr plugin install --ref …` — `update` always goes to the
-latest.
+It advances the checkout to the newest release **of the major you are already on**, rebuilds the UI
+and restarts the bridge (re-execing itself, so it's safe even when the update rewrites the script).
+A new major is a separate act: `herdr plugin action invoke update-major --plugin herdr.collie`.
+Confirm via the footer build stamp. Pinned to a version with `--ref`? Keep refreshing with
+`herdr plugin install --ref …` — `COLLIE_UPDATE_REF` still overrides the tag pin.
 
 Fails with *"You are not currently on a branch"*? That's a GitHub install made before 0.23.1, and
 [Troubleshooting](#troubleshooting) has the one-time repair.

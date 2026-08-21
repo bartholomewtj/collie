@@ -288,6 +288,30 @@ COLLIE_HOST="127.0.0.1"
   Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $managed "VERSION")) "v2" "managed update ignores untagged tip"
   Assert-Equal ((& git -C $managed describe --tags --exact-match | Out-String).Trim()) "v0.30.0" "managed update stays on tag"
 
+  # Routine update stays inside the installed major when a higher major is tagged (ADR 0025).
+  @"
+id = "herdr.collie"
+version = "0.30.0"
+"@ | Set-Content -LiteralPath (Join-Path $managed "herdr-plugin.toml") -Encoding Ascii
+  @"
+id = "herdr.collie"
+version = "1.0.0"
+"@ | Set-Content -LiteralPath (Join-Path $origin "herdr-plugin.toml") -Encoding Ascii
+  "v4" | Set-Content -LiteralPath (Join-Path $origin "VERSION") -NoNewline
+  Invoke-TestGit $origin @("add", "-A")
+  Invoke-TestGit $origin @("commit", "-qm", "major-one")
+  Invoke-TestGit $origin @("tag", "-a", "v1.0.0", "-m", "v1.0.0")
+  $script:PluginRoot = $managed
+  $CommandArgs = @()
+  $holdOutput = Update-CollieCheckout | Out-String
+  Assert-Contains $holdOutput "already current" "routine update holds at a major boundary"
+  Assert-Equal ((& git -C $managed describe --tags --exact-match | Out-String).Trim()) "v0.30.0" "routine update does not take v1.0.0"
+  $CommandArgs = @("--major")
+  $crossOutput = Update-CollieCheckout | Out-String
+  Assert-Contains $crossOutput "crossing to Collie 1.0.0" "update --major consents to the next major"
+  Assert-Equal ((& git -C $managed describe --tags --exact-match | Out-String).Trim()) "v1.0.0" "update --major lands on v1.0.0"
+  $CommandArgs = @()
+
   # Test 4: Managed checkout without tags refuses update and leaves HEAD unmoved
   $notagsOrigin = Join-Path $temp "notags-origin"
   New-Item -ItemType Directory -Path $notagsOrigin | Out-Null

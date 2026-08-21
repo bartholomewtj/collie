@@ -14,7 +14,17 @@
 // even while a poll's doomed fetch is still hanging.
 
 import { fetchHistory, fetchPane, fetchSnapshot, isApiErrorStatus } from "@/lib/api";
+import { parseAnsi } from "@/lib/ansi";
+import { splitLines } from "@/lib/blocks";
 import { isLostLatched } from "@/lib/connection-health";
+import {
+  dropLastPaneText,
+  loadLastPaneText,
+  loadLastSnapshot,
+  saveLastPaneText,
+  saveLastSnapshot,
+} from "@/lib/last-seen";
+import { detectNoEchoPrompt } from "@/lib/no-echo";
 import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import type {
   AgentView,
@@ -33,13 +43,11 @@ import type {
 // A superseded revalidation is aborted via the loader's request.signal; that surfaces as an
 // AbortError we must RETHROW so React Router discards the stale run — swallowing it into the
 // stale-data/error-banner path would flash a spurious "reconnecting…" on every fast poll.
-function isAbortError(e: unknown): boolean {
-  return (
-    typeof e === "object" &&
-    e !== null &&
-    "name" in e &&
-    (e as { name?: unknown }).name === "AbortError"
-  );
+function isAbortError<TThrown>(e: TThrown): boolean {
+  // `fetch` rejects an aborted request with a DOMException, which is an Error subclass in every
+  // engine Collie runs in (and in jsdom) — so an `instanceof Error` test reaches it without having
+  // to inspect the shape of an arbitrary thrown value.
+  return e instanceof Error && e.name === "AbortError";
 }
 
 // The root route's id, paired with rootLoader. Children read its data via
@@ -127,7 +135,7 @@ function hasAuthError(session: string | undefined): boolean {
   return authErrorSessions.has(session ?? "");
 }
 
-function isAuthError(error: unknown): boolean {
+function isAuthError<TThrown>(error: TThrown): boolean {
   return isApiErrorStatus(error, 401) || isApiErrorStatus(error, 403);
 }
 
@@ -176,24 +184,39 @@ function toHomeData(
 // error snapshot. Shared by BOTH the failed-refresh catch and the offline navigation fast path, so the
 // two return byte-identical shapes (the UI can't tell "fetch just failed" from "navigated while known-
 // offline" — both are "stale-but-present, flagged").
+//
+// Two tiers, in this order: the module cache (this page's own last good fetch), then the write-through
+// sessionStorage cache (lib/last-seen.ts). The second tier is what a COLD boot reads — a discarded and
+// restored PWA has an empty module cache and a failing first fetch, and without it the operator gets an
+// empty herd instead of the screen they left. A restored snapshot is promoted into the module cache so
+// the rest of this page session behaves exactly as if we had fetched it.
 function staleHome(session: string | undefined): HomeData {
-  const cached = lastSnapshot.get(session ?? "");
-  return cached
-    ? toHomeData(cached, session, true, lastSnapshotAt.get(session ?? ""))
-    : {
-        bridge: undefined,
-        device: undefined,
-        agents: [],
-        shellPanes: [],
-        workspaces: [],
-        tabs: [],
-        sessions: [],
-        session,
-        snoozedUntil: null,
-        update: undefined,
-        error: true,
-        authError: hasAuthError(session),
-      };
+  const key = session ?? "";
+  const restored = loadLastSnapshot(session);
+  const cached = lastSnapshot.get(key) ?? restored?.value;
+  if (cached) {
+    lastSnapshot.set(key, cached);
+    const at = lastSnapshotAt.get(key) ?? restored?.at;
+    if (at !== undefined && !lastSnapshotAt.has(key)) lastSnapshotAt.set(key, at);
+    return toHomeData(cached, session, true, at);
+  }
+  // Nothing cached at all — an outage on a tab that never saw a good snapshot. `error: true` is what
+  // keeps this apart from a genuinely empty herd downstream: the empty state is only allowed to say
+  // "No agents running" when the bridge really answered (components/agent-list.tsx).
+  return {
+    bridge: undefined,
+    device: undefined,
+    agents: [],
+    shellPanes: [],
+    workspaces: [],
+    tabs: [],
+    sessions: [],
+    session,
+    snoozedUntil: null,
+    update: undefined,
+    error: true,
+    authError: hasAuthError(session),
+  };
 }
 
 export async function rootLoader({ request }: { request?: Request } = {}): Promise<HomeData> {
@@ -217,6 +240,8 @@ export async function rootLoader({ request }: { request?: Request } = {}): Promi
     const at = Date.now();
     lastSnapshot.set(session ?? "", snap);
     lastSnapshotAt.set(session ?? "", at);
+    // Write-through: the same body, dated, in a store that outlives this page (lib/last-seen.ts).
+    saveLastSnapshot(session, snap, at);
     rememberAuthError(session, false);
     return toHomeData(snap, session, false, at);
   } catch (e) {
@@ -296,19 +321,47 @@ export function resetRequestedLines(paneId?: string, session?: string): void {
 // Last-known pane payload, flagged degraded — stale text (empty if this pane was never fetched),
 // truncated cleared, revision 0 (the prompt-select guard rejects a 0-revision mismatch anyway). Shared
 // by the failed-refresh catch and the offline navigation fast path, so both return the same shape.
+//
+// Same two tiers as staleHome: the module cache, then the write-through sessionStorage mirror that
+// survives the page being discarded. A restored mirror is promoted into the module cache.
 function stalePane(paneId: string, session: string | undefined, lines: number): PaneData {
   const key = paneKey(paneId, session);
+  const restored = loadLastPaneText(session, paneId);
+  const text = lastPaneText.get(key) ?? restored?.value ?? "";
+  if (text) rememberPaneText(key, text);
+  const at = lastPaneAt.get(key) ?? (text ? restored?.at : undefined);
+  if (at !== undefined && !lastPaneAt.has(key)) lastPaneAt.set(key, at);
   return {
     paneId,
     session,
-    text: lastPaneText.get(key) ?? "",
+    text,
     truncated: false,
     requestedLines: lines,
     revision: 0,
     error: true,
     authError: hasAuthError(session),
-    lastSeenAt: lastPaneAt.get(key),
+    lastSeenAt: at,
   };
+}
+
+// How much of the mirror the check below parses. `detectNoEchoPrompt` reads the last two NON-BLANK
+// lines, so 40 gives the same answer as 600 for a fraction of the work on every poll: a prompt with
+// 38 blank lines under it is not a terminal blocked waiting for a password.
+const NO_ECHO_TAIL_LINES = 40;
+
+/**
+ * Whether this mirror is a pane sitting at a password prompt — the ADR 0017 exclusion.
+ *
+ * Recognition already exists and already changes what Collie SAYS (lib/no-echo.ts); this is the one
+ * other thing it changes, and it is a subtraction: a screen the operator is being asked to type a
+ * secret into is not written to the browser's store, and whatever was written for that pane earlier is
+ * dropped. Note what it is NOT about — the prompt echoes nothing, so there is no secret on the screen
+ * to leak. It is about the pane the operator is answering `sudo` in not being kept, and about the next
+ * read of that pane never being the one that restores it.
+ */
+function holdsNoEchoPrompt(text: string): boolean {
+  const tail = text.split("\n").slice(-NO_ECHO_TAIL_LINES).join("\n");
+  return detectNoEchoPrompt(splitLines(parseAnsi(tail))) !== null;
 }
 
 export async function paneLoader({
@@ -345,6 +398,9 @@ export async function paneLoader({
     const at = Date.now();
     rememberPaneText(key, text);
     lastPaneAt.set(key, at);
+    // Write-through, EXCEPT while the pane is asking for a secret — see holdsNoEchoPrompt (ADR 0017).
+    if (holdsNoEchoPrompt(text)) dropLastPaneText(session, paneId);
+    else saveLastPaneText(session, paneId, text, at);
     rememberAuthError(session, false);
     return {
       paneId,
