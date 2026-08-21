@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.4] - 2026-08-21
+
+### Fixed
+- Grok panes no longer zebra-stripe on the phone: drop the near-black canvas fill, blank vpad rows, scrollbar █, and right-aligned timestamp pad so wrap is ordinary prose
+
 ## [0.52.3] - 2026-08-21
 
 ### Fixed

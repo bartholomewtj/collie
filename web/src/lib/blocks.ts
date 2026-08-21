@@ -179,7 +179,7 @@ function styledLine(segments: AnsiSegment[]): StyledLine {
 }
 
 // -------------------------------------------------------------------------------------------------
-// Presentation pass: noWrap classification and trailing-padding stripping.
+// Presentation pass: noWrap classification, trailing-padding stripping, and Grok canvas cleanup.
 //
 // This pass runs between `buildBlocks` and the renderer (ansi-output.tsx). `splitLines` stays byte-
 // exact so safety-critical consumers (reply guard, statusline extractors, dialog grammars) see exact
@@ -188,9 +188,22 @@ function styledLine(segments: AnsiSegment[]): StyledLine {
 // strip trailing padded spaces (≥ 2 spaces) so full-width coloured lines do not wrap into extra
 // coloured rows. Highlighted or boxed *prose* is not marked noWrap — only tables, borders, and
 // empty/padded box chrome.
+//
+// Grok paints every transcript row to the pane width with a near-black canvas fill (rgb(20,20,20)
+// plus a █ scrollbar cell) and a blank vpad row between markdown lines. On a phone those pads wrap
+// into zebra bars. This pass drops that canvas fill (user-prompt / code-block greys stay), strips
+// trailing █, and removes coloured all-space vpad rows. Plain unstyled blank lines are kept.
 
 const MIN_NO_WRAP_BORDER_LENGTH = 20;
 const MIN_TRAILING_PAD = 2;
+// Grok's scrollbar thumb. Same alphabet grok/markers.ts rstrip already uses; presentLine has to
+// know it too because Raw terminal (the default) skips that adapter.
+const FULL_BLOCK = "\u2588";
+// Near-black neutral greys Grok uses as the page canvas / scrollbar, not as a highlight. Code
+// blocks (rgb(44,44,44)) and user prompts (rgb(64,64,64)) sit above this and keep their fill.
+const CANVAS_BG_MAX = 32;
+const CANVAS_BG_SPREAD = 8;
+const CANVAS_RGB = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/;
 
 const PURE_HORIZONTAL_BORDER = new RegExp(
   `^([${PURE_HORIZONTAL_RULE_GLYPH_CLASS}])\\1{${MIN_NO_WRAP_BORDER_LENGTH - 1},}$`,
@@ -238,6 +251,105 @@ function isEnclosedTableOrChrome(trimmed: string): boolean {
   return leftover.length <= 2;
 }
 
+function isPadChar(c: string): boolean {
+  return c === " " || c === "\t" || c === FULL_BLOCK;
+}
+
+function isPresentBlank(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    if (!isPadChar(text[i]!)) return false;
+  }
+  return true;
+}
+
+function trailingPadCount(text: string): number {
+  let n = 0;
+  let sawBlock = false;
+  for (let i = text.length - 1; i >= 0; i--) {
+    const c = text[i]!;
+    if (c === FULL_BLOCK) {
+      n++;
+      sawBlock = true;
+    } else if (c === " " || c === "\t") {
+      n++;
+    } else {
+      break;
+    }
+  }
+  if (sawBlock) return n;
+  return n >= MIN_TRAILING_PAD ? n : 0;
+}
+
+function isCanvasBg(bg: string | undefined): boolean {
+  if (!bg) return false;
+  const m = CANVAS_RGB.exec(bg);
+  if (!m) return false;
+  const r = Number(m[1]);
+  const g = Number(m[2]);
+  const b = Number(m[3]);
+  return Math.max(r, g, b) <= CANVAS_BG_MAX && Math.max(r, g, b) - Math.min(r, g, b) <= CANVAS_BG_SPREAD;
+}
+
+function withoutCanvasBg(seg: AnsiSegment): AnsiSegment {
+  if (!isCanvasBg(seg.bg)) return seg;
+  const style = { ...seg.style };
+  delete style.backgroundColor;
+  const next: AnsiSegment = { ...seg, style };
+  delete next.bg;
+  return next;
+}
+
+function stripCanvasBg(segments: AnsiSegment[]): AnsiSegment[] {
+  let changed = false;
+  const out = segments.map((s) => {
+    const next = withoutCanvasBg(s);
+    if (next !== s) changed = true;
+    return next;
+  });
+  return changed ? out : segments;
+}
+
+function hasBackground(line: StyledLine): boolean {
+  return line.segments.some((s) => s.bg !== undefined);
+}
+
+// Same job as grok/chrome.ts `tightenText`: Grok (and others) right-align a short token with a
+// long space run. On a phone that run wraps into empty rows. Applied here so Raw terminal still
+// gets it. No-op when the adapter already collapsed the gap to two spaces.
+const RIGHT_ALIGN_PAD = /^(.*?)\s{8,}(\S.{0,40})$/;
+
+function removeChars(segments: AnsiSegment[], start: number, count: number): AnsiSegment[] {
+  if (count <= 0) return segments;
+  const out: AnsiSegment[] = [];
+  let i = 0;
+  const endAt = start + count;
+  for (const seg of segments) {
+    const end = i + seg.text.length;
+    if (end <= start || i >= endAt) {
+      out.push(seg);
+    } else {
+      const left = start > i ? seg.text.slice(0, start - i) : "";
+      const right = end > endAt ? seg.text.slice(endAt - i) : "";
+      const text = left + right;
+      if (text.length > 0) out.push({ ...seg, text });
+    }
+    i = end;
+  }
+  return out;
+}
+
+function collapseRightAlignedPad(segments: AnsiSegment[]): AnsiSegment[] {
+  const text = segments.map((s) => s.text).join("");
+  const m = RIGHT_ALIGN_PAD.exec(text);
+  if (!m) return segments;
+  const leftLen = m[1]!.length;
+  const rightLen = m[2]!.length;
+  const gapEnd = text.length - rightLen;
+  const remove = gapEnd - leftLen - 2;
+  if (remove <= 0) return segments;
+  return removeChars(segments, leftLen + 2, remove);
+}
+
 function stripTrailingSpaces(segments: AnsiSegment[], count: number): AnsiSegment[] {
   let toRemove = count;
   const result: AnsiSegment[] = [];
@@ -271,8 +383,9 @@ function stripTrailingSpaces(segments: AnsiSegment[], count: number): AnsiSegmen
 }
 
 /**
- * Classify a line's `noWrap` wrap policy and strip trailing padded spaces.
- * Operates purely on presentation: classifies on the original text before stripping.
+ * Classify a line's `noWrap` wrap policy, strip trailing padded spaces / █, and drop Grok's
+ * near-black canvas fill. Operates purely on presentation: classifies on the original text
+ * before stripping.
  */
 export function presentLine(line: StyledLine): StyledLine {
   if (line.segments.length === 0) return line;
@@ -287,13 +400,15 @@ export function presentLine(line: StyledLine): StyledLine {
     isAsciiPipeTableRow(trimmed);
 
   let newSegments = line.segments;
-  if (isBlank(text)) {
+  if (isPresentBlank(text)) {
     newSegments = [];
   } else {
-    const trailing = text.length - text.trimEnd().length;
-    if (trailing >= MIN_TRAILING_PAD) {
+    const trailing = trailingPadCount(text);
+    if (trailing > 0) {
       newSegments = stripTrailingSpaces(line.segments, trailing);
     }
+    newSegments = collapseRightAlignedPad(newSegments);
+    newSegments = stripCanvasBg(newSegments);
   }
 
   const segmentsChanged = newSegments !== line.segments;
@@ -309,14 +424,22 @@ export function presentLine(line: StyledLine): StyledLine {
 
 /**
  * Present a list of StyledLines. Preserves array and line object references when unchanged.
+ * Coloured all-space vpad rows (Grok's per-line block padding) are dropped so they do not
+ * become empty striped gaps on a phone; a plain unstyled blank line is kept.
  */
 export function presentLines(lines: StyledLine[]): StyledLine[] {
   let changed = false;
-  const out = lines.map((l) => {
+  const out: StyledLine[] = [];
+  for (const l of lines) {
+    const dropPad = isPresentBlank(lineText(l)) && hasBackground(l);
     const pl = presentLine(l);
     if (pl !== l) changed = true;
-    return pl;
-  });
+    if (dropPad) {
+      changed = true;
+      continue;
+    }
+    out.push(pl);
+  }
   return changed ? out : lines;
 }
 

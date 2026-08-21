@@ -265,11 +265,23 @@ describe("presentLines — full-width highlight rows and padding strip", () => {
     expect(lineText(presented)).toBe("typed input ");
   });
 
-  it("turns an all-space coloured line into empty segments (coloured empty line vanishes)", () => {
+  it("turns an all-space coloured line into empty segments (presentLine)", () => {
     const line = `${ESC}[41m            ${ESC}[0m`;
-    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    const presented = presentLine(splitLines(parseAnsi(line))[0]!);
     expect(presented.segments).toEqual([]);
     expect(lineText(presented)).toBe("");
+  });
+
+  it("drops a coloured all-space vpad row between content lines", () => {
+    const pad = `${ESC}[48;2;20;20;20m${" ".repeat(40)}${ESC}[0m`;
+    const text = `hello\n${pad}\nworld`;
+    const presented = presentLines(splitLines(parseAnsi(text)));
+    expect(presented.map(lineText)).toEqual(["hello", "world"]);
+  });
+
+  it("keeps a plain unstyled blank line between content", () => {
+    const presented = presentLines(splitLines(parseAnsi("hello\n\nworld")));
+    expect(presented.map(lineText)).toEqual(["hello", "", "world"]);
   });
 
   it("preserves interior spaces column-faithfully", () => {
@@ -406,6 +418,49 @@ describe("buildBlocks — Claude grammars (ctx.agent === 'claude')", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.kind).toBe("raw");
     expect(blocks[0]!.lines).toBe(lines);
+  });
+});
+
+describe("presentLines — Grok canvas fill and scrollbar pad", () => {
+  it("strips Grok's near-black canvas background from prose, keeping the text", () => {
+    const line = `${ESC}[48;2;20;20;20m     Env var from run.ps1.${" ".repeat(20)}${ESC}[0m`;
+    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    expect(lineText(presented)).toBe("     Env var from run.ps1.");
+    expect(presented.segments.every((s) => s.bg === undefined)).toBe(true);
+    expect(presented.segments.every((s) => s.style.backgroundColor === undefined)).toBe(true);
+  });
+
+  it("keeps a user-prompt grey (rgb 64) and a code-block grey (rgb 44)", () => {
+    const prompt = `${ESC}[48;2;64;64;64m     > hello${" ".repeat(12)}${ESC}[0m`;
+    const code = `${ESC}[48;2;44;44;44m     $envArgs = @('x')${" ".repeat(8)}${ESC}[0m`;
+    expect(presentLines(splitLines(parseAnsi(prompt)))[0]!.segments.some((s) => s.bg === "rgb(64,64,64)")).toBe(
+      true,
+    );
+    expect(presentLines(splitLines(parseAnsi(code)))[0]!.segments.some((s) => s.bg === "rgb(44,44,44)")).toBe(true);
+  });
+
+  it("strips a trailing scrollbar █ even when it is a single cell", () => {
+    const line = `${ESC}[48;2;20;20;20m     Next line${ESC}[38;2;28;28;28m${ESC}[48;2;28;28;28m█${ESC}[0m`;
+    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    expect(lineText(presented)).toBe("     Next line");
+    expect(lineText(presented)).not.toContain("█");
+  });
+
+  it("does not strip a coloured (non-grey) background", () => {
+    const line = `${ESC}[41merror${ESC}[0m`;
+    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    expect(presented.segments[0]!.bg).toBe("var(--ansi-1)");
+  });
+
+  it("collapses a right-aligned timestamp pad so wrap does not invent empty rows", () => {
+    const line = `     Yes. Tap the image button.${" ".repeat(40)}3:01 PM`;
+    const presented = presentLines(splitLines(parseAnsi(line)))[0]!;
+    expect(lineText(presented)).toBe("     Yes. Tap the image button.  3:01 PM");
+  });
+
+  it("leaves a short interior gap alone", () => {
+    const presented = presentLines(splitLines(parseAnsi("hello   world")))[0]!;
+    expect(lineText(presented)).toBe("hello   world");
   });
 });
 

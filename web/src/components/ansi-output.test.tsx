@@ -182,6 +182,18 @@ describe("mirror line wrapping", () => {
     expect(pre.textContent).toBe("title\nline after with searchtarget and https://herdr.dev/docs\n");
   });
 
+  it("does not paint Grok canvas fill or coloured vpad rows as zebra bars", () => {
+    const canvas = `${ESC}[48;2;20;20;20m`;
+    const prose = `${canvas}     Do not add --bind. Do not put it in Settings.${" ".repeat(12)}${ESC}[0m`;
+    const vpad = `${canvas}${" ".repeat(60)}${ESC}[0m`;
+    const next = `${canvas}     --lan still needs a token.${" ".repeat(20)}${ESC}[0m`;
+    const { container } = render(<AnsiOutput text={`${prose}\n${vpad}\n${next}\n`} />);
+    const pre = container.querySelector("pre")!;
+    expect(pre.textContent).toBe("     Do not add --bind. Do not put it in Settings.\n     --lan still needs a token.\n");
+    const filled = [...pre.querySelectorAll("span")].filter((s) => (s as HTMLElement).style.backgroundColor);
+    expect(filled).toHaveLength(0);
+  });
+
   it("leaves an enclosed table row unclipped under wrap={false} with interior columns intact", () => {
     const tableRow = "│ col 1      │ col 2      │";
     const { container: panned } = render(<AnsiOutput text={`${tableRow}\n`} wrap={false} />);
