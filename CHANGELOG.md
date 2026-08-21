@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.0] - 2026-08-21
+
+### Changed
+- App chrome uses the console recipe: GitHub-dark paper, Segoe UI + Consolas, info-blue you-step on Send
+
 ## [0.51.0] - 2026-08-21
 
 ### Added

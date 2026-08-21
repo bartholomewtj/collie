@@ -155,7 +155,7 @@ export function PromptSelectBlock({ prompt, onAction, disabled }: PromptSelectBl
             autoFocus
             aria-label="Feedback text"
             placeholder="Say what to do differently…"
-            className="w-full resize-none rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/60"
+            className="w-full resize-none rounded-md border-2 border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-you"
           />
           <p className="text-[11px] leading-snug text-muted-foreground">
             Sends the plan back with your notes — Claude keeps planning instead of starting work.
@@ -173,7 +173,7 @@ export function PromptSelectBlock({ prompt, onAction, disabled }: PromptSelectBl
               type="button"
               disabled={locked || draft.trim().length === 0}
               onClick={() => void sendFeedback()}
-              className="flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors active:bg-primary/25 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-md border-2 border-you bg-you-soft px-2.5 py-1.5 text-xs font-medium text-control-on-foreground transition-colors active:bg-you/20 disabled:opacity-60"
             >
               {sending === "feedback" ? busyIcon : null}
               Send feedback

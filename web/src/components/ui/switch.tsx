@@ -30,7 +30,7 @@ function Switch({ checked, onCheckedChange, disabled, id, ...rest }: SwitchProps
         // Solid border, not /60: `rounded-full` on a 24px pill leaves no straight edge, so the whole
         // stroke is antialiased and an alpha border renders lighter than it computes (2.65:1 spec →
         // 1.74:1 actual). Full strength survives the antialiasing.
-        checked ? "bg-primary" : "border-2 border-muted-foreground bg-muted",
+        checked ? "bg-you" : "border-2 border-muted-foreground bg-muted",
       )}
       {...rest}
     >

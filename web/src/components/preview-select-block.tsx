@@ -174,7 +174,7 @@ export function PreviewSelectBlock({ preview, onAction, disabled }: PreviewSelec
             autoFocus
             aria-label="Note text"
             placeholder="Add context for your answer…"
-            className="w-full resize-none rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/60"
+            className="w-full resize-none rounded-md border-2 border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-you"
           />
           <div className="flex items-center justify-end gap-1.5">
             <button
@@ -189,7 +189,7 @@ export function PreviewSelectBlock({ preview, onAction, disabled }: PreviewSelec
               type="button"
               disabled={locked || draft.trim().length === 0}
               onClick={() => void saveNote()}
-              className="flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors active:bg-primary/25 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-md border-2 border-you bg-you-soft px-2.5 py-1.5 text-xs font-medium text-control-on-foreground transition-colors active:bg-you/20 disabled:opacity-60"
             >
               {sending === "note-save" ? busyIcon : null}
               Save note

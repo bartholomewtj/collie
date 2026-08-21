@@ -25,13 +25,13 @@ export type OptionTone = "default" | "selected" | "busy";
 /** Shared surface classes for a tappable option row. Applied verbatim in all three blocks. */
 export function optionSurface(tone: OptionTone): string {
   return cn(
-    "flex w-full items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left shadow-sm transition-all",
+    "flex w-full items-start gap-2 rounded-lg border-2 px-2.5 py-1.5 text-left transition-all",
     "active:scale-[0.99]",
     tone === "busy"
-      ? "border-primary bg-primary/10" // in flight — accent, never dimmed (the spinner reads over it)
+      ? "border-you bg-you-soft" // in flight — you, never dimmed (the spinner reads over it)
       : tone === "selected"
-        ? "border-primary bg-primary/10 active:bg-primary/15 disabled:opacity-60"
-        : "border-border bg-secondary active:border-primary/50 active:bg-primary/5 disabled:opacity-60",
+        ? "border-you bg-you-soft active:bg-you/15 disabled:opacity-60"
+        : "border-border bg-secondary active:border-you/50 active:bg-you-soft disabled:opacity-60",
   );
 }
 
@@ -45,7 +45,7 @@ export function KeyBadge({ children, tone = "default" }: { children: ReactNode; 
         "mt-px flex size-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none tabular-nums",
         tone === "default"
           ? "border-border bg-background text-muted-foreground"
-          : "border-primary/40 bg-primary/15 text-primary",
+          : "border-you/40 bg-you-soft text-control-on-foreground",
       )}
     >
       {children}
@@ -67,7 +67,7 @@ export function PromptPanel({ ariaLabel, children }: { ariaLabel: string; childr
     <div
       role="group"
       aria-label={ariaLabel}
-      className="my-1.5 flex flex-col gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-sm"
+      className="my-1.5 flex flex-col gap-1.5 rounded-xl border-2 border-foreground bg-card p-1.5"
     >
       {children}
     </div>
@@ -76,7 +76,7 @@ export function PromptPanel({ ariaLabel, children }: { ariaLabel: string; childr
 
 // The small primary tick that flags an option group as "the terminal is asking you something",
 // separating the block from the raw mirror above it. Shared by both group headers below.
-const accentTick = <span aria-hidden className="h-3 w-0.5 shrink-0 rounded-full bg-primary/60" />;
+const accentTick = <span aria-hidden className="h-3 w-0.5 shrink-0 rounded-full bg-you" />;
 
 /** The compact caption above an option group — a short uppercase label, for the single-question
  *  dialogs whose actual question stays visible in the raw scrollback just above. Non-semantic (the

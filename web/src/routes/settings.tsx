@@ -54,7 +54,7 @@ export function SettingsRoute() {
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border/60 bg-background/85 px-4 py-2 backdrop-blur-md [padding-top:calc(env(safe-area-inset-top)_+_0.5rem)]">
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b-2 border-border bg-muted px-4 py-2 [padding-top:calc(env(safe-area-inset-top)_+_0.5rem)]">
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
       </header>
 

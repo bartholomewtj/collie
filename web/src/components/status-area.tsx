@@ -33,7 +33,7 @@ export function StatusArea({ className }: { className?: string }) {
       aria-live="polite"
       onClick={dismissable ? () => clearStatus() : undefined}
       className={cn(
-        "flex items-center justify-center gap-1.5 rounded-md border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur duration-200 animate-in fade-in",
+        "flex items-center justify-center gap-1.5 rounded-xl border-2 border-foreground bg-card px-3 py-1.5 text-xs font-medium duration-200 animate-in fade-in",
         dismissable
           ? "pointer-events-auto cursor-pointer border-status-blocked/50"
           : "border-border/60",

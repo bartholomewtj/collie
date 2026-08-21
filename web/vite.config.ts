@@ -137,8 +137,8 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: "#0a0a0a",
-        theme_color: "#0a0a0a",
+        background_color: "#161b22",
+        theme_color: "#161b22",
         icons: [
           // The 192/512 are safe-zone-padded, so they serve as both the regular ("any") install
           // icon and the Android adaptive ("maskable") icon. (favicon.svg is intentionally NOT a
