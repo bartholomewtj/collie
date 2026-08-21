@@ -190,7 +190,7 @@ export function SpaceTree({
       />
 
       {filterOpen && (
-        <label className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
+        <label className="flex items-center gap-2 rounded-xl border-2 border-foreground bg-card px-3 py-2">
           <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <input
             type="search"

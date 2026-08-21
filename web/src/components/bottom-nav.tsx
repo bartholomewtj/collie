@@ -33,7 +33,7 @@ export function BottomNav({ session, traces }: BottomNavProps) {
   return (
     <nav
       aria-label="Main"
-      className="sticky bottom-0 z-20 mx-auto flex w-full max-w-screen-sm shrink-0 border-t border-border/60 bg-muted pb-[env(safe-area-inset-bottom)]"
+      className="sticky bottom-0 z-20 mx-auto flex w-full max-w-screen-sm shrink-0 border-t-2 border-border bg-muted pb-[env(safe-area-inset-bottom)]"
     >
       {items.map((it) => (
         <button

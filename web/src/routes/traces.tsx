@@ -70,9 +70,9 @@ export function lastRunLine(row: Pick<TraceRow, "running" | "lastRun">, now = Da
 
 /** The colour of a status word, shared with the pane's run chips. */
 function statusTone(row: Pick<TraceRow, "running" | "lastRun">): string {
-  if (row.running) return "text-emerald-400";
-  if (row.lastRun?.status === "success") return "text-sky-400";
-  if (row.lastRun?.status === "fail") return "text-rose-400";
+  if (row.running) return "text-status-running";
+  if (row.lastRun?.status === "success") return "text-status-done";
+  if (row.lastRun?.status === "fail") return "text-status-blocked";
   return "text-muted-foreground";
 }
 
@@ -118,8 +118,8 @@ export function TracesRoute() {
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">{r.repo}</span>
                         {r.running && (
-                          <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                            <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-400" />
+                          <span className="flex items-center gap-1 text-[11px] font-semibold text-status-running">
+                            <span aria-hidden="true" className="size-1.5 rounded-full bg-status-running" />
                             running
                           </span>
                         )}
@@ -199,7 +199,7 @@ function RunChips({
               aria-hidden="true"
               className={cn(
                 "size-1.5 rounded-full",
-                running ? "bg-emerald-400" : r.status === "success" ? "bg-sky-400" : r.status === "fail" ? "bg-rose-400" : "bg-muted-foreground/50",
+                running ? "bg-status-running" : r.status === "success" ? "bg-status-done" : r.status === "fail" ? "bg-status-blocked" : "bg-muted-foreground/50",
               )}
             />
             <span className="font-mono">{r.adwId}</span>

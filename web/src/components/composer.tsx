@@ -981,7 +981,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               // bottom edge.
               "block pr-11",
               direct.active &&
-                "border-primary focus-visible:border-primary focus-visible:ring-primary/30",
+                "border-you focus-visible:border-you focus-visible:ring-you/30",
             )}
             disabled={locked}
             rows={1}
@@ -1032,7 +1032,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ) : (
             <Button
               size="icon"
-              className="size-11 shrink-0 rounded-full"
+              className="size-11 shrink-0 rounded-lg border-2 border-you bg-you text-you-foreground hover:bg-you/90"
               onClick={direct.active ? () => direct.deactivate() : onSendClick}
               disabled={locked || sending}
               aria-label={direct.active ? "Stop typing into terminal" : "Send"}

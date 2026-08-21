@@ -101,7 +101,7 @@ function CheckboxPhase({
                 className={cn(
                   "mt-px flex size-4 shrink-0 items-center justify-center rounded border",
                   option.checked
-                    ? "border-primary bg-primary/20 text-primary"
+                    ? "border-you bg-you-soft text-control-on-foreground"
                     : "border-border bg-background",
                 )}
               >
@@ -134,7 +134,7 @@ function CheckboxPhase({
         // child-text swap on a focused control is not reliably re-announced.
         aria-label={multi.advanceLabel}
         onClick={() => onPress("advance", { kind: "advance" })}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/60 bg-primary/15 px-3 py-2 text-sm font-medium text-foreground transition-colors active:bg-primary/25 disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-you bg-you-soft px-3 py-2 text-sm font-medium text-control-on-foreground transition-colors active:bg-you/20 disabled:opacity-60"
       >
         {sending === "advance" ? spinnerSm : null}
         {multi.advanceLabel}
@@ -186,7 +186,7 @@ function ReviewPhase({
           type="button"
           disabled={locked}
           onClick={() => onPress("confirm", { kind: "confirm" })}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/60 bg-primary/15 px-3 py-2 text-sm font-medium text-foreground transition-colors active:bg-primary/25 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-you bg-you-soft px-3 py-2 text-sm font-medium text-control-on-foreground transition-colors active:bg-you/20 disabled:opacity-60"
         >
           {sending === "confirm" ? spinnerSm : null}
           Submit answers

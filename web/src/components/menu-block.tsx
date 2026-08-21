@@ -150,7 +150,7 @@ export function MenuBlock({ menu, lines, onAction, disabled }: MenuBlockProps) {
                 type="button"
                 disabled={locked}
                 onClick={() => press(id, { keys: action.keys, nav: false })}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/60 bg-primary/15 px-3 py-2 text-sm font-medium text-foreground transition-colors active:bg-primary/25 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-you bg-you-soft px-3 py-2 text-sm font-medium text-control-on-foreground transition-colors active:bg-you/20 disabled:opacity-60"
               >
                 {sending === id ? spinner : null}
                 {action.label}

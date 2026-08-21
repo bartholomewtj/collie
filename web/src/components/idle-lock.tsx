@@ -5,11 +5,11 @@ import { DogGallop } from "@/components/dog-gallop";
 // resuming returns you to the exact screen, draft and scroll position you left — nothing is unmounted
 // and nothing is rebuilt.
 //
-// It is deliberately GLASS rather than opaque. The cover's job is to say "this is frozen, not live" —
-// a paused mirror read as a current one is the actual hazard — and it does that better while the herd
-// stays legible underneath: you can see WHAT is stale instead of losing the screen entirely. The
-// trade is that an unattended screen no longer hides agent output; that's accepted, because the
-// device's own screen lock is the thing that was ever going to handle shoulder-surfing.
+// The cover is a dim, not glass. The job is to say "this is frozen, not live" — a paused mirror
+// read as a current one is the actual hazard — and a paper scrim does that while the herd stays
+// faintly visible underneath. Blur was cut: house chrome is flat. The trade is that an unattended
+// screen no longer hides agent output; that's accepted, because the device's own screen lock is
+// the thing that was ever going to handle shoulder-surfing.
 //
 // It leads with the Collie mark for a plain reason: this is the one screen in the app with no header,
 // no herd chrome and no nav, so without the badge a full-viewport panel is unattributable — it could
@@ -32,15 +32,13 @@ export function IdleLock({ onUnlock, catchingUp = false }: IdleLockProps) {
       role="dialog"
       aria-modal="true"
       aria-label="Collie paused"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/40 px-6 backdrop-blur-[3px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 px-6"
     >
-      {/* The panel carries its own, heavier blur so the copy stays readable over arbitrary pane text,
-          while the scrim above keeps the herd recognisable behind it. */}
-      <div className="flex flex-col items-center gap-6 rounded-3xl border border-border/60 bg-card/70 px-8 py-10 text-center shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl">
+      <div className="flex flex-col items-center gap-6 rounded-xl border-2 border-foreground bg-card px-8 py-10 text-center">
         <div className="flex flex-col items-center gap-3">
           {/* Same ringed badge the header uses, scaled up — the collie art is transparent, so the ring
               is what makes it read as a deliberate mark rather than a floating sticker. */}
-          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-full bg-zinc-500/40 ring-1 ring-[whitesmoke]/60">
+          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-full bg-card ring-2 ring-foreground">
             {catchingUp ? (
               // Same box, gallop swapped in for the static mark — exactly how CollieHome renders the
               // header mark when the connection is working, so "the dog is running" means one thing
@@ -69,7 +67,11 @@ export function IdleLock({ onUnlock, catchingUp = false }: IdleLockProps) {
         {/* The button doesn't just disable during the catch-up — it's replaced by the gallop above, so
             there's nothing to press twice and no dead control to look at. */}
         {!catchingUp && (
-          <Button size="lg" onClick={onUnlock}>
+          <Button
+            size="lg"
+            className="border-2 border-you bg-you text-you-foreground hover:bg-you/90"
+            onClick={onUnlock}
+          >
             Tap to resume
           </Button>
         )}

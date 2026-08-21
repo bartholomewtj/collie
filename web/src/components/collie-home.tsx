@@ -41,10 +41,10 @@ export function CollieHome({ onHome, trouble, lost = false, wordmark = false, cl
         className,
       )}
     >
-      {/* A whitesmoke ring frames the mark so it reads as a deliberate badge against the dark header
+      {/* An ink ring frames the mark so it reads as a deliberate badge against the header
           (the collie art is transparent, so it otherwise floats). The ring wraps every state so the
           frame doesn't pop in/out as the connection settles out of the gallop. */}
-      <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-zinc-500/40 ring-1 ring-[whitesmoke]/60">
+      <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-card ring-2 ring-foreground">
         {gallop ? (
           <DogGallop running size="2rem" />
         ) : lost ? (
