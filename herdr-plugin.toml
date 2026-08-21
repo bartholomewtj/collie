@@ -1,49 +1,59 @@
 id = "herdr.collie"
 name = "Collie"
-version = "0.50.1"
+version = "0.51.0"
 min_herdr_version = "0.7.0"
 description = "Mobile web UI to monitor and reply to your agent herd, served over Tailscale"
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 
-# This plugin is a thin launcher. The actual bridge runs as a systemd --user service so it
-# outlives Herdr restarts (see ARCHITECTURE.md §3). The actions below shell out to
-# scripts/collie-ctl.sh, which gets HERDR_SOCKET_PATH / HERDR_PLUGIN_CONFIG_DIR injected.
+# This plugin is a thin launcher. POSIX hosts run scripts/collie-ctl.sh. Windows Herdr cannot:
+# PATH's bash.exe is the WSL stub, and Herdr rejects duplicate action ids, so one command array
+# has to work on the host that actually runs the action. Lifecycle verbs therefore call
+# build/collie-action-v1.exe, which launches contrib/windows/collie-ctl.ps1. Linux/macOS still
+# run the same verbs via `bash scripts/collie-ctl.sh …` from a terminal; the Herdr action on
+# those hosts needs the exe (or a local manifest edit back to bash). This fork's operator is
+# on Windows — that is the surface the in-app banner copies.
 
 # Build the web UI at install time. Herdr runs [[build]] steps ONLY on `herdr plugin install`
-# (GitHub) — NOT on `herdr plugin link` (local dev), which instead builds lazily on first `start`
-# (collie-ctl.sh's ensure_build). Delegating to `collie-ctl.sh build` keeps a single build
-# definition (version gate → cd web && bun install && bun run build) shared with the `update` action.
-# Still needs Bun on PATH — building the frontend is the one unavoidable Bun step.
+# (GitHub) — NOT on `herdr plugin link` (local dev), which instead builds lazily on first `start`.
+# Two build rows are legal (herdr picks the host-matching one).
 [[build]]
 command = ["bash", "scripts/collie-ctl.sh", "build"]
 platforms = ["linux", "macos"]
+
+[[build]]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "contrib/windows/collie-ctl.ps1", "build"]
+platforms = ["windows"]
 
 [[actions]]
 id = "start"
 title = "Start web bridge"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "start"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "start"]
 
 [[actions]]
 id = "stop"
 title = "Stop web bridge"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "stop"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "stop"]
 
 [[actions]]
 id = "restart"
 title = "Restart web bridge"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "restart"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "restart"]
 
 # Full teardown: stops + disables the service, removes the systemd --user unit, and resets
 # tailscale serve. Leaves the .env and the checkout (so `start` can bring it right back). See
-# scripts/collie-ctl.sh → cmd_uninstall.
+# scripts/collie-ctl.sh → cmd_uninstall / contrib/windows/collie-ctl.ps1 Uninstall-Collie.
 [[actions]]
 id = "uninstall"
 title = "Uninstall web bridge (remove service)"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "uninstall"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "uninstall"]
 
 # Link-mode plugins ARE their on-disk git checkout (Herdr has no native `plugin update`), so this
 # action pulls + rebuilds + restarts in one step. See scripts/collie-ctl.sh → cmd_update.
@@ -51,7 +61,8 @@ command = ["bash", "scripts/collie-ctl.sh", "uninstall"]
 id = "update"
 title = "Update plugin"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "update"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "update"]
 
 # The consent for a MAJOR upgrade (ADR 0025). `update` stays inside the major this install is on, so
 # crossing one is a separate, deliberate invocation — and it has to be invokable from HERE, because a
@@ -62,24 +73,96 @@ command = ["bash", "scripts/collie-ctl.sh", "update"]
 id = "update-major"
 title = "Update across a major version"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "update", "--major"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "update", "--major"]
 
 [[actions]]
 id = "url"
 title = "Show bridge URL"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "url"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "url"]
 
 [[actions]]
 id = "status"
 title = "Bridge status"
 contexts = ["workspace"]
-command = ["bash", "scripts/collie-ctl.sh", "status"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "status"]
 
 [[actions]]
 id = "version"
 title = "Show version"
 contexts = ["workspace"]
+platforms = ["windows"]
+command = ["build/collie-action-v1.exe", "version"]
+
+# POSIX twins of the lifecycle verbs. Same titles, different ids — herdr rejects duplicate action
+# ids even when platforms differ (0.7.1 through 0.8.0). Linux/macOS operators still type
+# `herdr plugin action invoke start --plugin herdr.collie` if they locally edit this file; the
+# committed ids that match the banner (`update`, `restart`, `update-major`) are the Windows ones.
+# Use the shell script on POSIX: `bash scripts/collie-ctl.sh update`.
+[[actions]]
+id = "start-posix"
+title = "Start web bridge (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "start"]
+
+[[actions]]
+id = "stop-posix"
+title = "Stop web bridge (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "stop"]
+
+[[actions]]
+id = "restart-posix"
+title = "Restart web bridge (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "restart"]
+
+[[actions]]
+id = "uninstall-posix"
+title = "Uninstall web bridge (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "uninstall"]
+
+[[actions]]
+id = "update-posix"
+title = "Update plugin (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "update"]
+
+[[actions]]
+id = "update-major-posix"
+title = "Update across a major version (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "update", "--major"]
+
+[[actions]]
+id = "url-posix"
+title = "Show bridge URL (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "url"]
+
+[[actions]]
+id = "status-posix"
+title = "Bridge status (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
+command = ["bash", "scripts/collie-ctl.sh", "status"]
+
+[[actions]]
+id = "version-posix"
+title = "Show version (POSIX)"
+contexts = ["workspace"]
+platforms = ["linux", "macos"]
 command = ["bash", "scripts/collie-ctl.sh", "version"]
 
 # Turning push on is two steps that both used to happen OUTSIDE Herdr: generate a VAPID keypair with
@@ -90,15 +173,17 @@ command = ["bash", "scripts/collie-ctl.sh", "version"]
 #
 # NOTE: on Herdr <0.8.0 a managed install invokes the action set cached at INSTALL time (ADR 0006),
 # so these two appear only after the next `herdr plugin install`. The shell verbs work immediately
-# either way.
+# either way. The Windows ctl does not yet wrap these two, so they stay POSIX.
 [[actions]]
 id = "push-keys"
 title = "Generate push keys"
 contexts = ["workspace"]
+platforms = ["linux", "macos"]
 command = ["bash", "scripts/collie-ctl.sh", "push-keys"]
 
 [[actions]]
 id = "push-test"
 title = "Send a test notification"
 contexts = ["workspace"]
+platforms = ["linux", "macos"]
 command = ["bash", "scripts/collie-ctl.sh", "push-test"]

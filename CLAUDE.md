@@ -78,7 +78,8 @@ page and shows the command to run. Pushing a `v*` tag auto-creates that GitHub R
 commands) via `.github/workflows/release.yml`. **Always express user-facing update/restart
 instructions as Herdr plugin actions** — `herdr plugin action invoke update --plugin herdr.collie`
 (or `restart`) — never `collie-ctl.sh …` / `systemctl … collie`, which depend on the caller's cwd and
-the unit name; the Herdr action runs from anywhere. Routine `update` stays inside the installed
+the unit name; the Herdr action runs from anywhere. On Windows those actions run
+`build/collie-action-v1.exe` (PATH's bash is the WSL stub). Routine `update` stays inside the installed
 major; crossing one is `herdr plugin action invoke update-major --plugin herdr.collie`
 ([ADR 0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)).
 
