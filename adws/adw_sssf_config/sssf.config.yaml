@@ -1,18 +1,16 @@
 # sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
 #
-# This is the BALANCED roster (roster-review log, 2026-08-22): every agent
-# runs through pi on OpenRouter, so a full run costs roughly $1.29 in METERED
-# API dollars — this is not the old zero-cost subscription roster. Judgement sits
-# with the planner (glm-5.3) and the reviewer (grok-4.6), both on different
-# vendors from the builder (gpt-5.6-luna). Scout is deepseek-v4-flash-0731;
-# documenter is muse-spark-1.2-contributor. Five vendors (Z.ai, OpenAI,
-# DeepSeek, xAI, Meta).
+# Mixed roster. Planner is Claude Code opus (subscription, thinking high) —
+# glm-5.3 via OpenRouter hung on an idle timeout while dumping thinking.
+# The other seats are the 2026-08-22 Balanced OpenRouter set via pi: builder
+# gpt-5.6-luna, scout deepseek-v4-flash-0731, reviewer grok-4.6, documenter
+# muse-spark-1.2-contributor. Metered cost is the four pi seats only.
 #
 # The key comes from pi's own models.json (`~/.pi/agent/models.json`, or
 # PI_MODELS_PATH), NOT from .env — nothing in adws/ reads OPENROUTER_API_KEY.
-# `z-ai/glm-5.3`, `deepseek/deepseek-v4-flash-0731`, and
-# `meta/muse-spark-1.2-contributor` are registered as custom models in that
-# file; `pi --list-models` is the check if a seat ever fails to resolve.
+# `deepseek/deepseek-v4-flash-0731` and `meta/muse-spark-1.2-contributor`
+# are registered as custom models in that file; `pi --list-models` is the
+# check if a pi seat ever fails to resolve. Planner uses the local `claude` CLI.
 #
 # There are no shipped cost tiers to choose from. This file IS the roster: edit
 # it once, here, after install. `coding_agent:` is per-agent — `claude_code`,
@@ -60,9 +58,9 @@ observability:
 
 agents:
   - name: planner
-    coding_agent: pi               # judgement seat, on a different vendor from the
-    model: openrouter/z-ai/glm-5.3 # builder — Arena #1, ~$0.26 a run. Custom
-    thinking: high                 # model in pi's models.json (see the header note).
+    coding_agent: claude_code      # subscription CLI — not OpenRouter
+    model: opus                    # judgement seat; --effort high
+    thinking: high
     color: "#a78bfa"                 # optional hex — the agent's lane color in the visualizer
     purpose: Turn a request into a plan the builder can implement without asking questions.
     prompt_engineering:
