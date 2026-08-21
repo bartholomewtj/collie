@@ -136,6 +136,25 @@ describe("mirror line wrapping", () => {
     expect(pre.textContent).toBe(`${row}\n`);
   });
 
+  it("groups consecutive Grok edit/diff gutter rows into one pan scroller", () => {
+    const del = `${ESC}[48;2;66;14;20m       45  - hang on Windows${ESC}[0m`;
+    const ins = `${ESC}[48;2;6;56;6m       42  - hang on Windows${ESC}[0m`;
+    const ctx = "       38  ## Open";
+    const text = `intro\n${ctx}\n${del}\n${ins}\noutro\n`;
+    const { container } = render(<AnsiOutput text={text} />);
+    const pans = container.querySelectorAll("[data-mirror-pan]");
+    expect(pans).toHaveLength(1);
+    expect(pans[0]!.textContent).toBe("       38  ## Open\n       45  - hang on Windows\n       42  - hang on Windows");
+    const red = [...pans[0]!.querySelectorAll("span")].find(
+      (s) => (s as HTMLElement).style.backgroundColor === "rgb(66, 14, 20)",
+    );
+    const green = [...pans[0]!.querySelectorAll("span")].find(
+      (s) => (s as HTMLElement).style.backgroundColor === "rgb(6, 56, 6)",
+    );
+    expect(red).toBeTruthy();
+    expect(green).toBeTruthy();
+  });
+
   it("groups consecutive table rows into one pan scroller so columns stay aligned", () => {
     const r1 = "| Flag | Default | Type | Applies to | Notes |";
     const r2 = "|------|---------|------|------------|-------|";

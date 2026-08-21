@@ -52,7 +52,8 @@ export interface StyledLine {
   segments: AnsiSegment[];
   /**
    * Keep this line on one visual row when the mirror wraps: long horizontal rules, rounded box
-   * borders, or enclosed table/chrome rows. Boxed or highlighted *prose* wraps.
+   * borders, enclosed table/chrome rows, or a line-number gutter (Grok edit/diff). Boxed or
+   * highlighted *prose* wraps.
    */
   noWrap?: true;
 }
@@ -220,6 +221,16 @@ const CHROME_STRIP_RE = new RegExp(
   `[${PURE_HORIZONTAL_RULE_GLYPH_CLASS}${BOX_ENCLOSURE_GLYPH_CLASS}\\s]`,
   "gu",
 );
+
+// Grok edit/diff rows: indent, then a 1–4 digit file line number, then two spaces (or the rest
+// of the row is blank). The number is a gutter, not a markdown list (`1. item`) or a date
+// (`2026-08-21`). Wrapping these on a phone drops the continuation under the gutter and piles
+// red/green dual lines on top of each other — they pan as a group like a table.
+const LINE_NUMBER_GUTTER = /^\s{2,}\d{1,4}(?:  |\s*$)/;
+
+function isLineNumberGutterRow(text: string): boolean {
+  return LINE_NUMBER_GUTTER.test(text);
+}
 
 // GFM / ASCII pipe tables: `| a | b |` and the delimiter row. Two pipes (`| foo |`) is a shell
 // snippet, not a table; three or more plus the 20-cell floor is the same bar the box-enclosure
@@ -397,7 +408,8 @@ export function presentLine(line: StyledLine): StyledLine {
     PURE_HORIZONTAL_BORDER.test(trimmed) ||
     ROUNDED_BOX_BORDER.test(trimmed) ||
     isEnclosedTableOrChrome(trimmed) ||
-    isAsciiPipeTableRow(trimmed);
+    isAsciiPipeTableRow(trimmed) ||
+    isLineNumberGutterRow(text);
 
   let newSegments = line.segments;
   if (isPresentBlank(text)) {

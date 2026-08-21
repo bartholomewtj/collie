@@ -169,6 +169,8 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
       `│ Yes. Tap the image button on the reply box. This is a long answer. │`,
     ],
     ["boxed grok draft", "│ > this is a long draft that will not fit on one row │"],
+    ["markdown numbered list", "     1. #140 — src/gene_analyser/cli.py serve binds"],
+    ["ISO date", "  2026-08-21 handoff after 0.52.3"],
   ])("does not mark %s", (_name, text) => {
     expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBeUndefined();
   });
@@ -184,6 +186,16 @@ describe("presentLines — no-wrap terminal borders and boxes", () => {
     ["short rounded box ≥ 20 chars", `╭${"─".repeat(19)}╮`],
     ["GFM pipe table row", "| Flag | Default | Type | Applies to | Notes |"],
     ["GFM delimiter row", "|---|---|---|---|---|"],
+    ["Grok diff context row", "       38  ## Open"],
+    ["Grok diff blank numbered row", "       39"],
+    [
+      "Grok diff delete row",
+      "       45  - claudeSSSF #68 — pi Git Bash `grep | head` hang on Windows",
+    ],
+    [
+      "Grok diff insert row",
+      "       42  - claudeSSSF #68 -- pi Git Bash `grep | head` hang on Windows",
+    ],
   ])("marks %s as noWrap", (_name, text) => {
     expect(presentLines(splitLines(parseAnsi(text)))[0]!.noWrap).toBe(true);
   });
