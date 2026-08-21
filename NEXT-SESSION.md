@@ -12,7 +12,7 @@ Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered
 
 0.52.3 is on `main` and the bridge was restarted. #122 makes Grok Conversation history per-tab:
 several grok tabs in one space no longer all show the newest session's log. #121 caught README /
-CONTEXT up to wrap-on. Phone: reopen the PWA if history still looks shared (bridge change, no
+CONTEXT up to date. Phone: reopen the PWA if history still looks shared (bridge change, no
 frontend rebuild). #120 wrap/focus and #119 console restyle are in too.
 
 ## Resume with
@@ -71,8 +71,7 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
   Do not `taskkill /IM bun.exe`.
 - **Raw terminal on means no prompt buttons and no idle-tail / commands-only collapse.** 0.45.0
   default. Grammar / hide-live bugs need ⚙ → Raw terminal off.
-- **Wrap on wraps prose; tables / borders / empty box chrome still pan.** Classifier is
-  `presentLine` in `web/src/lib/blocks.ts`.
+- **The live mirror always pans; there is no wrap toggle.**
 - **Do not trust an ADW's own success line.** The denylist rolls back named files, but still
   read the diff's file list against Out of scope.
 - **The source being right tells you nothing about what the phone runs.** `/api/config` → `build`

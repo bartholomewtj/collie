@@ -278,9 +278,8 @@ const BORDER_ONLY = /^[╭╮╰╯─│\s]*$/;
 /**
  * Shave the border glyphs off a statusline row, keeping every surviving segment STYLED.
  *
- * Returns a StyledLine without `noWrap`: that flag marks a row as a known terminal-width border to be
- * kept on one visual line, and once the border is gone this row is ordinary (narrow) content that
- * should wrap like the rest of the strip.
+ * Returns a StyledLine with the box glyphs shaved off; the remaining text is ordinary statusline
+ * content.
  */
 function trimBorderSegments(line: StyledLine): StyledLine {
   let from = 0;

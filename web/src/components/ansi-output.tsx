@@ -42,11 +42,6 @@ type GenericMenuBlock = Extract<Block, { kind: "menu" }>;
 export interface AnsiOutputProps {
   text: string;
   className?: string;
-  /** true = wrap; the block breaks at the viewport width instead of scrolling horizontally. Default
-   *  true — the mirror is mostly agent prose, and a phone shows far fewer columns than the desktop
-   *  width panes are spawned at, so panning was the common case. Table/box rows still pan inside
-   *  wrap. Disable Wrap in View to pan the whole mirror, column-faithful. */
-  wrap?: boolean;
   /** Monospace font size in px. Default 11. */
   fontSize?: number;
   /** Active find query. Empty (the default) = not searching: the fast, allocation-free render path. */
@@ -106,32 +101,19 @@ const NO_MATCHES: FindMatch[] = [];
 //      beside a link can bleed to the anchor.
 // Don't convert it to a px value, and don't "fix" it to fit the line box — that would undo (1).
 const LINK_CLASS =
-  "underline decoration-1 underline-offset-2 break-all cursor-pointer py-[0.35em]";
+  "underline decoration-1 underline-offset-2 cursor-pointer py-[0.35em]";
 
-// Consecutive noWrap rows (tables, box chrome) share one horizontal scroller so columns stay
-// aligned while you pan. `inline-block` + `align-bottom` keeps the terminal grid's line advance
-// (same reason as the old clip span). `overflow-hidden` was the previous treatment and cropped
-// the table; pan is the point of marking the row noWrap. Boxed/highlighted prose is not noWrap.
-const PAN_GROUP_CLASS =
-  "inline-block w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain align-bottom whitespace-pre break-normal [touch-action:pan-x_pan-y]";
-
-function preClass(wrap: boolean, className?: string): string {
+function preClass(className?: string): string {
   return cn(
     "m-0 font-mono leading-[1.25] tracking-normal text-foreground [font-variant-ligatures:none]",
     MIRROR_SPACE,
     MIRROR_INVERT,
-    wrap
-      ? // `min-w-0 w-full max-w-full` keeps the pre at the pane width so the noWrap pan groups
-        // inside can actually overflow (without this they grow the pre and the outer list clips
-        // them with no scroller). Do NOT put overflow-x-auto on the pre itself — that steals
-        // vertical scroll from ChatMessageList (see wrap-off comment).
-        "min-w-0 w-full max-w-full whitespace-pre-wrap break-words"
-      : // Horizontal pan for wide TUI tables. `overflow-x-auto` forces `overflow-y` to compute to
-        // `auto` (CSS overflow quirk), and a flex item with non-visible overflow may shrink below its
-        // content height — the <pre> then becomes the vertical scroller and ChatMessageList's
-        // stickiness is a no-op (pane opens stuck at the oldest scrollback). `shrink-0` keeps the
-        // pre at content height so vertical scroll stays on the outer list; x-scroll still works.
-        "min-w-0 w-full max-w-full shrink-0 whitespace-pre overflow-x-auto overscroll-x-contain [touch-action:pan-x_pan-y]",
+    // Horizontal pan, column-faithful. `overflow-x-auto` forces `overflow-y` to compute to `auto`
+    // (CSS overflow quirk), and a flex item with non-visible overflow may shrink below its content
+    // height — the <pre> then becomes the vertical scroller and ChatMessageList's stickiness is a
+    // no-op (pane opens stuck at the oldest scrollback). `shrink-0` keeps the pre at content height
+    // so vertical scroll stays on the outer list; x-scroll still works.
+    "min-w-0 w-full max-w-full shrink-0 whitespace-pre overflow-x-auto overscroll-x-contain [touch-action:pan-x_pan-y]",
     className,
   );
 }
@@ -162,7 +144,6 @@ function preClass(wrap: boolean, className?: string): string {
 export const AnsiOutput = memo(function AnsiOutput({
   text,
   className,
-  wrap = true,
   fontSize = 11,
   query = "",
   currentMatch = -1,
@@ -355,36 +336,8 @@ export const AnsiOutput = memo(function AnsiOutput({
     const parts: ReactNode[] = [];
     if (bi > 0) parts.push("\n");
 
-    if (!wrap) {
-      for (let li = 0; li < block.lines.length; li++) {
-        parts.push(renderLineBody(block.lines[li]!, li));
-      }
-    } else {
-      let li = 0;
-      while (li < block.lines.length) {
-        const line = block.lines[li]!;
-        if (!line.noWrap) {
-          parts.push(renderLineBody(line, li));
-          li++;
-          continue;
-        }
-        const start = li;
-        li++;
-        while (li < block.lines.length && block.lines[li]!.noWrap) li++;
-        // Newline before the group stays outside the scroller so pan text is the rows, not a
-        // leading blank, and a swipe starts on the table.
-        if (start > 0) {
-          offset += 1;
-          parts.push("\n");
-        }
-        const grouped: ReactNode[] = [];
-        for (let j = start; j < li; j++) grouped.push(renderLineBody(block.lines[j]!, j, j > start));
-        parts.push(
-          <span key={`pan-${start}`} data-mirror-pan="" className={PAN_GROUP_CLASS}>
-            {grouped}
-          </span>,
-        );
-      }
+    for (let li = 0; li < block.lines.length; li++) {
+      parts.push(renderLineBody(block.lines[li]!, li));
     }
 
     return <Fragment key={bi}>{parts}</Fragment>;
@@ -393,7 +346,7 @@ export const AnsiOutput = memo(function AnsiOutput({
   return (
     <>
       {rawBlocks.length > 0 && (
-        <pre className={preClass(wrap, className)} style={{ fontSize: `${fontSize}px` }}>
+        <pre className={preClass(className)} style={{ fontSize: `${fontSize}px` }}>
           {rawBlocks.map(renderBlock)}
         </pre>
       )}

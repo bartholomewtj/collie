@@ -6,6 +6,14 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.52.4] - 2026-08-21
+
+### Changed
+- Live mirror never wraps. The Wrap lines toggle is gone; swipe sideways for the rest of a row
+
+### Fixed
+- Grok panes no longer zebra-stripe on the phone: drop the near-black canvas fill, blank vpad rows, scrollbar █, and right-aligned timestamp pad
+
 ## [0.52.3] - 2026-08-21
 
 ### Fixed

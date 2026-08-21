@@ -429,10 +429,9 @@ session it finds is drivable through the same URL — including a private or san
 **Collie follows your phone by default.** To pin it, open **Settings → Appearance** and pick
 **System**, **Light** or **Dark** — per device, stored in the browser.
 
-Pane display (wrap, **raw terminal**, text size, tap-to-type) lives on the composer ⚙, also per
+Pane display (**raw terminal**, text size, tap-to-type) lives on the composer ⚙, also per
 device. **Raw terminal is on by default** — the plain TUI, no tappable prompt buttons. Turn it off
-there to get the parsed view. Wrap on (the default) reflows prose; tables, borders, and empty box
-chrome still pan sideways.
+there to get the parsed view. The live mirror always pans sideways, column-faithful.
 
 The terminal mirror is the exception: it always renders on a **dark ground** and light mode *inverts*
 it rather than re-colouring it. Agents emit absolute colours chosen for a black terminal, and

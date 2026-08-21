@@ -20,7 +20,6 @@ import { FONT_MAX, FONT_MIN } from "@/hooks/use-display-prefs";
 
 interface DisplayPrefsContentProps {
   prefs: DisplayPrefs;
-  setWrap: (wrap: boolean) => void;
   stepFontSize: (delta: number) => void;
   setRawTerminal: (raw: boolean) => void;
   setTapToFocus: (tapToFocus: boolean) => void;
@@ -54,26 +53,12 @@ function Row({
 
 export function DisplayPrefsContent({
   prefs,
-  setWrap,
   stepFontSize,
   setRawTerminal,
   setTapToFocus,
 }: DisplayPrefsContentProps) {
   return (
     <div className="divide-y divide-border/60 border-t border-border/60 bg-muted/30 px-3 py-1">
-      <Row
-        label="Wrap lines"
-        hint="On wraps prose; tables still pan. Off pans the whole mirror, column-faithful."
-        htmlFor="pref-wrap"
-        control={
-          <Switch
-            id="pref-wrap"
-            checked={prefs.wrap}
-            onCheckedChange={setWrap}
-            aria-label="Wrap lines"
-          />
-        }
-      />
       <Row
         label="Tap to type"
         hint="On, tapping the mirror anywhere opens the keyboard. Off, the mirror behaves like a document — taps land on the text and only the composer opens the keyboard."

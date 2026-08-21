@@ -4,11 +4,6 @@ import { useCallback, useState } from "react";
 // Safe to call in SSR contexts (localStorage guarded throughout).
 
 export interface DisplayPrefs {
-  /** Whether the mirror wraps long lines (default: true). The mirror is mostly agent prose, and a
-   *  phone shows ~45-50 columns against panes herdr spawns at desktop width (190 in one reporter's
-   *  session), so panning was the common case, not the exception. Column-faithful no-wrap for TUI
-   *  tables stays one tap away in View. */
-  wrap: boolean;
   /** Font size in px for the mirror pre (default: 12, range: 9–16). */
   fontSize: number;
   /**
@@ -32,12 +27,12 @@ export interface DisplayPrefs {
 }
 
 // v5: rawTerminal default flipped to true. A v4 payload already has `rawTerminal: false` written in
-// (any wrap/font/tap save stored the old default), so only a key bump gives existing installs the
+// (any font/tap save stored the old default), so only a key bump gives existing installs the
 // new first-open view. Wrap / font / tapToFocus reset to DEFAULTS with it.
 const STORAGE_KEY = "collie:display-prefs:v5";
 export const FONT_MIN = 9;
 export const FONT_MAX = 16;
-const DEFAULTS: DisplayPrefs = { wrap: true, fontSize: 12, rawTerminal: true, tapToFocus: true };
+const DEFAULTS: DisplayPrefs = { fontSize: 12, rawTerminal: true, tapToFocus: true };
 
 function clampFont(n: number): number {
   return Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(n)));
@@ -51,7 +46,6 @@ function loadPrefs(): DisplayPrefs {
     if (typeof parsed !== "object" || parsed === null) return DEFAULTS;
     const p = parsed as Record<string, unknown>;
     return {
-      wrap: typeof p.wrap === "boolean" ? p.wrap : DEFAULTS.wrap,
       fontSize: typeof p.fontSize === "number" ? clampFont(p.fontSize) : DEFAULTS.fontSize,
       rawTerminal: typeof p.rawTerminal === "boolean" ? p.rawTerminal : DEFAULTS.rawTerminal,
       tapToFocus: typeof p.tapToFocus === "boolean" ? p.tapToFocus : DEFAULTS.tapToFocus,
@@ -73,8 +67,6 @@ function savePrefs(prefs: DisplayPrefs): void {
 
 export interface UseDisplayPrefsReturn {
   prefs: DisplayPrefs;
-  /** Toggle or explicitly set line-wrap. */
-  setWrap: (wrap: boolean) => void;
   /** Set font size, clamped to 9–16. */
   setFontSize: (size: number) => void;
   /** Step font size by delta (positive = larger), clamped to 9–16. */
@@ -87,14 +79,6 @@ export interface UseDisplayPrefsReturn {
 
 export function useDisplayPrefs(): UseDisplayPrefsReturn {
   const [prefs, setPrefs] = useState<DisplayPrefs>(loadPrefs);
-
-  const setWrap = useCallback((wrap: boolean) => {
-    setPrefs((p) => {
-      const next: DisplayPrefs = { ...p, wrap };
-      savePrefs(next);
-      return next;
-    });
-  }, []);
 
   const setFontSize = useCallback((size: number) => {
     setPrefs((p) => {
@@ -128,5 +112,5 @@ export function useDisplayPrefs(): UseDisplayPrefsReturn {
     });
   }, []);
 
-  return { prefs, setWrap, setFontSize, stepFontSize, setRawTerminal, setTapToFocus };
+  return { prefs, setFontSize, stepFontSize, setRawTerminal, setTapToFocus };
 }

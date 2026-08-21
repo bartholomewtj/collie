@@ -45,8 +45,8 @@ function renderComposer(overrides: Partial<ComponentProps<typeof Composer>> = {}
     text: "pane output",
     terminalDraft: null,
     rawTerminalDraft: null,
-    prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-    setWrap: vi.fn(),
+    prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+    
     stepFontSize: vi.fn(),
     setRawTerminal: vi.fn(),
     setTapToFocus: vi.fn(),
@@ -92,8 +92,8 @@ function renderComposerWithStatus(overrides: Partial<ComponentProps<typeof Compo
     text: "pane output",
     terminalDraft: null,
     rawTerminalDraft: null,
-    prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-    setWrap: vi.fn(),
+    prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+    
     stepFontSize: vi.fn(),
     setRawTerminal: vi.fn(),
     setTapToFocus: vi.fn(),
@@ -441,8 +441,8 @@ describe("Composer — send", () => {
               text="pane output"
               terminalDraft={null}
               rawTerminalDraft="leftover"
-              prefs={{ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true }}
-              setWrap={vi.fn()}
+              prefs={{ fontSize: 11, rawTerminal: false, tapToFocus: true }}
+              
               stepFontSize={vi.fn()}
               setRawTerminal={vi.fn()}
               setTapToFocus={vi.fn()}
@@ -534,8 +534,8 @@ describe("Composer — send", () => {
       text: "pane output",
       terminalDraft: null,
       rawTerminalDraft: null,
-      prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-      setWrap: vi.fn(),
+      prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+      
       stepFontSize: vi.fn(),
       setRawTerminal: vi.fn(),
       setTapToFocus: vi.fn(),
@@ -630,8 +630,8 @@ describe("Composer — typing into the terminal", () => {
             text="pane output"
             terminalDraft={null}
             rawTerminalDraft={null}
-            prefs={{ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true }}
-            setWrap={vi.fn()}
+            prefs={{ fontSize: 11, rawTerminal: false, tapToFocus: true }}
+            
             stepFontSize={vi.fn()}
             setRawTerminal={vi.fn()}
             setTapToFocus={vi.fn()}
@@ -762,8 +762,8 @@ describe("Composer — typing into the terminal", () => {
             text="pane output"
             terminalDraft={null}
             rawTerminalDraft={null}
-            prefs={{ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true }}
-            setWrap={vi.fn()}
+            prefs={{ fontSize: 11, rawTerminal: false, tapToFocus: true }}
+            
             stepFontSize={vi.fn()}
             setRawTerminal={vi.fn()}
             setTapToFocus={vi.fn()}
@@ -953,8 +953,8 @@ describe("Composer — typing into the terminal", () => {
             text="pane output"
             terminalDraft={null}
             rawTerminalDraft={null}
-            prefs={{ wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true }}
-            setWrap={vi.fn()}
+            prefs={{ fontSize: 11, rawTerminal: false, tapToFocus: true }}
+            
             stepFontSize={vi.fn()}
             setRawTerminal={vi.fn()}
             setTapToFocus={vi.fn()}
@@ -1215,8 +1215,8 @@ function renderDraftHarness(overrides: Partial<ComponentProps<typeof Composer>> 
       readOnly: false,
       dialogPresent: false,
       text: "pane output",
-      prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-      setWrap: vi.fn(),
+      prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+      
       stepFontSize: vi.fn(),
       setRawTerminal: vi.fn(),
       setTapToFocus: vi.fn(),
@@ -1486,8 +1486,8 @@ describe("Composer — in-flight echo suppression (match-last-sent)", () => {
       text: "pane output",
       terminalDraft: draft,
       rawTerminalDraft: draft,
-      prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-      setWrap: vi.fn(),
+      prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+      
       stepFontSize: vi.fn(),
       setRawTerminal: vi.fn(),
       setTapToFocus: vi.fn(),
@@ -1857,7 +1857,7 @@ describe("Composer — quick dock (in-flow, matches the keys dock)", () => {
 });
 
 describe("Composer — display prefs behind the gear", () => {
-  it("the View row is gone; wrap/raw/font live behind the Display gear as labelled controls", async () => {
+  it("the View row is gone; raw/font live behind the Display gear as labelled controls", async () => {
     const user = userEvent.setup();
     renderComposer();
 
@@ -1867,7 +1867,7 @@ describe("Composer — display prefs behind the gear", () => {
     await user.click(screen.getByRole("button", { name: "Display settings" }));
 
     // Named controls, not bare glyphs — the whole point of the move.
-    expect(screen.getByRole("switch", { name: "Wrap lines" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Wrap lines" })).not.toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Raw terminal" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Decrease font size" })).toBeInTheDocument();
   });
@@ -1877,10 +1877,10 @@ describe("Composer — display prefs behind the gear", () => {
     renderComposer();
 
     await user.click(screen.getByRole("button", { name: "Display settings" }));
-    expect(screen.getByRole("switch", { name: "Wrap lines" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Raw terminal" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Keys" }));
-    expect(screen.queryByRole("switch", { name: "Wrap lines" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Raw terminal" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Esc" })).toBeInTheDocument();
   });
 
@@ -1891,7 +1891,7 @@ describe("Composer — display prefs behind the gear", () => {
     // Keys/Quick are write affordances and lock; the gear is local view state and must not.
     expect(screen.getByRole("button", { name: "Keys" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Display settings" }));
-    expect(screen.getByRole("switch", { name: "Wrap lines" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Raw terminal" })).toBeInTheDocument();
   });
 });
 
@@ -2021,8 +2021,8 @@ describe("Composer — draft persistence", () => {
       text: "pane output",
       terminalDraft: null,
       rawTerminalDraft: null,
-      prefs: { wrap: true, fontSize: 11, rawTerminal: false, tapToFocus: true },
-      setWrap: vi.fn(),
+      prefs: { fontSize: 11, rawTerminal: false, tapToFocus: true },
+      
       stepFontSize: vi.fn(),
       setRawTerminal: vi.fn(),
       setTapToFocus: vi.fn(),

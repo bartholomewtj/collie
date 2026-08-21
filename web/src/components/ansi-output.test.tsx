@@ -47,112 +47,19 @@ describe("terminal mirror colour space", () => {
   });
 });
 
-// Wrap defaults ON (#53): the mirror is mostly agent prose and a phone shows far fewer columns than
-// the desktop width panes are spawned at. The no-wrap branch is still the right rendering for TUI
-// tables and box drawing, but it is now reachable ONLY through the View toggle — so it is exactly
-// the kind of code a later refactor can drop without any test noticing.
-describe("mirror line wrapping", () => {
-  function preFor(props: Partial<ComponentProps<typeof AnsiOutput>>) {
-    const { container } = render(<AnsiOutput text="a very long line" {...props} />);
-    return container.querySelector("pre")!;
-  }
-
-  it("wraps by default rather than making the block a horizontal panner", () => {
-    const cls = preFor({}).className;
-    expect(cls).toContain("whitespace-pre-wrap");
-    expect(cls).not.toContain("overflow-x-auto");
-  });
-
-  it("still pans, column-faithful, when wrap is turned off", () => {
-    const cls = preFor({ wrap: false }).className;
+describe("mirror always pans", () => {
+  it("pans the whole mirror, column-faithful", () => {
+    const { container } = render(<AnsiOutput text="a very long line" />);
+    const cls = container.querySelector("pre")!.className;
     expect(cls).toContain("whitespace-pre");
     expect(cls).toContain("overflow-x-auto");
     expect(cls).not.toContain("whitespace-pre-wrap");
   });
 
-  it("keeps a marked ANSI border to one pannable row without changing its text, styles, links, or find offsets", () => {
-    const border = `  ${"─".repeat(20)}`;
-    const text = `ordinary prose\n${ESC}[41m${border.slice(0, 12)}${ESC}[44m${border.slice(12)}${ESC}[0m\nsee https://herdr.dev/docs\n`;
-    const { container } = render(<AnsiOutput text={text} query="───" />);
-    const pre = container.querySelector("pre")!;
-    const pan = pre.querySelector("[data-mirror-pan]")!;
-
-    expect(pan.className).toContain("max-w-full");
-    expect(pan.className).toContain("overflow-x-auto");
-    expect(pan.className).not.toContain("overflow-hidden");
-    // overflow-x-auto on inline-block still gives a bottom-edge baseline; align it to the line
-    // box's bottom so the border keeps the terminal grid's one-row line advance.
-    expect(pan.className).toContain("align-bottom");
-    expect(pan.className).toContain("whitespace-pre");
-    expect(pan.className).not.toContain("whitespace-nowrap");
-    expect(pan.className).toContain("break-normal");
-    expect(pan.textContent).toBe(border);
-    expect(pan.children).toHaveLength(2);
-    expect((pan.children[0] as HTMLElement).style.backgroundColor).toBe("var(--ansi-1)");
-    expect((pan.children[1] as HTMLElement).style.backgroundColor).toBe("var(--ansi-4)");
-    expect(pan.querySelector("[data-find-match]")).not.toBeNull();
-    expect(pre.querySelector("a")?.textContent).toBe("https://herdr.dev/docs");
-    expect(pre.textContent).toBe(`ordinary prose\n${border}\nsee https://herdr.dev/docs\n`);
-  });
-
-  it("pans a plain border only while wrapping, leaving ordinary output and wrap-off panning alone", () => {
-    const border = `  ${"─".repeat(20)}`;
-    const { container: plain } = render(<AnsiOutput text={`${border}\n`} />);
-    expect(plain.querySelector("[data-mirror-pan]")?.textContent).toBe(border);
-
-    const { container: wrapped } = render(<AnsiOutput text={`unbroken-${"x".repeat(40)}\n`} />);
-    const wrappedPre = wrapped.querySelector("pre")!;
-    expect(wrappedPre.className).toContain("break-words");
-    expect(wrappedPre.querySelector("[data-mirror-pan]")).toBeNull();
-
-    const { container: panned } = render(<AnsiOutput text={`${border}\n`} wrap={false} />);
-    const pannedPre = panned.querySelector("pre")!;
-    expect(pannedPre.className).toContain("overflow-x-auto");
-    expect(pannedPre.querySelector("[data-mirror-pan]")).toBeNull();
-    expect(pannedPre.textContent).toBe(`${border}\n`);
-  });
-
-  it("pans a long rounded box border while wrapping (Grok/omp composer chrome)", () => {
-    const top = `  ╭${"─".repeat(40)}╮`;
-    const { container } = render(<AnsiOutput text={`${top}\n`} />);
-    expect(container.querySelector("[data-mirror-pan]")?.textContent).toBe(top);
-  });
-
-  it("pans a wide enclosed table/box row while wrapping", () => {
-    const row = "│ col 1      │ col 2      │";
-    const { container } = render(<AnsiOutput text={`${row}\n`} />);
-    const pan = container.querySelector("[data-mirror-pan]")!;
-    expect(pan).not.toBeNull();
-    expect(pan.className).toContain("overflow-x-auto");
-    expect(pan.textContent).toBe(row);
-  });
-
-  it("wraps boxed prose instead of panning it like a table", () => {
-    const row = "│ Yes. Tap the image button on the reply box. This is a long boxed message. │";
-    const { container } = render(<AnsiOutput text={`${row}\n`} />);
-    const pre = container.querySelector("pre")!;
-    expect(pre.querySelector("[data-mirror-pan]")).toBeNull();
-    expect(pre.className).toContain("whitespace-pre-wrap");
-    expect(pre.textContent).toBe(`${row}\n`);
-  });
-
-  it("groups consecutive table rows into one pan scroller so columns stay aligned", () => {
-    const r1 = "| Flag | Default | Type | Applies to | Notes |";
-    const r2 = "|------|---------|------|------------|-------|";
-    const r3 = "| --wrap | on | bool | grok, agy, claude | Prose wraps |";
-    const text = `intro\n${r1}\n${r2}\n${r3}\noutro\n`;
-    const { container } = render(<AnsiOutput text={text} />);
-    const pans = container.querySelectorAll("[data-mirror-pan]");
-    expect(pans).toHaveLength(1);
-    expect(pans[0]!.textContent).toBe(`${r1}\n${r2}\n${r3}`);
-    expect(container.querySelector("pre")!.textContent).toBe(text);
-  });
-
-  it("strips trailing spaces from a full-width highlight row, keeps its background, and wraps it like prose", () => {
+  it("strips trailing spaces from a full-width highlight row and keeps its background", () => {
     const highlight = `${ESC}[7mHighlight bar${" ".repeat(30)}${ESC}[27m`;
     const { container } = render(<AnsiOutput text={`${highlight}\n`} />);
     const pre = container.querySelector("pre")!;
-    expect(pre.querySelector("[data-mirror-pan]")).toBeNull();
     expect(pre.textContent).toBe("Highlight bar\n");
     const span = [...pre.querySelectorAll("span")].find((s) => s.textContent === "Highlight bar") as HTMLElement;
     expect(span.style.backgroundColor).toBe("rgb(250, 250, 250)");
@@ -161,7 +68,6 @@ describe("mirror line wrapping", () => {
   it("renders a coloured padded row trimmed to visible text, and strips pure-space coloured lines completely", () => {
     const padded = `${ESC}[41mok${" ".repeat(60)}${ESC}[0m`;
     const { container: paddedCont } = render(<AnsiOutput text={`${padded}\n`} />);
-    expect(paddedCont.querySelector("[data-mirror-pan]")).toBeNull();
     const paddedSpan = [...paddedCont.querySelectorAll("span")].find((s) => s.textContent === "ok") as HTMLElement;
     expect(paddedSpan.textContent).toBe("ok");
     expect(paddedSpan.style.backgroundColor).toBe("var(--ansi-1)");
@@ -182,12 +88,23 @@ describe("mirror line wrapping", () => {
     expect(pre.textContent).toBe("title\nline after with searchtarget and https://herdr.dev/docs\n");
   });
 
-  it("leaves an enclosed table row unclipped under wrap={false} with interior columns intact", () => {
+  it("does not paint Grok canvas fill or coloured vpad rows as zebra bars", () => {
+    const canvas = `${ESC}[48;2;20;20;20m`;
+    const prose = `${canvas}     Do not add --bind. Do not put it in Settings.${" ".repeat(12)}${ESC}[0m`;
+    const vpad = `${canvas}${" ".repeat(60)}${ESC}[0m`;
+    const next = `${canvas}     --lan still needs a token.${" ".repeat(20)}${ESC}[0m`;
+    const { container } = render(<AnsiOutput text={`${prose}\n${vpad}\n${next}\n`} />);
+    const pre = container.querySelector("pre")!;
+    expect(pre.textContent).toBe("     Do not add --bind. Do not put it in Settings.\n     --lan still needs a token.\n");
+    const filled = [...pre.querySelectorAll("span")].filter((s) => (s as HTMLElement).style.backgroundColor);
+    expect(filled).toHaveLength(0);
+  });
+
+  it("leaves an enclosed table row as one pannable line with interior columns intact", () => {
     const tableRow = "│ col 1      │ col 2      │";
-    const { container: panned } = render(<AnsiOutput text={`${tableRow}\n`} wrap={false} />);
+    const { container: panned } = render(<AnsiOutput text={`${tableRow}\n`} />);
     const pannedPre = panned.querySelector("pre")!;
     expect(pannedPre.className).toContain("overflow-x-auto");
-    expect(pannedPre.querySelector("[data-mirror-pan]")).toBeNull();
     expect(pannedPre.textContent).toBe(`${tableRow}\n`);
   });
 });

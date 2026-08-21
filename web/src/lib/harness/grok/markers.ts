@@ -1,7 +1,7 @@
 // Lexing helpers for the Grok Build TUI composer. Grok paints a rounded full-width box at the
-// tail (`╭─╮` / `│ >` / `╰─╯`) and a key-hint row under it. Collie wraps at the phone width, so
-// those 200-column `─` borders become a wall of horizontal lines — the whole reason this adapter
-// exists. Predicates run on parsed line text (segment text joined), never raw ANSI.
+// tail (`╭─╮` / `│ >` / `╰─╯`) and a key-hint row under it. Collie peels that chrome off so the
+// phone mirror is the transcript, not a second copy of the input box. Predicates run on parsed
+// line text (segment text joined), never raw ANSI.
 
 import { isBlank, lineText } from "../../blocks";
 
