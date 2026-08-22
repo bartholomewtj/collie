@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, symlink, truncate } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { readWorkRoot } from "./config.ts";
-import { createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
+import { browserOpenType, createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
 import type { Config } from "./config.ts";
 import { CAN_SYMLINK } from "./platform-support.ts";
 
@@ -77,5 +77,37 @@ describe("workdir", () => {
 
   test("is inert without a root", () => {
     const w = createWorkdir(cfg(""), helpers); expect(w.enabled).toBe(false); expect(w.owns("/api/files")).toBe(false); expect(w.owns("/api/files/search")).toBe(false);
+  });
+
+  test("opens allowlisted types inline and refuses scriptable ones", async () => {
+    expect(browserOpenType("shot.PNG")).toBe("image/png");
+    expect(browserOpenType("notes.md")).toBe("text/plain; charset=utf-8");
+    expect(browserOpenType("page.html")).toBeNull();
+    expect(browserOpenType("icon.svg")).toBeNull();
+    expect(browserOpenType("app.js")).toBeNull();
+    const root = await mkdtemp(join(tmpdir(), "collie-workdir-open-"));
+    try {
+      await writeFile(join(root, "shot.png"), "png-bytes");
+      await writeFile(join(root, "page.html"), "<script>alert(1)</script>");
+      await writeFile(join(root, "notes.txt"), "hello");
+      const w = createWorkdir(cfg(root), helpers);
+      const png = await w.handle(new Request("http://x/api/files/open?path=shot.png"), new URL("http://x/api/files/open?path=shot.png"));
+      expect(png.status).toBe(200);
+      expect(png.headers.get("content-disposition")).toContain("inline");
+      expect(png.headers.get("content-type")).toBe("image/png");
+      expect(png.headers.get("x-content-type-options")).toBe("nosniff");
+      const listed = await (await w.handle(new Request("http://x/api/files?path=shot.png"), new URL("http://x/api/files?path=shot.png"))).json();
+      expect(listed.openInBrowser).toBe(true);
+      const html = await w.handle(new Request("http://x/api/files/open?path=page.html"), new URL("http://x/api/files/open?path=page.html"));
+      expect(html.status).toBe(404);
+      expect(await html.text()).not.toContain("alert");
+      const htmlMeta = await (await w.handle(new Request("http://x/api/files?path=page.html"), new URL("http://x/api/files?path=page.html"))).json();
+      expect(htmlMeta.openInBrowser).toBe(false);
+      const txt = await w.handle(new Request("http://x/api/files/open?path=notes.txt"), new URL("http://x/api/files/open?path=notes.txt"));
+      expect(txt.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      const dl = await w.handle(new Request("http://x/api/files/download?path=page.html"), new URL("http://x/api/files/download?path=page.html"));
+      expect(dl.status).toBe(200);
+      expect(dl.headers.get("content-disposition")).toContain("attachment");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

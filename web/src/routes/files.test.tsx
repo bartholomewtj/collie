@@ -54,5 +54,14 @@ describe("FilesRoute", () => {
     renderFiles({ rel: "bin.dat", data: { kind: "file", path: "bin.dat", name: "bin.dat", size: 2, mtimeMs: 1, binary: true } });
     expect(await screen.findByText(/Can't preview/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Copy path")); await waitFor(() => expect(clipboard).toHaveBeenCalledWith("bin.dat")); expect(screen.getByText("Download")).toBeInTheDocument();
+    expect(screen.queryByText("Open in browser")).toBeNull();
+  });
+  it("offers Open in browser for types Chrome can display", async () => {
+    renderFiles({ rel: "shot.png", data: { kind: "file", path: "shot.png", name: "shot.png", size: 2, mtimeMs: 1, binary: true, openInBrowser: true } });
+    const link = await screen.findByRole("link", { name: /Open in browser/ });
+    expect(link.getAttribute("href")).toBe("/api/files/open?path=shot.png");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(link.getAttribute("download")).toBeNull();
   });
 });

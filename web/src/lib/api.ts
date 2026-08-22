@@ -197,6 +197,9 @@ export function searchFiles(q: string, signal?: AbortSignal): Promise<FileSearch
 export function downloadFileUrl(path: string): string {
   return `/api/files/download?path=${encodeURIComponent(path)}`;
 }
+export function openFileUrl(path: string): string {
+  return `/api/files/open?path=${encodeURIComponent(path)}`;
+}
 
 export async function fetchSnapshot(
   session?: string,
