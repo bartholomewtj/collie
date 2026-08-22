@@ -1,18 +1,19 @@
 # Next session
 
-_Last handoff: 2026-08-21 — `main` at **0.52.4** (`96679ac`, #124). Newest tag is still
-**v0.52.1** — 0.52.2, 0.52.3 and 0.52.4 are untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
-Task Scheduler `herdr.collie`. `web/dist` is `0.52.4+bdcced4-dirty` (stamp only — wrap-off is
-in that bundle). One listener on `:8787`._
+_Last handoff: 2026-08-22 — `main` at **0.53.0** (`f437f17`, #127). Newest tag is still
+**v0.52.1** — 0.52.2–0.52.4 and 0.53.0 are untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
+Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set in the plugin `.env`.
+One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
 
 ## Where this stopped
 
-#124 is on `main`. Grok zebra bars are gone (canvas fill, vpad rows, scrollbar █, timestamp pad).
-The live mirror **never wraps** — Wrap lines toggle is gone; swipe sideways, column-faithful.
-Phone: reopen the PWA (frontend rebuild already on disk, no bridge restart).
+#127 is on `main`. Files tab is live: read-only browser of `COLLIE_WORK_ROOT` (walk folders,
+search names, preview text, copy relative path, download). Hidden when the env is unset.
+Skip list (`.env`, `node_modules`, `.git`, `config`, caches, keys) never lists or serves.
+Phone: reopen the PWA after this rebuild+restart.
 
 ## Resume with
 
@@ -20,7 +21,7 @@ Phone: reopen the PWA (frontend rebuild already on disk, no bridge restart).
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.52.1; main is 0.52.4
+git describe --tags --abbrev=0                        # newest tag is v0.52.1; main is 0.53.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -39,20 +40,23 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Tag **v0.52.2** at `70c1bea`, **v0.52.3** at `ee5d7b2`, **v0.52.4** at `96679ac`
-   (`git tag -a v0.52.2 70c1bea -m "Collie 0.52.2" && git tag -a v0.52.3 ee5d7b2 -m "Collie 0.52.3" && git tag -a v0.52.4 96679ac -m "Collie 0.52.4" && git push origin v0.52.2 v0.52.3 v0.52.4`).
+1. Tag the untagged releases: **v0.52.2** `70c1bea`, **v0.52.3** `ee5d7b2`, **v0.52.4** `96679ac`,
+   **v0.53.0** `f437f17`.
 2. Parked: send this fork's security fixes upstream to AltanS/collie.
 3. Parked: `push-keys` / `push-test` Herdr actions are still POSIX-only (the Windows ctl has no
    wrappers; PATH's bash is the WSL stub).
 
 ## Open
 
-- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). Releases are on main, tags are not.
+- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`), v0.53.0 (`f437f17`).
+  Releases are on main, tags are not.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
 
 ## Watch out for
 
+- **Files tab is opt-in.** Plugin `.env` must have `COLLIE_WORK_ROOT`. Unset = no tab and no
+  `/api/files*` routes. Dot-names (including `.adr`) never list. Read-only — no send-to-pane.
 - **The live mirror always pans; there is no wrap toggle.** Long Grok diffs stay one row — swipe
   sideways. Do not reintroduce wrap classifiers.
 - **Grok history is per-tab now.** Several grok panes in one space share a cwd; the adapter
