@@ -1,10 +1,10 @@
 # Next session
 
-_Last handoff: 2026-08-22 — `main` at **0.54.0** (`09df5a0`, Files nested nav #131,
-open-in-browser + in-place media #132), tagged **v0.53.1** and **v0.54.0**.
-0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
-Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set. Restarted.
-One listener on `:8787`._
+_Last handoff: 2026-08-22 — `main` at **0.55.0** (`5e551d6`, HTML Open in browser
+#134), tagged **v0.55.0**. 0.52.2–0.52.4 are still untagged. Bridge:
+`C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`.
+`COLLIE_WORK_ROOT=C:\claudeos` is set. Restarted after 0.55.0. One listener on
+`:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Roster: planner Claude Code **opus** (subscription, thinking high); builder
@@ -14,11 +14,13 @@ Roster: planner Claude Code **opus** (subscription, thinking high); builder
 
 ## Where this stopped
 
-Files tab on `main`: walk nested folders, Open in browser for Chrome-viewable types,
-images/audio/video play in the tab, PDF stays on Open in browser. HTML/SVG stay
-download-only. Bridge was restarted after 0.54.0. No open PRs.
+Files tab on `main`: walk nested folders; Open in browser for PDF, images, audio,
+video, text, and **HTML** (unique-origin sandbox, scripts do not run). Images/audio/video
+play in the tab. PDF and HTML stay on Open in browser (no iframe). SVG/XML/JS stay
+download-only. Bridge restarted after 0.55.0. No web rebuild — this was bridge-only.
+No open PRs.
 
-Phone: reopen the PWA so it picks up the new bundle.
+Phone: leave and re-open an `.html` file so the listing refetches. No PWA reinstall.
 
 ## Resume with
 
@@ -26,7 +28,7 @@ Phone: reopen the PWA so it picks up the new bundle.
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.54.0
+git describe --tags --abbrev=0                        # newest tag is v0.55.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -52,7 +54,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 ## Open
 
 - No open PRs.
-- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.1 and v0.54.0 are tagged.
+- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.1, v0.54.0, and v0.55.0 are tagged.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
 
@@ -60,7 +62,10 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 - **Files tab is opt-in.** Plugin `.env` must have `COLLIE_WORK_ROOT`. Unset = no tab and no
   `/api/files*` routes. Dot-names (including `.adr`) never list. Read-only — no send-to-pane.
-  HTML/SVG/XML/JS are never opened inline. PDF is Open in browser only (no in-page iframe).
+  HTML Open in browser is a unique-origin sandbox (`CSP: sandbox`, no
+  `allow-same-origin` / `allow-scripts`). SVG/XML/JS stay download-only. PDF and HTML
+  are Open in browser only (no in-page iframe). Do not add `allow-scripts` without
+  a new ADR (0027).
 - **Planner is Claude Code opus, not OpenRouter.** The other four seats are pi. `flash-0731`
   and `muse-spark-1.2-contributor` live in `~/.pi/agent/models.json`; `pi --list-models` if a
   seat fails to resolve.
@@ -86,6 +91,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
   read the diff's file list against Out of scope.
 - **The source being right tells you nothing about what the phone runs.** `/api/config` → `build`
   is the commit being served; `staleBuild` is the mtime guard. Local curl gets `identity required`.
+  0.55.0 bumped `web/package.json` with no UI source change — that flags staleBuild. Ignore it.
 - **`run_quality()` publishes `web/dist`.** SDLC inner loop (`run_tests()`) does not build.
 - **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
 - **CI has no `uv`.** Factory tests go through the `factory unittests` job, not `bun test`.
