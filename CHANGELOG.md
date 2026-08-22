@@ -10,6 +10,7 @@ All notable changes to Collie are recorded here. The format follows
 
 ### Added
 - Files tab Open in browser for types Chrome on a phone can display (PDF, images, audio, video, text) — HTML/SVG stay download-only (b8c0617)
+- Files tab previews images, audio and video in place; PDF stays on Open in browser (a8adcd0)
 
 ## [0.53.1] - 2026-08-22
 
