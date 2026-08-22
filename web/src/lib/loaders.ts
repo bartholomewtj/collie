@@ -263,6 +263,16 @@ export async function filesLoader({ params, request }: { params: Record<string, 
   catch (e) { if (isAbortError(e)) throw e; return { rel, error: e instanceof Error ? e.message : "Not found" }; }
 }
 
+/**
+ * Poll-driven `revalidate()` re-runs every active loader, and a directory read every 1.5s is waste.
+ * `() => false` also skipped navigations that stay on this same route — `/files/a` and `/files/a/b`
+ * both match `files/*`, so the first folder was the last listing you'd ever see. Reload only when
+ * the path actually changed.
+ */
+export function filesShouldRevalidate({ currentUrl, nextUrl }: { currentUrl: URL; nextUrl: URL }): boolean {
+  return currentUrl.pathname !== nextUrl.pathname;
+}
+
 // Pane ids are per-session, so every per-pane cache is keyed by (session, paneId) — a NUL joiner
 // keeps the two fields unambiguous. "" session = primary.
 function paneKey(paneId: string, session?: string): string {
