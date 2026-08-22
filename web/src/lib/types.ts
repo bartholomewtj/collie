@@ -217,7 +217,7 @@ export interface FileEntry { name: string; kind: "dir" | "file"; size?: number; 
 export interface FileSearchResult { path: string; name: string; kind: "dir" | "file"; }
 export type FilesResponse =
   | { kind: "dir"; path: string; entries: FileEntry[]; truncated: boolean }
-  | { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean };
+  | { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean; openInBrowser?: boolean; embed?: "image" | "video" | "audio" };
 export interface FileSearchResponse { q: string; results: FileSearchResult[]; truncated: boolean; }
 
 export interface SnapshotResponse {

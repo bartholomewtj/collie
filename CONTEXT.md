@@ -123,7 +123,7 @@
 | `/api/notifications/prefs` | GET · POST | inline → `notify-prefs.ts` | read · write |
 | `/api/notifications/snooze` | POST | inline → `snooze.ts` | write |
 | `/api/update/check` | POST | inline → `update.ts` (rate-limited) | read |
-| `/api/files` · `/api/files/search` · `/api/files/download` | GET | `workdir.ts` | read |
+| `/api/files` · `/api/files/search` · `/api/files/download` · `/api/files/open` | GET | `workdir.ts` | read |
 | `/sssf/*` | GET | `sssfViz.handle` | read |
 | `/auth`, `/auth/*` | — | reserved placeholder (`isReservedAuthPath`) | — |
 | everything else | GET | `serveStatic` from `web/dist` | read |

@@ -15,6 +15,56 @@ export const SEARCH_MAX_RESULTS = 200;
 export const SEARCH_MAX_DIRS = 5000;
 export const BINARY_SNIFF_BYTES = 8192;
 
+/**
+ * MIME types Chrome on a phone will display rather than download. HTML, SVG, XML and JS are
+ * absent on purpose: an inline response with those types would run same-origin against the
+ * bridge (ADR 0026). `/api/files/open` uses this map and nothing else — never `h.contentTypes`,
+ * which includes text/html for the static UI.
+ */
+const BROWSER_OPEN_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".jpe": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
+  ".ogv": "video/ogg",
+  ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".opus": "audio/ogg",
+  ".txt": "text/plain; charset=utf-8",
+  ".log": "text/plain; charset=utf-8",
+  ".csv": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+};
+
+export function browserOpenType(name: string): string | null {
+  return BROWSER_OPEN_TYPES[extname(name).toLowerCase()] ?? null;
+}
+
+/** In-app player for image/audio/video. PDF and text stay out — PDF is flaky in an iOS iframe. */
+export function browserEmbedKind(name: string): "image" | "video" | "audio" | undefined {
+  const type = browserOpenType(name);
+  if (!type) return undefined;
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return undefined;
+}
+
 export function isRefusedName(name: string): boolean {
   if (name.startsWith(".")) return true;
   const lower = name.toLowerCase();
@@ -65,12 +115,28 @@ async function inspect(root: string, segs: string[]): Promise<WorkdirListing | W
     return { kind: "dir", path, entries, truncated };
   }
   if (!info.isFile()) return null;
+  const name = basename(real);
+  const openInBrowser = browserOpenType(name) !== null;
+  const embed = browserEmbedKind(name);
   const file = Bun.file(real);
   const sniff = new Uint8Array(await file.slice(0, Math.min(info.size, BINARY_SNIFF_BYTES)).arrayBuffer());
   let binary = sniff.includes(0);
   if (!binary) { try { new TextDecoder("utf-8", { fatal: true }).decode(sniff); } catch { binary = true; } }
-  if (binary) return { kind: "file", path, name: basename(real), size: info.size, mtimeMs: info.mtimeMs, binary: true };
-  return { kind: "file", path, name: basename(real), size: info.size, mtimeMs: info.mtimeMs, text: await file.slice(0, PREVIEW_CAP_BYTES).text(), truncated: info.size > PREVIEW_CAP_BYTES, binary: false };
+  const media = { openInBrowser, ...(embed ? { embed } : {}) };
+  if (binary) return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, binary: true, ...media };
+  return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, text: await file.slice(0, PREVIEW_CAP_BYTES).text(), truncated: info.size > PREVIEW_CAP_BYTES, binary: false, ...media };
+}
+
+function fileBytes(h: WorkdirHelpers, real: string, size: number, type: string, disposition: "attachment" | "inline"): Response {
+  const name = basename(real);
+  const fallback = name.replace(/[^\x20-\x7e]|["\\\u0000-\u001f]/g, "_");
+  return h.secure(new Response(Bun.file(real), { headers: {
+    "content-type": type,
+    "content-disposition": `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    "content-length": String(size),
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  } }));
 }
 
 async function search(root: string, q: string): Promise<{ q: string; results: WorkdirSearchResult[]; truncated: boolean }> {
@@ -101,12 +167,16 @@ export function createWorkdir(cfg: Config, h: WorkdirHelpers) {
         const q = (url.searchParams.get("q") ?? "").trim();
         return h.json(q.length < 2 ? { q, results: [], truncated: false } : await search(cfg.workRoot, q), req.headers.get("accept-encoding"));
       }
-      if (url.pathname === "/api/files/download") {
+      if (url.pathname === "/api/files/download" || url.pathname === "/api/files/open") {
         const segs = parseRelPath(url.searchParams.get("path") ?? ""); const real = segs && await resolveInRoot(cfg.workRoot, segs);
         if (!real) return notFound(h); const s = await stat(real).catch(() => null);
         if (!s?.isFile()) return notFound(h); if (s.size > DOWNLOAD_CAP_BYTES) return h.text("file too large", 413);
-        const name = basename(real); const fallback = name.replace(/[^\x20-\x7e]|["\\\u0000-\u001f]/g, "_");
-        return h.secure(new Response(Bun.file(real), { headers: { "content-type": h.contentTypes[extname(real).toLowerCase()] ?? "application/octet-stream", "content-disposition": `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`, "content-length": String(s.size), "cache-control": "no-store", "x-content-type-options": "nosniff" } }));
+        if (url.pathname === "/api/files/open") {
+          const type = browserOpenType(basename(real));
+          if (!type) return notFound(h);
+          return fileBytes(h, real, s.size, type, "inline");
+        }
+        return fileBytes(h, real, s.size, h.contentTypes[extname(real).toLowerCase()] ?? "application/octet-stream", "attachment");
       }
       const segs = parseRelPath(url.searchParams.get("path") ?? ""); if (!segs) return notFound(h);
       const result = await inspect(cfg.workRoot, segs); return result ? h.json(result, req.headers.get("accept-encoding")) : notFound(h);

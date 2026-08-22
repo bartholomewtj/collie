@@ -260,7 +260,11 @@ grammar, the probe catches on-disk format drift.
 `COLLIE_WORK_ROOT`; unset means the routes don't exist and the tab doesn't show. Every path is parsed
 to relative segments, refused against the skip list, and contained with `containedRealpath` after
 symlink resolution — a typed path at `.env` 404s like an absent file. Downloads are always `attachment`.
-Don't add a write route, an upload, or send-to-pane ([ADR 0026](./.adr/0026-the-files-tab-is-the-third-filesystem-reader.md)).
+Open-in-browser is `GET /api/files/open` for an allowlisted set Chrome can display (PDF, images,
+audio, video, a few text types), always `nosniff`, never HTML/SVG/XML/JS. Image/audio/video preview
+in the Files tab with `<img>`/`<audio>`/`<video>` against that URL; don't iframe PDF (flaky on iOS)
+and don't widen the list to scriptable types. Don't add a write route, an upload, or send-to-pane
+([ADR 0026](./.adr/0026-the-files-tab-is-the-third-filesystem-reader.md)).
 
 ## Security posture (don't regress)
 
