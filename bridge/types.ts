@@ -218,6 +218,16 @@ export interface DeviceAuth {
 // ── REST response shapes (the browser polls these; see server.ts) ──────────────
 
 /** GET /api/snapshot — the current herd view. */
+export interface WorkdirEntry {
+  name: string;
+  kind: "dir" | "file";
+  size?: number;
+  mtimeMs: number;
+}
+export interface WorkdirListing { kind: "dir"; path: string; entries: WorkdirEntry[]; truncated: boolean; }
+export interface WorkdirFile { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean; }
+export interface WorkdirSearchResult { path: string; name: string; kind: "dir" | "file"; }
+
 export interface SnapshotResponse {
   bridge: BridgeStatus;
   /** Per-device authorisation for the requesting client; absent when the feature is off. */
@@ -239,6 +249,8 @@ export interface SnapshotResponse {
   /** Update-availability signal. Optional — a stale bridge that predates the field simply omits it,
    *  which the client reads as "no info" (see bridge/update.ts). */
   update?: UpdateStatus;
+  /** True when the optional work directory browser is enabled. */
+  files?: boolean;
   ts: number;
 }
 

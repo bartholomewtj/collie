@@ -46,7 +46,7 @@ export function RootLayout() {
   // a pane, one repo's traces, and history are leaf screens that own the bottom edge (composer,
   // frame) and get a header back button instead.
   const { pathname } = useLocation();
-  const showNav = pathname === "/" || pathname === "/traces" || pathname === "/settings";
+  const showNav = pathname === "/" || pathname === "/traces" || pathname === "/files" || pathname === "/settings";
   const anyTraces = data.workspaces.some((w) => w.sssf);
 
   // A viewport-height flex column: the top banners (when shown) are in-flow rows at the top and the
@@ -69,7 +69,7 @@ export function RootLayout() {
         lastSeenAt={shownLastSeenAt(data, pane)}
       />
       <Outlet />
-      {showNav && <BottomNav session={data.session} traces={anyTraces} />}
+      {showNav && <BottomNav session={data.session} traces={anyTraces} files={data.files === true} />}
     </div>
   );
 }

@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.53.0] - 2026-08-22
+
+### Added
+- Files tab: read-only browser of COLLIE_WORK_ROOT — walk folders, search filenames, preview text, copy paths, and download files (0049b35)
+
 ## [0.52.4] - 2026-08-21
 
 ### Changed

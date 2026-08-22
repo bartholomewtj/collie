@@ -53,7 +53,8 @@
    ├─ activity.ts / notifications.ts / notify-prefs.ts / snooze.ts / push.ts / push-endpoint.ts
    ├─ uploads.ts (images → <stateDir>/uploads), update.ts (newest v* tag), sessions.ts (?s=)
    ├─ journal/  (transcripts off disk — filesystem reader #1, contained by files.ts)
-   └─ sssf-viz.ts (Traces iframe — filesystem reader #2)
+   ├─ sssf-viz.ts (Traces iframe — filesystem reader #2)
+   └─ workdir.ts (Files tab — filesystem reader #3)
         │
         │ HTTP: loaders.ts (React Router data mode) + api.ts mutations + use-polling.ts revalidate
         ▼
@@ -96,6 +97,7 @@
 | `http-cache.ts` | Pure ETag / conditional GET / gzip helpers. |
 | `platform-support.ts` | What the host OS can do (`POSIX_MODES`, `CAN_SYMLINK`, the latter probed). Test-only: the two POSIX facilities Windows lacks, so tests that need them skip with a reason rather than fail. |
 | `sssf-viz.ts` | Discovers `adws/adw_data/sssf.db` near workspace cwds, serves the visualiser at `/sssf/*`. Filesystem reader #2. |
+| `workdir.ts` | Read-only browser of `COLLIE_WORK_ROOT` — list, name search, preview, download. Filesystem reader #3. |
 | `journal/registry.ts` | The single decision site for "which agents have readable history"; maps harness → adapter. |
 | `journal/files.ts` | Filesystem half shared by adapters. **`containedRealpath` is the containment invariant** — every path any adapter reads goes through it. |
 | `journal/store.ts` | Reads + caches parsed journals for whichever adapter the pane's agent selects. |
@@ -121,6 +123,7 @@
 | `/api/notifications/prefs` | GET · POST | inline → `notify-prefs.ts` | read · write |
 | `/api/notifications/snooze` | POST | inline → `snooze.ts` | write |
 | `/api/update/check` | POST | inline → `update.ts` (rate-limited) | read |
+| `/api/files` · `/api/files/search` · `/api/files/download` | GET | `workdir.ts` | read |
 | `/sssf/*` | GET | `sssfViz.handle` | read |
 | `/auth`, `/auth/*` | — | reserved placeholder (`isReservedAuthPath`) | — |
 | everything else | GET | `serveStatic` from `web/dist` | read |
@@ -153,6 +156,7 @@ each file as `*.test.ts(x)`.
 | `/spaces` → `/` | `routes/redirects.tsx` (`SpacesRedirect`) | — |
 | `/space/:spaceId` → `/` | `routes/redirects.tsx` (`SpaceRedirect`) — expands that space first | — |
 | `/traces` · `/traces/:spaceId/:repo` | `routes/traces.tsx` → `components/sssf-frame.tsx` | — |
+| `/files` · `/files/*` | `routes/files.tsx` | `filesLoader` |
 | `/settings` | `routes/settings.tsx` | — |
 | `/pane/:paneId` | **`routes/detail.tsx`** → `components/agent-chat.tsx` + `composer.tsx` | `paneLoader` |
 | `/pane/:paneId/history` | `routes/history.tsx` → `components/transcript-view.tsx` | `historyLoader` |
@@ -242,6 +246,7 @@ every tab the newest session.
 | "Connection lost" banner / offline | `web/src/lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `components/connection-banner.tsx` |
 | Draft lost / restored wrongly | `web/src/lib/drafts.ts` · `hooks/use-terminal-draft.ts` |
 | Traces tab | `bridge/sssf-viz.ts` · `web/src/components/sssf-frame.tsx` · `routes/traces.tsx` |
+| Files tab | `bridge/workdir.ts` · `web/src/routes/files.tsx` · `web/src/lib/nav.ts` |
 | 403 / host / origin / access | `bridge/server.ts guard` · `checkAccess` · `isHostAllowed` · `bridge/config.ts` · `DEPLOYMENT.md` |
 | Start / stop / restart / deploy | `scripts/collie-ctl.sh` · `contrib/windows/collie-ctl.ps1` (this box) · `justfile` · `herdr-plugin.toml` · `systemd/` |
 | Add a new harness | [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md) first |

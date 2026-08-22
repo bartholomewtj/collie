@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { AuditContent } from "./audit.ts";
 import type { DialMode } from "./dial.ts";
@@ -83,6 +83,13 @@ function envBool(name: string, fallback: boolean): boolean {
   if (["on", "1", "true", "yes"].includes(v)) return true;
   console.warn(`[config] ${name}="${raw}" is not a boolean — using default ${fallback}`);
   return fallback;
+}
+
+export function readWorkRoot(env: Record<string, string | undefined> = process.env): string {
+  const raw = env.COLLIE_WORK_ROOT?.trim();
+  if (!raw) return "";
+  const expanded = raw.startsWith("~/") || raw.startsWith("~\\") ? join(homedir(), raw.slice(2)) : raw === "~" ? homedir() : raw;
+  return resolve(expanded);
 }
 
 export interface Config {
@@ -234,6 +241,8 @@ export interface Config {
   vapidSubject: string;
   /** Where to persist push subscriptions and other runtime state. */
   stateDir: string;
+  /** Absolute opt-in root for the read-only Files tab; empty disables it. */
+  workRoot: string;
   /**
    * Multi-session support. When on (default), the bridge fronts every running herdr session it
    * discovers under the config root, not just {@link socketPath}, and the UI gains a session
@@ -373,6 +382,7 @@ export function loadConfig(): Config {
     vapidPrivate: process.env.COLLIE_VAPID_PRIVATE ?? "",
     vapidSubject: process.env.COLLIE_VAPID_SUBJECT ?? "mailto:admin@example.com",
     stateDir,
+    workRoot: readWorkRoot(),
     multiSession: envBool("COLLIE_MULTI_SESSION", true),
     skipServe: envBool("COLLIE_SKIP_SERVE", false),
   };

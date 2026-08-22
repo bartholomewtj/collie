@@ -13,7 +13,7 @@
 // no flag, no race — and because a navigation aborts any in-flight revalidation, the nav is instant
 // even while a poll's doomed fetch is still hanging.
 
-import { fetchHistory, fetchPane, fetchSnapshot, isApiErrorStatus } from "@/lib/api";
+import { fetchFiles, fetchHistory, fetchPane, fetchSnapshot, isApiErrorStatus } from "@/lib/api";
 import { parseAnsi } from "@/lib/ansi";
 import { splitLines } from "@/lib/blocks";
 import { isLostLatched } from "@/lib/connection-health";
@@ -38,6 +38,7 @@ import type {
   TranscriptEntry,
   UpdateInfo,
   WorkspaceView,
+  FilesResponse,
 } from "@/lib/types";
 
 // A superseded revalidation is aborted via the loader's request.signal; that surfaces as an
@@ -87,6 +88,7 @@ export interface HomeData {
   snoozedUntil: number | null;
   /** Version / upgrade status for the footer update banner; undefined on an older bridge. */
   update: UpdateInfo | undefined;
+  files?: boolean;
   /** True when this render is the last-good snapshot after a failed refresh. */
   error: boolean;
   /** True when the failed refresh was rejected with HTTP 401 or 403. */
@@ -174,6 +176,7 @@ function toHomeData(
     session,
     snoozedUntil: snap.notifications?.snoozedUntil ?? null,
     update: snap.update,
+    files: snap.files === true,
     error,
     authError: error && hasAuthError(session),
     lastSeenAt,
@@ -214,6 +217,7 @@ function staleHome(session: string | undefined): HomeData {
     session,
     snoozedUntil: null,
     update: undefined,
+    files: false,
     error: true,
     authError: hasAuthError(session),
   };
@@ -250,6 +254,13 @@ export async function rootLoader({ request }: { request?: Request } = {}): Promi
     // Keep the last good herd on screen, flagged so the ConnectionBanner can say "reconnecting…".
     return staleHome(session);
   }
+}
+
+export interface FilesData { rel: string; data?: FilesResponse; error?: string; }
+export async function filesLoader({ params, request }: { params: Record<string, string | undefined>; request: Request }): Promise<FilesData> {
+  const rel = (params["*"] ?? "").split("/").filter(Boolean).map(decodeURIComponent).join("/");
+  try { return { rel, data: await fetchFiles(rel, request.signal) }; }
+  catch (e) { if (isAbortError(e)) throw e; return { rel, error: e instanceof Error ? e.message : "Not found" }; }
 }
 
 // Pane ids are per-session, so every per-pane cache is keyed by (session, paneId) — a NUL joiner

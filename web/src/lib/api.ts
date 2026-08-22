@@ -6,6 +6,8 @@ import { markLive } from "./connection-health";
 import { observeServerBuild, SERVER_BUILD_HEADER } from "./server-build";
 import type {
   ActionResponse,
+  FileSearchResponse,
+  FilesResponse,
   BridgeConfig,
   CreateResponse,
   NotifyPrefs,
@@ -184,6 +186,16 @@ function req<T>(path: string, init?: RequestInit, recover?: Recover<T>): Promise
   const op = doReq<T>(path, init, recover);
   const method = init?.method?.toUpperCase() ?? "GET";
   return method === "GET" ? op : trackBusy(op);
+}
+
+export function fetchFiles(path: string, signal?: AbortSignal): Promise<FilesResponse> {
+  return req<FilesResponse>(`/api/files?path=${encodeURIComponent(path)}`, { signal });
+}
+export function searchFiles(q: string, signal?: AbortSignal): Promise<FileSearchResponse> {
+  return req<FileSearchResponse>(`/api/files/search?q=${encodeURIComponent(q)}`, { signal });
+}
+export function downloadFileUrl(path: string): string {
+  return `/api/files/download?path=${encodeURIComponent(path)}`;
 }
 
 export async function fetchSnapshot(
