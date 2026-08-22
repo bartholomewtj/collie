@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef } from "react";
 import { useDirectTyping } from "./use-direct-typing";
 import { pasteHold, __resetPasteHold } from "@/lib/paste-hold";
+import { textToKeySequence } from "@/lib/key-queue";
 
 let lastSend: ReturnType<typeof vi.fn>;
 function Probe({ desktop = true, image = false }: { desktop?: boolean; image?: boolean }) {
@@ -15,9 +16,13 @@ function paste(text: string, items: unknown[] = []) { const event = new Event("p
 afterEach(() => { cleanup(); __resetPasteHold(); });
 describe("desktop paste", () => {
   it("sends ordinary single-line text", async () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); await new Promise((resolve) => setTimeout(resolve, 0)); expect(paste("echo hi").defaultPrevented).toBe(true); await waitFor(() => expect(lastSend).toHaveBeenCalledWith(["e", "c", "h", "o", "Space", "h", "i"])); expect(pasteHold()).toBeNull(); });
+  it("holds a trailing-newline single command without sending Enter", () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); paste("echo hi\n"); const hold = pasteHold(); expect(hold?.kind).toBe("text"); expect(hold?.kind === "text" ? hold.lines : null).toBe(1); act(() => hold?.onSend()); expect(lastSend.mock.calls[0][0]).toEqual(textToKeySequence("echo hi")); expect(lastSend.mock.calls[0][0]).not.toContain("Enter"); });
   it("holds multiline and sends interior Enter without trailing Enter", async () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); paste("echo a\necho b\n"); expect(pasteHold()?.kind).toBe("text"); pasteHold()?.onSend(); expect(lastSend.mock.calls[0][0]).toContain("Enter"); expect(lastSend.mock.calls[0][0].at(-1)).not.toBe("Enter"); });
+  it("holds destructive text with a destructive reason", () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); paste("rm -rf /tmp/x"); const hold = pasteHold(); expect(hold?.kind).toBe("text"); expect(hold?.kind === "text" ? hold.reason : null).toMatch(/rm -r/); });
   it("holds destructive text and discards", async () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); paste("rm -rf /tmp/x"); expect(pasteHold()?.kind).toBe("text"); pasteHold()?.onDiscard(); expect(pasteHold()).toBeNull(); expect(lastSend).not.toHaveBeenCalled(); });
+  it("types an uploaded image path only after the chip is clicked", async () => { render(<Probe image />); fireEvent.click(screen.getByText("arm")); const file = new File(["x"], "shot.png", { type: "image/png" }); paste("", [{ kind: "file", type: "image/png", getAsFile: () => file }]); await vi.waitFor(() => expect(pasteHold()?.kind).toBe("path")); expect(lastSend).not.toHaveBeenCalled(); const hold = pasteHold(); act(() => hold?.onSend()); expect(lastSend).toHaveBeenCalledWith(textToKeySequence("/host/shot.png")); });
   it("holds image without typing until Type path", async () => { render(<Probe image />); fireEvent.click(screen.getByText("arm")); const file = new File(["x"], "shot.png", { type: "image/png" }); paste("", [{ kind: "file", type: "image/png", getAsFile: () => file }]); await vi.waitFor(() => expect(pasteHold()?.kind).toBe("path")); expect(lastSend).not.toHaveBeenCalled(); pasteHold()?.onSend(); expect(lastSend).toHaveBeenCalled(); });
   it("clears on blur", async () => { render(<Probe />); fireEvent.click(screen.getByText("arm")); paste("a\nb"); fireEvent.blur(screen.getByTestId("input")); expect(pasteHold()).toBeNull(); });
   it("does nothing on phone", async () => { render(<Probe desktop={false} />); fireEvent.click(screen.getByText("arm")); expect(paste("x").defaultPrevented).toBe(false); });
+  it("does not hold or send a multiline paste on phone", () => { render(<Probe desktop={false} />); fireEvent.click(screen.getByText("arm")); paste("a\nb"); expect(pasteHold()).toBeNull(); expect(lastSend).not.toHaveBeenCalled(); });
 });
