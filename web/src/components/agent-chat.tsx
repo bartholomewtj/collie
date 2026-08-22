@@ -7,6 +7,7 @@ import { useDashPrefs, openForCount } from "@/hooks/use-dash-prefs";
 import { useDisplayPrefs } from "@/hooks/use-display-prefs";
 import { useStableTerminalDraft } from "@/hooks/use-terminal-draft";
 import { isConnecting } from "@/lib/connection";
+import { useDesktop } from "@/lib/desktop";
 import { setStatus } from "@/lib/status";
 import { ChatMessageList, type ChatMessageListHandle } from "@/components/ui/chat/chat-message-list";
 import { BottomSheet } from "@/components/ui/sheet";
@@ -594,8 +595,12 @@ export function AgentChat({
     composerRef.current?.focusInput();
   }
 
+  const desktop = useDesktop().on;
+
+  // max-w-[100dvw] is a phone guard (the mirror must never widen the page). In desktop mode the
+  // grid track (minmax(0,1fr)) is the constraint and the viewport is not this element's width.
   return (
-    <div className="flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden">
+    <div className={desktop ? "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden" : "flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden"}>
       {/* Header — the SAME AppHeader shell the dashboard and space mount, so the Collie mark is
           identical on every screen (no hand-rolled bar to drift). The pane's own bits ride in via
           slots: the `space › tab` breadcrumb as the center, the agent StatusBadge as the right-cluster
