@@ -1,9 +1,9 @@
 # Next session
 
-_Last handoff: 2026-08-22 — `main` at **0.53.0** (`f437f17`, #127). Newest tag is still
-**v0.52.1** — 0.52.2–0.52.4 and 0.53.0 are untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
-Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set in the plugin `.env`.
-One listener on `:8787`._
+_Last handoff: 2026-08-22 — `main` at **0.53.0** (`f437f17`, #127), tagged **v0.53.0**.
+0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
+Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set in the plugin `.env`
+and the checkout `.env`. One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
@@ -21,7 +21,7 @@ Phone: reopen the PWA after this rebuild+restart.
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.52.1; main is 0.53.0
+git describe --tags --abbrev=0                        # newest tag is v0.53.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -40,16 +40,15 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Next thing to do
 
-1. Tag the untagged releases: **v0.52.2** `70c1bea`, **v0.52.3** `ee5d7b2`, **v0.52.4** `96679ac`,
-   **v0.53.0** `f437f17`.
+1. Tag the remaining untagged releases: **v0.52.2** `70c1bea`, **v0.52.3** `ee5d7b2`,
+   **v0.52.4** `96679ac`.
 2. Parked: send this fork's security fixes upstream to AltanS/collie.
 3. Parked: `push-keys` / `push-test` Herdr actions are still POSIX-only (the Windows ctl has no
    wrappers; PATH's bash is the WSL stub).
 
 ## Open
 
-- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`), v0.53.0 (`f437f17`).
-  Releases are on main, tags are not.
+- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.0 is tagged.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
 
