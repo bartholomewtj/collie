@@ -1,8 +1,11 @@
 # Next session
 
-_Main at **0.56.8** (`76c3adb` merge of #143), tagged **v0.56.8**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`. Bridge restarted and `web/dist` rebuilt on 0.56.8 (2026-08-22, `[events] stream up` confirmed)._
+_Main at **0.56.9** (`e48adfd` merge of #144), tagged **v0.56.9**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`. `web/dist` rebuilt on 0.56.9 (2026-08-22); bridge not restarted since (static files are served off disk, so no restart needed — phone must reopen the PWA)._
 
 ## Where this stopped
+
+**0.56.9 (#144):** header `‹` now pops one history entry like swipe-back (`web/src/hooks/use-back.ts`, fallback target only on a cold entry); `web/src/lib/resume.ts` restores the last in-app path when Android relaunches the PWA at `/` after Open in browser (10 min window, fresh `navigate` only). The second fix is a best guess at the cause — **unverified on the phone**. If swipe-back after Open in browser still lands on the dashboard, next option is keeping the file inside the PWA window instead of a Chrome tab.
+
 
 **Desktop mode phases 1 and 2 are done and merged** (#141 shell 0.56.0–0.56.2, #142 typing 0.56.3–0.56.7, #143 test follow-up 0.56.8). What exists now, all behind the Settings → Desktop mode toggle, phone untouched:
 
@@ -22,7 +25,7 @@ _Main at **0.56.8** (`76c3adb` merge of #143), tagged **v0.56.8**; Windows host 
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # expect v0.56.8
+git describe --tags --abbrev=0                        # expect v0.56.9
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 

@@ -52,7 +52,7 @@ public access, Collie isn't built for it. Read the
 
 ## Demo
 
-The home screen is one folder tree (space → tab → pane; a single child opens straight through), agents needing you sort to the top, and the bottom bar is Spaces / Traces / Settings with one back rule. A pane opens raw; ⚙ → Display → Raw terminal off gives tappable prompt buttons. Long-press a row to rename or close.
+The home screen is one folder tree (space → tab → pane; a single child opens straight through), agents needing you sort to the top, and the bottom bar is Spaces / Traces / Settings. The header **‹** and the phone's swipe-back gesture both go back exactly one screen; if Android relaunches the installed app after **Open in browser**, you return to the screen you left rather than the dashboard. A pane opens raw; ⚙ → Display → Raw terminal off gives tappable prompt buttons. Long-press a row to rename or close.
 
 <table>
   <tr>
