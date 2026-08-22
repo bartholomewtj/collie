@@ -71,6 +71,7 @@ export interface SpaceTreeProps {
   /** The snapshot on screen is stale — an empty tree then means "we don't know", never "no spaces". */
   error?: boolean;
   lastSeenAt?: number;
+  currentPaneId?: string;
 }
 
 export function SpaceTree({
@@ -85,6 +86,7 @@ export function SpaceTree({
   onRenamed,
   error = false,
   lastSeenAt,
+  currentPaneId,
 }: SpaceTreeProps) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -368,7 +370,7 @@ export function SpaceTree({
                                 return (
                                   <div
                                     key={p.paneId}
-                                    className="flex flex-row items-center gap-1 py-1 pr-1.5"
+                                    className={cn("flex flex-row items-center gap-1 py-1 pr-1.5", currentPaneId === p.paneId && "rounded bg-accent")}
                                   >
                                     <TreeRowButton
                                       onClick={() => navigate(panePath(p.paneId, session))}

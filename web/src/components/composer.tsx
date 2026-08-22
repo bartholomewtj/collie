@@ -28,6 +28,7 @@ import { sendGuardedReply } from "@/lib/reply-action";
 import { TerminalDraftPreview } from "@/components/terminal-draft-preview";
 import { DirectTypingStrip } from "@/components/direct-typing-strip";
 import { NoEchoNotice } from "@/components/no-echo-notice";
+import { useDesktop } from "@/lib/desktop";
 
 export interface ComposerHandle {
   /** Focus the input and put the caret at the end — used by the mirror-tap-to-focus in AgentChat. */
@@ -284,6 +285,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (next !== null) clearDraft(session, paneId);
   }
 
+  const desktop = useDesktop().on;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const direct = useDirectTyping({
@@ -785,6 +787,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             this one; folding them behind the ⚙ gives the mirror that row back. The gear is icon-only
             and NOT flex-1 — it's a settings affordance, not a peer of the three action toggles, and
             keeping it narrow leaves the labelled buttons their width on a 390px phone. */}
+        {/* Desktop uses the physical keyboard instead of the Keys pad; phase 2 replaces the Type
+            toggle with Ctrl+`. The phone controls remain unchanged when desktop mode is off. */}
         {/* The "Controls" tag is lifted OUT of the row's flex flow and floated just above it. In
             flow it was a fixed ~60px of a 390px phone width spent on a word that never changes,
             which is what squeezed the toggles; absolute costs nothing and the row gets the width
@@ -797,7 +801,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {/* Keys and Quick are TOGGLES for the in-flow dock above (not overlays): tap to open, tap
               again to close. aria-expanded ties each to the dock; secondary variant marks it pressed
               while open. Both share the single-valued `drawer`, so opening one closes the other. */}
-          <Button
+          {!desktop && <Button
             variant="ghost"
             size="sm"
             className={cn("h-8 flex-1 gap-1.5", drawer === "keys" ? CONTROL_ON : CONTROL_OFF)}
@@ -807,7 +811,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           >
             <Keyboard className="size-4" />
             Keys
-          </Button>
+          </Button>}
           {/* "Type into terminal" lives HERE, beside Keys, rather than on the Send button.
               It is the same problem split in half: Keys exists because the phone keyboard cannot
               send Esc/Tab/arrows/chords, this exists because it cannot send bare printable letters —
@@ -819,7 +823,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               above the input is what makes that visible. Arming is still an explicit NAMED choice,
               which is what keeps an accidental touch from quietly wiring the keyboard to a live
               terminal; see use-direct-typing.ts for the rest of that argument. */}
-          <Button
+          {!desktop && <Button
             variant="ghost"
             size="sm"
             className={cn("h-8 flex-1 gap-1.5", direct.active ? CONTROL_ON : CONTROL_OFF)}
@@ -840,7 +844,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           >
             <Terminal className="size-4" />
             Type
-          </Button>
+          </Button>}
           <Button
             variant="ghost"
             size="sm"
@@ -984,7 +988,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             disabled={locked}
             rows={1}
           />
-            <Button
+            {!desktop && <Button
               type="button"
               variant="ghost"
               size="icon"
@@ -1002,7 +1006,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ) : (
                 <ImagePlus className="size-4" />
               )}
-            </Button>
+            </Button>}
           </div>
           {!direct.active && forcingSend ? (
             // The pre-flight refused and the user is being offered the override. Labelled for what it

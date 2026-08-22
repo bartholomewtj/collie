@@ -13,6 +13,7 @@ import { useLoadingStalled } from "@/hooks/use-loading-stalled";
 import { useSpaceActions } from "@/hooks/use-spaces";
 import { ROOT_ROUTE_ID, type HomeData } from "@/lib/loaders";
 import { isReadOnly } from "@/lib/types";
+import { useDesktop } from "@/lib/desktop";
 
 // The tree route: the Spaces tree at '/'. Everything spaces-and-tabs collapses into this folder tree.
 export function TreeRoute() {
@@ -21,6 +22,9 @@ export function TreeRoute() {
   const revalidator = useRevalidator();
   const { newSpace, newTab } = useSpaceActions();
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const desktop = useDesktop().on;
+
+  if (desktop) return <div className="flex min-h-full items-center justify-center text-muted-foreground">Pick a pane</div>;
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col">

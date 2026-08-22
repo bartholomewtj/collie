@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { DisplayPrefs } from "@/hooks/use-display-prefs";
 import { FONT_MAX, FONT_MIN } from "@/hooks/use-display-prefs";
+import { useDesktop } from "@/lib/desktop";
 
 // The mirror's display prefs, as LABELLED rows behind the composer's ⚙ toggle.
 //
@@ -57,9 +58,10 @@ export function DisplayPrefsContent({
   setRawTerminal,
   setTapToFocus,
 }: DisplayPrefsContentProps) {
+  const desktop = useDesktop().on;
   return (
     <div className="divide-y divide-border/60 border-t border-border/60 bg-muted/30 px-3 py-1">
-      <Row
+      {!desktop && <Row
         label="Tap to type"
         hint="On, tapping the mirror anywhere opens the keyboard. Off, the mirror behaves like a document — taps land on the text and only the composer opens the keyboard."
         htmlFor="pref-tap-to-focus"
@@ -71,7 +73,7 @@ export function DisplayPrefsContent({
             aria-label="Tap to type"
           />
         }
-      />
+      />}
       <Row
         label="Raw terminal"
         hint="On by default. Shows the plain mirror — no tappable prompt buttons, no chrome or status strips. Off restores those."

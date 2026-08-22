@@ -276,6 +276,8 @@ export function HistoryRoute() {
   const title = agent?.paneLabel ?? agent?.sessionName ?? agent?.workspaceLabel ?? paneId;
   const matchCursor = matches.indexOf(cursor);
 
+  // No width cap here by design: history has always been full-width, so desktop mode has nothing
+  // to drop (spec §2 lists this route only because files.tsx and the pane did carry one).
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <AppHeader

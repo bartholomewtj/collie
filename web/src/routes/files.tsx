@@ -7,6 +7,7 @@ import { downloadFileUrl, openFileUrl, searchFiles } from "@/lib/api";
 import { ROOT_ROUTE_ID, type FilesData, type HomeData } from "@/lib/loaders";
 import type { FileSearchResponse } from "@/lib/types";
 import { baseName, timeAgo } from "@/lib/format";
+import { useDesktop } from "@/lib/desktop";
 
 export function FilesRoute() {
   const loaded = useLoaderData() as FilesData;
@@ -25,9 +26,12 @@ export function FilesRoute() {
   const parent = parts.slice(0, -1).join("/");
   const back = loaded.rel ? () => navigate(parent ? filePath(parent, home.session) : filesPath(home.session)) : undefined;
   const title = loaded.rel ? baseName(loaded.rel) : "Files";
+  const desktop = useDesktop().on;
   if (loaded.error || !loaded.data) return <div className="flex flex-1 items-center justify-center p-6 text-muted-foreground">{loaded.rel ? "Not found" : "Files isn't turned on — set COLLIE_WORK_ROOT on the host"}</div>;
   const data = loaded.data;
-  return <div className="mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col"><AppHeader bridge={home.bridge} error={home.error} wordmark={false} onBack={back}><span className="truncate font-semibold">{title}</span></AppHeader>
+  // Phone keeps the 640px reading column; desktop mode fills the pane column of the shell grid
+  // (the sidebar already takes 280px, so a second cap would waste most of the screen).
+  return <div className={desktop ? "mx-auto flex min-h-0 w-full flex-1 flex-col" : "mx-auto flex min-h-0 w-full max-w-screen-sm flex-1 flex-col"}><AppHeader bridge={home.bridge} error={home.error} wordmark={false} onBack={back}><span className="truncate font-semibold">{title}</span></AppHeader>
     <div className="p-3"><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find files" inputMode="search" autoCapitalize="off" autoCorrect="off" className="w-full rounded border bg-background px-3 py-2" /></div>
     {results ? <div className="flex-1 overflow-auto px-3">{results.truncated && <p className="p-2 text-xs text-muted-foreground">Showing first 200 matches</p>}{results.results.map((r) => <button className="flex w-full items-center gap-3 border-b p-3 text-left" key={r.path} onClick={() => navigate(filePath(r.path, home.session))}>{r.kind === "dir" ? <Folder /> : <File />}<span className="flex-1">{r.name}</span>{r.kind === "dir" && <ChevronRight className="size-4" />}</button>)}</div> : data.kind === "dir" ? <div className="flex-1 overflow-auto px-3">{data.entries.map((e) => { const p = loaded.rel ? `${loaded.rel}/${e.name}` : e.name; return <button className="flex w-full items-center gap-3 border-b p-3 text-left" key={e.name} onClick={() => navigate(filePath(p, home.session))}>{e.kind === "dir" ? <Folder /> : <File />}<span className="flex-1"><span className="block">{e.name}</span>{e.kind === "file" && <span className="text-xs text-muted-foreground">{e.size} bytes · {timeAgo(e.mtimeMs)}</span>}</span>{e.kind === "dir" && <ChevronRight className="size-4" />}</button>; })}</div> : <FileDetail data={data} />}
   </div>;
