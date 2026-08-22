@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.6] - 2026-08-22
+
+### Added
+- Desktop mode: direct typing sends Ctrl/Alt/Shift chords and function keys
+
 ## [0.56.5] - 2026-08-22
 
 ### Changed

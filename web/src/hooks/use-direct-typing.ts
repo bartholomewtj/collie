@@ -8,6 +8,7 @@ import type {
 
 import { useOrderedKeySender } from "@/hooks/use-ordered-key-sender";
 import { textToKeySequence } from "@/lib/key-queue";
+import { handleDesktopKeyDown, isAltKeyUp } from "@/lib/desktop-keymap";
 import { setStatus } from "@/lib/status";
 import { useLocked } from "@/lib/idle";
 
@@ -328,11 +329,29 @@ export function useDirectTyping({
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    // Desktop capture uses the pure mapper so browser-reserved keys and modifier chords retain
+    // their deliberate precedence; the phone path below remains unchanged.
+    if (desktop) {
+      const action = handleDesktopKeyDown(event.nativeEvent);
+      if (action.kind !== "swallow" && action.notice) setStatus(action.notice.text, action.notice.tone);
+      if (action.kind === "send") sender.enqueue(action.keys);
+      return;
+    }
     const key = keyForKeyDown(event.key);
     if (key === undefined) return;
     event.preventDefault();
     sender.enqueue([key]);
   }
+
+  useEffect(() => {
+    const inputEl = inputRef.current;
+    if (!desktop || !active || inputEl === null) return;
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (isAltKeyUp(event)) event.preventDefault();
+    };
+    inputEl.addEventListener("keyup", onKeyUp);
+    return () => inputEl.removeEventListener("keyup", onKeyUp);
+  }, [desktop, active, inputRef]);
 
   return {
     active,
