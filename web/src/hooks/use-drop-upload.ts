@@ -31,7 +31,11 @@ export function useDropUpload({ paneId, session, enabled, onPath, uploadImage }:
       }
       const upload = uploadImageRef.current ?? (async (image: File) => {
         const result = await api.uploadImage(paneId, image, session);
-        return result.ok ? result.path : null;
+        if (!result.ok) {
+          setStatus(result.error ?? "Image upload failed.", "error");
+          return null;
+        }
+        return result.path;
       });
       void upload(file).then((path) => {
         if (!path) return;

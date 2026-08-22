@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { useDropUpload } from "./use-drop-upload";
+import * as api from "@/lib/api";
 import { DirectTypingStrip } from "@/components/direct-typing-strip";
 import { __resetPasteHold, pasteHold, setPasteHold } from "@/lib/paste-hold";
 import { useStatus } from "@/lib/status";
@@ -25,6 +26,12 @@ function Probe({ enabled = true, onPath = vi.fn() }: { enabled?: boolean; onPath
   const status = useStatus();
   return <><DirectTypingStrip onStop={vi.fn()} /><output>{status?.text}</output></>;
 }
+function DefaultProbe() {
+  const onPath = vi.fn();
+  useDropUpload({ paneId: "w:p", enabled: true, onPath });
+  const status = useStatus();
+  return <><DirectTypingStrip onStop={vi.fn()} /><output>{status?.text}</output></>;
+}
 
 describe("useDropUpload", () => {
   beforeEach(() => { __resetPasteHold(); uploadImage.mockReset(); });
@@ -42,6 +49,15 @@ describe("useDropUpload", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Type path" }));
     expect(onPath).toHaveBeenCalledWith("/host/shot.png");
+  });
+
+  it("reports failed default uploads without holding a path", async () => {
+    vi.spyOn(api, "uploadImage").mockResolvedValue({ ok: false, error: "Upload rejected" });
+    render(<DefaultProbe />);
+    act(() => drop([new File(["x"], "shot.png", { type: "image/png" })]));
+    await waitFor(() => expect(screen.getByText("Upload rejected")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Type path" })).not.toBeInTheDocument();
+    expect(pasteHold()).toBeNull();
   });
 
   it("ignores text drops", () => {
