@@ -1,10 +1,12 @@
 # Next session
 
-_Main at **0.55.0** / **v0.55.0**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
+_Main at **0.55.2** (`4456a30`); tags v0.55.1 / v0.55.2 may still need pushing (see Open); Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
 
 ## Where this stopped
 
-Files tab shipped on `main`. PR #136 (`chore/cleanup-2-litter`) is open; this docs cleanup is on `chore/cleanup-3-docs` and its PR follows.
+Repo cleanup landed 2026-08-22 as #136 (factory litter untracked), #138 (one orientation doc, 0.55.1) and #139 (`bridge/server.ts` split into route-group modules, 0.55.2). All merged; branches deleted. Phases 1–3 were run as ADWs; phase 4 ran three times before passing (scope-gate wording, see #137 and the claudeSSSF prompting cookbook).
+
+**The bridge has not been restarted on 0.55.2.** Restart it (`collie-ctl.ps1 restart`) before trusting any bridge behaviour; the split touched every route.
 
 ## Resume with
 
@@ -12,7 +14,7 @@ Files tab shipped on `main`. PR #136 (`chore/cleanup-2-litter`) is open; this do
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.55.0
+git describe --tags --abbrev=0                        # expect v0.55.2
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -29,8 +31,10 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 ## Open
 
-- PR #136: stop tracking factory litter and drop shipped planning docs.
-- This docs cleanup PR on `chore/cleanup-3-docs`, after #136.
+- Tags `v0.55.1` (`5b6b4ed`) and `v0.55.2` (`4456a30`) — create and push if `git tag` does not show them.
+- Four stale unmerged branches still exist (`chore/release-0.44.0`, `docs/handoff-0.47.0`, `docs/handoff-2026-08-20`, `fix/69-out-of-scope-gate`, the last three also on origin). Bart decided to delete them; the session could not (`-D` blocked).
+- #137: ADW commit phase fails on builder-staged deletions and on the version-bump pre-commit; phases 2–4 were committed by hand.
+- README trim in #138 was modest; a harder cut is a follow-up if wanted.
 - Parked: send this fork's security fixes upstream to `AltanS/collie`.
 - Parked: Windows `push-keys` / `push-test` Herdr actions are POSIX-only.
 
