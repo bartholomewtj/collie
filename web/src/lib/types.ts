@@ -213,6 +213,13 @@ export interface UpdateInfo {
   checkedAt: number | null;
 }
 
+export interface FileEntry { name: string; kind: "dir" | "file"; size?: number; mtimeMs: number; }
+export interface FileSearchResult { path: string; name: string; kind: "dir" | "file"; }
+export type FilesResponse =
+  | { kind: "dir"; path: string; entries: FileEntry[]; truncated: boolean }
+  | { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean };
+export interface FileSearchResponse { q: string; results: FileSearchResult[]; truncated: boolean; }
+
 export interface SnapshotResponse {
   bridge: BridgeStatus;
   /** Per-device authorisation for the requesting client; absent when the feature is off. */
@@ -227,6 +234,8 @@ export interface SnapshotResponse {
   sessions?: SessionSummary[];
   /** Version / upgrade status. Absent on an older bridge that doesn't report it. */
   update?: UpdateInfo;
+  /** True when the bridge serves a work root; absent when it does not. */
+  files?: boolean;
   ts: number;
 }
 

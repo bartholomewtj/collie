@@ -55,6 +55,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     stateDir: "/tmp/state",
     multiSession: true,
     skipServe: false,
+    workRoot: "",
     ...overrides,
   };
 }

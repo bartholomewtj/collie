@@ -246,14 +246,21 @@ major; crossing one is `herdr plugin action invoke update-major --plugin herdr.c
 ## The journal (scrollback the mirror can't give you)
 
 `bridge/journal/` reads the agent's own session log off disk, per harness (`claude` / `codex` / `pi` /
-`grok` / `opencode`, registered in `registry.ts`). It and `bridge/sssf-viz.ts` (the SSSF traces tab,
-[ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)) are the **only** things
-in the bridge that touch the filesystem, so the containment rule in
+`grok` / `opencode`, registered in `registry.ts`). It, `bridge/sssf-viz.ts` (the SSSF traces tab,
+[ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)), and
+`bridge/workdir.ts` (the opt-in Files tab, [ADR 0026](./.adr/0026-the-files-tab-is-the-third-filesystem-reader.md))
+are the **only** things in the bridge that touch the filesystem, so the containment rule in
 [`files.ts`](./bridge/journal/files.ts) is absolute: **every** path an
 adapter is about to read goes through `containedRealpath` — after symlink resolution, on the real
 paths, including paths derived from one already checked. The client never supplies a path. Run
 `bun scripts/journal-probe.ts` against real logs after touching an adapter; unit tests pin the
 grammar, the probe catches on-disk format drift.
+
+**The Files tab is read-only and opt-in.** `bridge/workdir.ts` serves one directory named by
+`COLLIE_WORK_ROOT`; unset means the routes don't exist and the tab doesn't show. Every path is parsed
+to relative segments, refused against the skip list, and contained with `containedRealpath` after
+symlink resolution — a typed path at `.env` 404s like an absent file. Downloads are always `attachment`.
+Don't add a write route, an upload, or send-to-pane ([ADR 0026](./.adr/0026-the-files-tab-is-the-third-filesystem-reader.md)).
 
 ## Security posture (don't regress)
 

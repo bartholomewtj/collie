@@ -43,6 +43,20 @@ export function homePath(session?: string): string {
 }
 
 /** The settings route, carrying the current session like the other path helpers. */
+/** Build the same-origin download endpoint for a relative work-root path. */
+export function downloadFileUrl(rel: string): string {
+  return `/api/files/download?path=${encodeURIComponent(rel)}`;
+}
+
+/** The Files browser destination. */
+export function filesPath(session?: string): string {
+  return `/files${sessionSearch(session)}`;
+}
+export function filePath(rel: string, session?: string): string {
+  const encoded = rel.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  return `/files/${encoded}${sessionSearch(session)}`;
+}
+
 export function settingsPath(session?: string): string {
   return `/settings${sessionSearch(session)}`;
 }

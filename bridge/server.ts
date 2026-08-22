@@ -20,6 +20,7 @@ import { looksPrivateHost, parsePushSubscription } from "./push-endpoint.ts";
 import { herdTagFor, type SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
 import { createSssfViz } from "./sssf-viz.ts";
+import { createWorkdir } from "./workdir.ts";
 import type { UpdateMonitor } from "./update.ts";
 import { imageExtFromBytes, makeRoomForUpload, SNIFF_BYTES } from "./uploads.ts";
 import type { StateEngine } from "./state-engine.ts";
@@ -192,6 +193,7 @@ export function startServer(opts: {
     guard, isHostAllowed, requireJsonBody, failureText, resolveStaticPath, cacheControlFor, secure,
     csp: CSP, contentTypes: CONTENT_TYPES,
   });
+  const workdir = createWorkdir(cfg, { guard, json, text, failureText, secure, contentTypes: CONTENT_TYPES });
   // Per-session background notifications live in each session's runtime (built by the factory in
   // index.ts, wired to its StateEngine transitions). The routes here only fan preference changes and
   // snooze-clears across every live session's coordinator.
@@ -230,6 +232,7 @@ export function startServer(opts: {
       const { pathname } = url;
 
       if (sssfViz.owns(pathname)) return sssfViz.handle(req, url);
+      if (workdir.owns(pathname)) return workdir.handle(req, url);
 
       // Session-scoped routes accept an optional `?session=<name>`; absent → the primary session
       // (identical to pre-multi-session behaviour). The name is only ever a registry Map lookup — it
@@ -309,6 +312,7 @@ export function startServer(opts: {
             sessions: registry.list(),
             notifications: { snoozedUntil: snooze.until() },
             update: updateMonitor.status(),
+            ...(workdir.enabled ? { files: true as const } : {}),
             ts: Date.now(),
           } satisfies SnapshotResponse, req.headers.get("accept-encoding")),
           await buildId(),

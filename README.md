@@ -308,6 +308,17 @@ The bridge reads `.env` only at startup — after any edit, `scripts/collie-ctl.
 Reading history from more than one agent home? List them all in `COLLIE_TRANSCRIPT_ROOT`,
 comma-separated.
 
+### Files tab
+
+The optional Files tab is a read-only browser of the operator's work directory. Set
+`COLLIE_WORK_ROOT=~/Projects` (or `COLLIE_WORK_ROOT=C:\\claudeos` on Windows); unset means no tab and
+no `/api/files*` routes. It supports folder navigation, filename search, text preview, copying a
+relative path, and downloading files, but never writes, renames, deletes, uploads, or sends to panes.
+Every dot-name and `node_modules`, `config` (intentionally refused), `__pycache__`, `venv`, `target`,
+`vendor`, caches, and key/certificate names are skipped and refused even by typed path. Anything under
+the root is readable by every device that can reach Collie, so use a work tree—not `$HOME` or a
+location containing credentials or patient data.
+
 ### SSSF traces tab
 
 If you run [Super Simple Software Factory](https://github.com/disler/super-simple-software-factory)

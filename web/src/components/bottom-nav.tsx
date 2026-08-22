@@ -1,20 +1,22 @@
-import { Activity, LayoutGrid, Settings } from "lucide-react";
+import { Activity, Folder, LayoutGrid, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { cn } from "@/lib/utils";
-import { homePath, settingsPath, tracesPath } from "@/lib/nav";
+import { filesPath, homePath, settingsPath, tracesPath } from "@/lib/nav";
 
 interface BottomNavProps {
   session?: string;
   /** Show the Traces destination — true when any workspace advertises SSSF traces. */
   traces: boolean;
+  /** Show the Files destination when a work root is configured. */
+  files: boolean;
 }
 
 // The bottom tab bar: the app's top-level destinations, always one tap away — the way a phone app
 // keeps its main sections reachable without a stack of back-taps. Screens BELOW a destination (a
 // pane, one repo's traces) don't render this; they get a "‹" back in the header instead
 // (AppHeader.onBack). Which destination is lit is read from the URL, so a deep link is right too.
-export function BottomNav({ session, traces }: BottomNavProps) {
+export function BottomNav({ session, traces, files }: BottomNavProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const items = [
@@ -28,6 +30,7 @@ export function BottomNav({ session, traces }: BottomNavProps) {
     ...(traces
       ? [{ key: "traces", label: "Traces", icon: Activity, to: tracesPath(session), on: pathname.startsWith("/traces") }]
       : []),
+    ...(files ? [{ key: "files", label: "Files", icon: Folder, to: filesPath(session), on: pathname.startsWith("/files") }] : []),
     { key: "settings", label: "Settings", icon: Settings, to: settingsPath(session), on: pathname === "/settings" },
   ];
   return (
