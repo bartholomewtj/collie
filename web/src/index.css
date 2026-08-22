@@ -221,6 +221,16 @@
   }
 }
 
+/* ── Desktop mode is a fixed frame ───────────────────────────────────────────────────────────────
+   Desktop mode has exactly two scroll regions — the pane mirror and the History transcript (plus the
+   sidebar's own tree box). The page itself must never scroll. */
+html.collie-desktop,
+html.collie-desktop body,
+html.collie-desktop #root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 /* We don't use view transitions (removed). But React Router can still fire document.startViewTransition
    on a revalidation for a device carrying a stale persisted transition map from an older build (see
    router.tsx). Keep the whole document unnamed so any such stray transition captures nothing and swaps

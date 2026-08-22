@@ -600,7 +600,7 @@ export function AgentChat({
   // max-w-[100dvw] is a phone guard (the mirror must never widen the page). In desktop mode the
   // grid track (minmax(0,1fr)) is the constraint and the viewport is not this element's width.
   return (
-    <div className={desktop ? "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden" : "flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden"}>
+    <div className={desktop ? "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden" : "flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden"}>
       {/* Header — the SAME AppHeader shell the dashboard and space mount, so the Collie mark is
           identical on every screen (no hand-rolled bar to drift). The pane's own bits ride in via
           slots: the `space › tab` breadcrumb as the center, the agent StatusBadge as the right-cluster
@@ -844,7 +844,7 @@ export function AgentChat({
         {/* Bottom region: the pane-switch handle + composer. The status line USED to float here as an
             overlay just above the composer, but it covered the terminal tail (the prompt/cursor and
             up-levelled prompt buttons) — it now lives as a slim row just below the header. */}
-        <div className="relative">
+        <div className={cn("relative", desktop && "shrink-0")}>
 
           {/* Swipe-up pane switching is phone-only; desktop uses the sidebar and pane header instead. */}
           {!desktop && agents.length + shellPanes.length > 0 && (
