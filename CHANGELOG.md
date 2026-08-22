@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.54.0] - 2026-08-22
+
+### Added
+- Files tab Open in browser for types Chrome on a phone can display (PDF, images, audio, video, text) — HTML/SVG stay download-only (b8c0617)
+
 ## [0.53.1] - 2026-08-22
 
 ### Fixed
