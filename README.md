@@ -314,9 +314,10 @@ The optional Files tab is a read-only browser of the operator's work directory. 
 `COLLIE_WORK_ROOT=~/Projects` (or `COLLIE_WORK_ROOT=C:\\claudeos` on Windows); unset means no tab and
 no `/api/files*` routes. It supports folder navigation, filename search, text preview, copying a
 relative path, downloading files, and **Open in browser** for types Chrome on a phone can display
-(PDF, images, audio, video, and a few text types). Images, audio and video also play in the Files
-tab; PDF stays on Open in browser (an in-page PDF viewer is flaky on iPhone). HTML, SVG, XML and JS
-stay download-only — an inline page from the work root would run as Collie. Nothing is written,
+(PDF, images, audio, video, a few text types, and HTML). Images, audio and video also play in the
+Files tab; PDF and HTML stay on Open in browser (an in-page PDF viewer is flaky on iPhone; HTML
+opens as a unique-origin sandbox so its scripts do not run and it cannot call Collie's API). SVG,
+XML and JS stay download-only. Nothing is written,
 renamed, deleted, uploaded, or sent to a pane.
 Every dot-name and `node_modules`, `config` (intentionally refused), `__pycache__`, `venv`, `target`,
 `vendor`, caches, and key/certificate names are skipped and refused even by typed path. Anything under

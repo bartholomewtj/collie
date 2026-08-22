@@ -90,4 +90,12 @@ describe("FilesRoute", () => {
     expect(document.querySelector("iframe")).toBeNull();
     expect(screen.getByRole("link", { name: /Open in browser/ })).toBeInTheDocument();
   });
+  it("offers Open in browser for HTML without iframing it", async () => {
+    renderFiles({ rel: "page.html", data: { kind: "file", path: "page.html", name: "page.html", size: 12, mtimeMs: 1, binary: false, text: "<h1>hi</h1>", openInBrowser: true } });
+    const link = await screen.findByRole("link", { name: /Open in browser/ });
+    expect(link.getAttribute("href")).toBe("/api/files/open?path=page.html");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByText("<h1>hi</h1>")).toBeInTheDocument();
+  });
 });
