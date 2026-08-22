@@ -55,12 +55,12 @@ describe("useDesktopHotkeys", () => {
     expect(dispatch("ArrowDown", { ctrlKey: false, altKey: false }).defaultPrevented).toBe(false);
     expect(dispatch("ArrowLeft").defaultPrevented).toBe(false);
     expect(dispatch("ArrowDown", { shiftKey: true }).defaultPrevented).toBe(false);
-    expect(screen.getByTestId("pathname")).toHaveTextContent(/^/$/);
+    expect(screen.getByTestId("pathname")).toHaveTextContent(/^\/$/);
     cleanup();
 
     mount(undefined, []);
     expect(dispatch("ArrowDown").defaultPrevented).toBe(false);
-    expect(screen.getByTestId("pathname")).toHaveTextContent(/^/$/);
+    expect(screen.getByTestId("pathname")).toHaveTextContent(/^\/$/);
   });
 
   it("removes its listener when unmounted", () => {
