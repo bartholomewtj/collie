@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress, type LongPressPoint } from "@/hooks/use-long-press";
+import { useDesktop } from "@/lib/desktop";
 import { StatusDot } from "@/components/status-badge";
 import { TRIAGE_STATUS, type TriageKey } from "@/lib/triage";
 import { STATUS_LABEL } from "@/lib/types";
@@ -22,7 +23,7 @@ interface ChipProps {
    * rename sheet. Inert when unset (the space strip's chips don't wire it), so the handlers are safe
    * to spread unconditionally.
    */
-  onLongPress?: () => void;
+  onLongPress?: (at: LongPressPoint) => void;
   /**
    * A plain tap when the chip is already `active` — opens actions instead of a no-op re-select,
    * mirroring the pane pill. Only meaningful alongside {@link onLongPress}.
@@ -38,7 +39,7 @@ interface ChipProps {
 // the chip's own fill, and the chip has two fills (active/inactive). Inline, it just works, and it
 // matches how the space rows and section headings already read.
 export function Chip({ label, active, ring, status, onClick, onLongPress, onTapActive }: ChipProps) {
-  const longPress = useLongPress(onLongPress);
+  const longPress = useLongPress(onLongPress, { disabled: useDesktop().on });
 
   // A long-press already suppresses the ensuing click (via longPress.onClickCapture), so this only
   // ever sees a genuine tap. Tapping the already-active chip opens actions (when wired) rather than a

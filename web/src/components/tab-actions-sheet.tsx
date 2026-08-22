@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Pencil, XCircle } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/sheet";
+import { ActionPopover } from "@/components/ui/popover";
+import { useDesktop } from "@/lib/desktop";
 import { ActionRow, DestructiveActionRow, RenameView } from "@/components/action-sheet-rows";
 import { usePendingConfirm } from "@/hooks/use-pending-confirm";
 import * as api from "@/lib/api";
@@ -22,6 +24,7 @@ interface TabActionsSheetProps {
   /** Fired after a successful close, with the closed tab id — the parent falls back to "All"/Home if
    *  it was the selected/viewed tab, or revalidates so it drops out of the strip. */
   onClosed: (tabId: string) => void;
+  anchor?: { x: number; y: number } | null;
 }
 
 type Mode = "actions" | "rename";
@@ -42,7 +45,9 @@ export function TabActionsSheet({
   readOnly = false,
   onRenamed,
   onClosed,
+  anchor = null,
 }: TabActionsSheetProps) {
+  const desktop = useDesktop().on;
   const [mode, setMode] = useState<Mode>("actions");
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -114,9 +119,8 @@ export function TabActionsSheet({
   const confirmLabel =
     paneCount > 0 ? `Tap again to close ${paneCount} pane${paneCount === 1 ? "" : "s"}` : "Tap again to close";
 
-  return (
-    <BottomSheet open={open} onClose={onClose} title={tab ? `Tab ${tab.label}` : "Tab"}>
-      {readOnly ? (
+  const title = tab ? `Tab ${tab.label}` : "Tab";
+  const body = readOnly ? (
         <p className="py-2 text-sm text-muted-foreground">
           Read-only — this device isn't authorised to rename or close tabs.
         </p>
@@ -150,7 +154,10 @@ export function TabActionsSheet({
           canSave={!!trimmed}
           placeholder="name this tab"
         />
-      )}
-    </BottomSheet>
+      );
+  return desktop ? (
+    <ActionPopover open={open} onClose={onClose} anchor={anchor} title={title}>{body}</ActionPopover>
+  ) : (
+    <BottomSheet open={open} onClose={onClose} title={title}>{body}</BottomSheet>
   );
 }

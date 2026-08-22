@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/ui/section-label";
 import { StatusDot } from "@/components/status-badge";
 import { PaneActionsSheet } from "@/components/pane-actions-sheet";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress, type LongPressPoint } from "@/hooks/use-long-press";
+import { useDesktop } from "@/lib/desktop";
 import { paneDisplayName } from "@/lib/types";
 import type { AgentView } from "@/lib/types";
 
@@ -39,6 +40,7 @@ export function PaneStrip({
   onClosed,
 }: PaneStripProps) {
   const [sheetPane, setSheetPane] = useState<AgentView | null>(null);
+  const [anchor, setAnchor] = useState<LongPressPoint | null>(null);
   // Actions need both callbacks wired (revalidate on rename, navigate on close); without them the
   // pills stay plain tap-to-switch — long-press is inert.
   const actionsEnabled = !!onRenamed && !!onClosed;
@@ -55,10 +57,10 @@ export function PaneStrip({
             pane={p}
             active={p.paneId === currentPaneId}
             onSelect={onSelect}
-            onLongPress={actionsEnabled ? () => setSheetPane(p) : undefined}
+            onLongPress={actionsEnabled ? (at) => { setAnchor(at); setSheetPane(p); } : undefined}
             // Tapping the already-active pill would otherwise be a useless re-navigate; repurpose it
             // to open the same actions sheet a long-press would, so it's not a dead tap.
-            onTapActive={actionsEnabled ? () => setSheetPane(p) : undefined}
+            onTapActive={actionsEnabled ? () => { setAnchor(null); setSheetPane(p); } : undefined}
           />
         ))}
       </div>
@@ -72,6 +74,7 @@ export function PaneStrip({
           readOnly={readOnly}
           onRenamed={onRenamed}
           onClosed={onClosed}
+          anchor={anchor}
         />
       )}
     </>
@@ -88,7 +91,7 @@ function PanePill({
   pane: AgentView;
   active: boolean;
   onSelect: (paneId: string) => void;
-  onLongPress?: () => void;
+  onLongPress?: (at: LongPressPoint) => void;
   /** A plain tap on the pill when it's already `active` — opens actions instead of a no-op re-select. */
   onTapActive?: () => void;
 }) {
@@ -98,7 +101,7 @@ function PanePill({
   // A user label, then Claude's /rename session name, then the agent/shell name (see paneDisplayName)
   // — the icon still conveys which agent it is.
   const name = paneDisplayName(pane);
-  const longPress = useLongPress(onLongPress);
+  const longPress = useLongPress(onLongPress, { disabled: useDesktop().on });
 
   // A long-press already suppresses the ensuing click via longPress.onClickCapture (stops it before
   // this ever runs), so this only ever sees a genuine tap.

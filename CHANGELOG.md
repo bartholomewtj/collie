@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.10] - 2026-08-22
+
+### Added
+- Desktop mode: right-click opens the pane, tab and space actions in a popover at the pointer
+
 ## [0.56.9] - 2026-08-22
 
 ### Fixed

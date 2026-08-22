@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Pencil, XCircle } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/sheet";
+import { ActionPopover } from "@/components/ui/popover";
+import { useDesktop } from "@/lib/desktop";
 import { ActionRow, DestructiveActionRow, RenameView } from "@/components/action-sheet-rows";
 import { usePendingConfirm } from "@/hooks/use-pending-confirm";
 import * as api from "@/lib/api";
@@ -23,6 +25,7 @@ interface PaneActionsSheetProps {
   /** Fired after a successful close, with the closed pane id — the parent navigates Home if it's the
    *  pane currently open, or revalidates so it drops out of the list. */
   onClosed: (paneId: string) => void;
+  anchor?: { x: number; y: number } | null;
 }
 
 type Mode = "actions" | "rename";
@@ -42,7 +45,9 @@ export function PaneActionsSheet({
   readOnly = false,
   onRenamed,
   onClosed,
+  anchor = null,
 }: PaneActionsSheetProps) {
+  const desktop = useDesktop().on;
   const [mode, setMode] = useState<Mode>("actions");
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -108,9 +113,8 @@ export function PaneActionsSheet({
 
   const confirming = !!pane && pending === pane.paneId;
 
-  return (
-    <BottomSheet open={open} onClose={onClose} title={pane ? paneDisplayName(pane) : "Pane"}>
-      {readOnly ? (
+  const title = pane ? paneDisplayName(pane) : "Pane";
+  const body = readOnly ? (
         <p className="py-2 text-sm text-muted-foreground">
           Read-only — this device isn't authorised to rename or close panes.
         </p>
@@ -143,7 +147,10 @@ export function PaneActionsSheet({
           canSave={true}
           placeholder="name this pane"
         />
-      )}
-    </BottomSheet>
+      );
+  return desktop ? (
+    <ActionPopover open={open} onClose={onClose} anchor={anchor} title={title}>{body}</ActionPopover>
+  ) : (
+    <BottomSheet open={open} onClose={onClose} title={title}>{body}</BottomSheet>
   );
 }
