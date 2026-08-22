@@ -31,8 +31,10 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 ## Open
 
-- #137: ADW commit phase fails on builder-staged deletions and on the version-bump pre-commit; phases 2–4 were committed by hand.
-- README trim in #138 was modest; a harder cut is a follow-up if wanted.
+- #137: ADW commit phase fails on builder-staged deletions and on the version-bump pre-commit. Until fixed, any ADW that deletes files or touches `scripts/` needs a hand commit.
+- #140: README harder cut (install / use / troubleshoot only). `adw_plan_build_test`.
+- claudeSSSF PR #71: cookbook note — the `Out of scope:` line is a parsed deny-list; never put a file the ask must change on it.
+- `web/dist` is older than `web/src` (pre-push warning). Harmless; `bun run build` only if a UI bug will not reproduce.
 - Parked: send this fork's security fixes upstream to `AltanS/collie`.
 - Parked: Windows `push-keys` / `push-test` Herdr actions are POSIX-only.
 
