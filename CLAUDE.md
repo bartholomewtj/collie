@@ -371,7 +371,15 @@ entry, a ctl-discovered Tailscale host, or an allowed origin's host
 |---|---|
 | `index.ts` | Entry point. Loads config, starts state engine, event poker, notifications, push, server. Periodic journal rescan lives here. |
 | `config.ts` | All env → `Config`, resolved once. Loopback-bind check (`isLoopbackBindHost`), `COLLIE_*` parsing, allowed origins/hosts, trusted user, device header. |
-| `server.ts` | `Bun.serve` HTTP handler: every `/api/*` route (table below), access gate (`guard`, `checkAccess`, `isHostAllowed`), prompt-binding check, static serving with CSP, ETag/gzip. 1.7k lines — use the route table to jump. |
+| `server.ts` | Composition root: builds helpers, Bun.serve dispatch, and re-exports the public helper surface. |
+| `responses.ts` | Shared response builders, CSP, hardening headers, and JSON-body checks. |
+| `access.ts` | Access and device gates, peer checks, seen tracking, and startup warnings. |
+| `static-assets.ts` | Static PWA serving, build IDs, cache rules, and reserved auth path. |
+| `pane-read-routes.ts` | Pane mirror reads and journal history routes. |
+| `pane-write-routes.ts` | Reply, keys, upload, close, rename, and prompt binding. |
+| `tree-routes.ts` | Tab and workspace create, rename, and close routes. |
+| `notify-routes.ts` | Push subscription, snooze, notification preferences, and update checks. |
+| `snapshot-route.ts` | Snapshot and bridge configuration routes. |
 | `herdr-client.ts` | The Herdr socket adapter. Sole owner of RPC method names (`session.snapshot`, `pane.read`, `pane.send_keys`, `agent.send`, rename/close/move, `events.subscribe`). |
 | `dial.ts` | Platform shim: `Bun.connect({unix})` on POSIX, `node:net` named pipe on Windows. |
 | `wire.ts` | Pure NDJSON decoders for the wire protocol. |
@@ -404,7 +412,7 @@ entry, a ctl-discovered Tailscale host, or an allowed origin's host
 | `journal/types.ts` | `TranscriptEntry` and the adapter contract. |
 | `journal/{claude,codex,pi,grok,opencode}.ts` | One adapter per harness — finds the session file, parses it. Probe real logs with `bun scripts/journal-probe.ts`. |
 
-#### `/api/*` → handler (all in `server.ts`)
+#### `/api/*` → handler (route-group modules under `bridge/`)
 
 | Route | Method | Handler | Level |
 |---|---|---|---|
@@ -534,19 +542,19 @@ every tab the newest session.
 | Polling / stale snapshot / transitions | `bridge/state-engine.ts` · `event-poker.ts` · `web/src/hooks/use-polling.ts` |
 | Prompt / dialog not detected or mis-detected | First: composer ⚙ → Raw terminal **off**. Then `web/src/lib/blocks.ts` · `lib/harness/registry.ts` · `lib/harness/claude/` · `lib/grammar/*_NOTES.md` |
 | Pane is raw TUI / no prompt buttons | `web/src/hooks/use-display-prefs.ts` · `components/display-prefs.tsx` · composer ⚙ |
-| Send didn't land / wrong verification | `web/src/lib/reply-action.ts` · `dialog-guard.ts` · `bridge/server.ts sendReplySteps` · `checkPromptBinding` · `lib/harness/claude/paste.ts` |
+| Send didn't land / wrong verification | `web/src/lib/reply-action.ts` · `dialog-guard.ts` · `bridge/pane-write-routes.ts sendReplySteps` · `checkPromptBinding` · `lib/harness/claude/paste.ts` |
 | Composer / keys / type-into-terminal | `web/src/components/composer.tsx` · `hooks/use-direct-typing.ts` · `hooks/use-key-queue.ts` ([ADR 0005](./.adr/0005-a-composed-key-queue-never-outlives-its-dock.md)) |
 | History empty / wrong | `bridge/journal/registry.ts` · `journal/<harness>.ts` (Grok: `inferFromCwd` in `journal/grok.ts`) · `journal/files.ts` · `web/src/routes/history.tsx` · `web/src/hooks/use-inline-history.ts` |
 | Long-press rename / close | `web/src/hooks/use-long-press.ts` · `components/*-actions-sheet.tsx` · `action-sheet-rows.tsx` |
 | Operator rows / Quick dock / palette | `bridge/operator-commands.ts` · `web/src/lib/{agent-commands,quick-replies,operator-commands}.ts` · `commands.toml.example` |
 | Push not arriving / notification prefs | `bridge/notifications.ts` · `notify-prefs.ts` · `snooze.ts` · `push.ts` · `web/src/lib/push.ts` · `sw.ts` · `scripts/collie-ctl.sh push-test` |
 | Update banner / update command | `bridge/update.ts` · `web/src/lib/self-update.ts` · `components/update-banner.tsx` · `contrib/windows/collie-ctl.ps1 update` · `web/src/lib/last-seen.ts` (cold-boot cache) |
-| Image upload | `bridge/uploads.ts` · `server.ts uploadPane` · `web/src/components/composer.tsx` |
+| Image upload | `bridge/uploads.ts` · `bridge/pane-write-routes.ts uploadPane` · `web/src/components/composer.tsx` |
 | "Connection lost" banner / offline | `web/src/lib/connection-health.ts` · `hooks/use-connection-lost.ts` · `components/connection-banner.tsx` |
 | Draft lost / restored wrongly | `web/src/lib/drafts.ts` · `hooks/use-terminal-draft.ts` |
 | Traces tab | `bridge/sssf-viz.ts` · `web/src/components/sssf-frame.tsx` · `routes/traces.tsx` |
 | Files tab | `bridge/workdir.ts` · `web/src/routes/files.tsx` · `web/src/lib/nav.ts` |
-| 403 / host / origin / access | `bridge/server.ts guard` · `checkAccess` · `isHostAllowed` · `bridge/config.ts` · `DEPLOYMENT.md` |
+| 403 / host / origin / access | `bridge/access.ts guard` · `checkAccess` · `isHostAllowed` · `bridge/config.ts` · `DEPLOYMENT.md` |
 | Start / stop / restart / deploy | `scripts/collie-ctl.sh` · `contrib/windows/collie-ctl.ps1` (this box) · `justfile` · `herdr-plugin.toml` · `systemd/` |
 | Add a new harness | [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md) first |
 | Why was X decided | [`.adr/README.md`](./.adr/README.md) index |

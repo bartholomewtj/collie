@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.55.2] - 2026-08-22
+
+### Changed
+- Internal split of `bridge/server.ts` into route-group modules; no behaviour change.
+
 ## [0.55.1] - 2026-08-22
 
 ### Changed

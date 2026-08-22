@@ -1,7 +1,7 @@
 import { readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-// Uploaded images (server.ts uploadPane → `<stateDir>/uploads/`) are referenced by path in a
+// Uploaded images (pane-write-routes.ts uploadPane → `<stateDir>/uploads/`) are referenced by path in a
 // message and then never needed again, so nothing deletes them. This sweep prunes anything older
 // than the TTL. The decision — which names are stale — is a pure, tested function; the runner that
 // stats the dir and unlinks takes an injectable fs surface so it too can be exercised without disk.
@@ -20,7 +20,7 @@ export const SNIFF_BYTES = 12;
 /**
  * The upload allow-list, keyed by what the file IS rather than by what the client SAID it is.
  *
- * This used to be `IMAGE_EXT[file.type]` in server.ts — a bare-object lookup on the multipart part's
+ * This used to be `IMAGE_EXT[file.type]` in pane-write-routes.ts — a bare-object lookup on the multipart part's
  * Content-Type, which the client writes. `IMAGE_EXT["__proto__"]` is Object.prototype and
  * `IMAGE_EXT["constructor"]` is Object; both are truthy, so both passed the check and stringified
  * into the saved filename (issue #9). Sniffing removes the lookup entirely, so there is no key left
@@ -79,7 +79,7 @@ export interface UploadFs {
 const realFs: UploadFs = { readdir, stat: (p) => stat(p), unlink };
 
 /**
- * Ceiling on the total size of `<stateDir>/uploads`. Per-file is capped at 10 MB in server.ts, but
+ * Ceiling on the total size of `<stateDir>/uploads`. Per-file is capped at 10 MB in pane-write-routes.ts, but
  * nothing bounded the sum: ~360 max-size uploads between two TTL sweeps filled the disk that the
  * bridge, Herdr and every agent share (issue #9).
  *
