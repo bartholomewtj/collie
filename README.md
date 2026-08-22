@@ -51,18 +51,7 @@ public access, Collie isn't built for it. Read the
 
 ## Demo
 
-A run through the herd from a phone. The home screen is one **folder tree** of your spaces: tap a
-space to expand its tabs, tap a tab to expand its panes, and anything holding exactly one child
-opens that child straight away — a space with one tab and one pane puts you in the CLI in a single
-tap. Agents needing you sort to the top and start expanded, with a status dot on every row, so
-"who's waiting on me" is on the same screen as "where is everything".
-
-A bottom bar holds the three places you go — **Spaces** (the tree), **Traces**, **Settings** — and
-every screen below one of those has a **‹ back** in the top-left that goes up one level (pane →
-tree). A pane opens as the **raw terminal**. Composer ⚙ → Display → Raw terminal off restores
-tappable prompt buttons (`AskUserQuestion`, permissions, wizards). Long-press a space, tab or pane
-row to rename or close it (a Claude pane shows the name you gave it with `/rename`), switch between
-herds, and pick up a push notification the moment an agent is waiting on input.
+The home screen is one folder tree (space → tab → pane; a single child opens straight through), agents needing you sort to the top, and the bottom bar is Spaces / Traces / Settings with one back rule. A pane opens raw; ⚙ → Display → Raw terminal off gives tappable prompt buttons. Long-press a row to rename or close.
 
 <table>
   <tr>
@@ -81,62 +70,42 @@ herds, and pick up a push notification the moment an agent is waiting on input.
 
 ## ⚠️ Security — read before you run it
 
-**Collie is remote shell access to your machine, by design.** One bridge call types arbitrary
-keystrokes into a live terminal pane, so anyone who can reach the URL can read every pane (source,
-secrets, env, agent output) and run any command as your user. No sandbox, no command allow-list
-(that would defeat the purpose). Treat the URL like a root login.
+**Collie is remote shell access to your machine, by design.** Anyone who can reach the URL can read
+panes and run commands as your user. Treat the URL like a root login.
 
 The sharp edges:
 
-- **It acts as _you_**, with your full privileges — `~/.ssh`, `git push --force`, `rm -rf`, `sudo`.
-- **Access is device-level, not person-level.** Tailscale proves the device, not who's holding it —
-  no password, no session, so an unlocked or stolen phone is an open shell. The idle lock pauses an
-  unattended screen and gates nothing (details:
-  [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
-- **Every uid on the host can reach it.** Herdr's socket is a file, so its permissions keep other
-  local users out; Collie's port is TCP, so they're all in. The per-device gate closes the write half
-  of that; reads stay open, so it bounds damage, not disclosure (details:
+- **It acts as _you_**, with full privileges — `~/.ssh`, `git push --force`, `rm -rf`, `sudo`.
+- **Access is device-level, not person-level.** Tailscale proves the device, not who's holding it; an
+  unlocked or stolen phone is an open shell. The idle lock pauses an unattended screen and gates
+  nothing (details: [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
+- **Every uid on the host can reach the TCP port.** The per-device gate closes the write half; reads
+  stay open (details: [ARCHITECTURE.md §6](./ARCHITECTURE.md#6-security-model)).
+- **One bridge fronts _every_ session** under your config root (details: [Multi-session](#multi-session)).
+- **Every write is appended to `<state-dir>/audit.log`**; a trail is not a gate (details:
   [ARCHITECTURE.md §6](./ARCHITECTURE.md#6-security-model)).
-- **One bridge fronts _every_ session** under your config root by default, sandbox ones included
-  (details: [Multi-session](#multi-session)).
-- **Every write is appended to `<state-dir>/audit.log`** — replies, keys, uploads, pane and tab
-  create/close. A trail is not a gate (details:
-  [ARCHITECTURE.md §6](./ARCHITECTURE.md#6-security-model)).
-- **Authorising individual *devices*** needs a proxy in front — see
-  [`DEPLOYMENT.md`](./DEPLOYMENT.md).
+- **Authorising individual devices** needs a proxy in front — see [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 It's built single-user and tailnet-only. The defenses:
 
-- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`. The bridge enforces this at startup and refuses
-  to start on a non-loopback `COLLIE_HOST`. Off-loopback requests are also rejected by a TCP peer-address
-  check ahead of routing. An operator who deliberately wants a wide bind sets
-  `COLLIE_ALLOW_NON_LOOPBACK_BIND=1`, which turns off both checks; whatever fronts the port is then
-  your only control.
-- **Exactly one hardened front door** — either `tailscale serve` (default, Variant A: terminates
-  TLS, injects the identity header) or a conforming reverse proxy
-  ([`DEPLOYMENT.md` → Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)). Never
-  `tailscale funnel`, never a bare port.
-- **Optional identity gate** — set `COLLIE_TRUSTED_USER` to reject any tailnet login but yours. It
-  rejects a *mismatching* `Tailscale-User-Login` and a missing one, because `tailscale serve` injects
-  no `Tailscale-User-*` for **tagged** nodes — without this, any tagged node (shared server, CI runner)
-  had full write access. A host-local `curl` bypasses serve and has no header either; allow it back
-  with `COLLIE_TRUSTED_USER_OPTIONAL=1`, at the cost of re-opening the tagged-node gap.
-- **Optional per-device gate** — behind a proxy that injects a device-identity header, set
-  `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST` so only allowlisted devices can drive agents
-  or change notification settings; any other device is read-only, and so is a request that arrives
-  without the header at all. Off by default; revoke a device by dropping it from the list.
-  See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for the proxy this requires.
+- **Loopback bind only** (`127.0.0.1`) — never `0.0.0.0`. The bridge refuses non-loopback
+  `COLLIE_HOST`; `COLLIE_ALLOW_NON_LOOPBACK_BIND=1` disables the bind and peer checks, leaving the
+  front door as your only control.
+- **Exactly one hardened front door** — `tailscale serve` (default, Variant A) or a conforming
+  reverse proxy ([Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)); never `tailscale funnel` or a bare port.
+- **Optional identity gate** — `COLLIE_TRUSTED_USER` rejects mismatching and missing
+  `Tailscale-User-Login` headers. `COLLIE_TRUSTED_USER_OPTIONAL=1` allows host-local callers again,
+  reopening the tagged-node gap.
+- **Optional per-device gate** — set `COLLIE_DEVICE_HEADER` + `COLLIE_DEVICE_ALLOWLIST`; only
+  allowlisted devices can drive agents or change notification settings. Others, including requests
+  without the header, are read-only. See [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 - **Same-origin gate + strict CSP**; pane output renders as React text nodes, never `innerHTML`.
-- **Host allowlist (fail-closed)** — the bridge answers only to loopback (`localhost`, `127.0.0.1`,
-  `[::1]`), the Tailscale name/IPs `collie-ctl.sh` discovers (`COLLIE_TAILSCALE_HOSTS`), explicit
-  entries in `COLLIE_PUBLIC_HOSTS`, and hostnames from `COLLIE_ALLOWED_ORIGINS`; anything else is
-  rejected with `403 host not allowed` before the Origin check runs. This closes DNS rebinding by
-  default. `COLLIE_ALLOW_ANY_HOST=1` is the discouraged escape hatch that turns validation off.
+- **Host allowlist (fail-closed)** — loopback, discovered Tailscale hosts (`COLLIE_TAILSCALE_HOSTS`),
+  `COLLIE_PUBLIC_HOSTS`, and hosts from `COLLIE_ALLOWED_ORIGINS` are accepted; otherwise `403 host not
+  allowed`. `COLLIE_ALLOW_ANY_HOST=1` disables validation.
 
 > 🚫 **Never `tailscale funnel` this** — funnel exposes it to the public internet; `serve` keeps it
-> tailnet-only. There is no scenario where funneling Collie is correct.
-
-Narrow the blast radius with Tailscale ACLs and `COLLIE_TRUSTED_USER`. Provided as-is, no warranty.
+> tailnet-only.
 
 ## Requirements
 
@@ -158,8 +127,8 @@ deps by hand — the build runs `bun install` for you; the backend imports only 
 [`web-push`](https://www.npmjs.com/package/web-push) is optional and lazy (see [Web
 Push](#web-push-optional)).
 
-**Linux and macOS are the supported hosts.** The bridge itself also runs on **Windows**
-(experimental) against Herdr's Windows beta — see [Windows](#windows-experimental).
+**Linux and macOS are supported hosts.** The bridge also runs on **Windows** (experimental) — see
+[Windows](#windows-experimental).
 
 ## Install
 
@@ -442,20 +411,10 @@ session it finds is drivable through the same URL — including a private or san
 
 ## Dark mode / light mode
 
-**Collie follows your phone by default.** To pin it, open **Settings → Appearance** and pick
-**System**, **Light** or **Dark** — per device, stored in the browser.
-
-Pane display (**raw terminal**, text size, tap-to-type) lives on the composer ⚙, also per
-device. **Raw terminal is on by default** — the plain TUI, no tappable prompt buttons. Turn it off
-there to get the parsed view. The live mirror always pans sideways, column-faithful.
-
-The terminal mirror is the exception: it always renders on a **dark ground** and light mode *inverts*
-it rather than re-colouring it. Agents emit absolute colours chosen for a black terminal, and
-inverting is what keeps the contrast they designed for
-([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md) has the measurement). So keep your
-agents on a dark theme — a light-themed agent emits dark-on-light colours that are unreadable under
-either appearance. (Installed on iOS, the status-bar text stays white in light mode; iOS gives web
-apps no way to change that at runtime.)
+Collie follows your phone by default; pin System, Light or Dark in **Settings → Appearance**. Pane
+display (raw terminal, text size, tap-to-type) is under composer ⚙ and stored per device. Raw
+terminal is on by default; turn it off for parsed prompt buttons. The mirror stays dark and inverts
+in light mode so agents' absolute colours remain readable ([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md)).
 
 ## Commands
 
@@ -529,29 +488,7 @@ Fails with *"You are not currently on a branch"*? That's a GitHub install made b
 
 #### What `update` actually does to the checkout
 
-The two install routes differ in *when* the UI builds — a GitHub install at install time, via the
-manifest's `[[build]]` step; a linked clone on first `start`.
-
-They also leave two different shapes on disk, which is what `update` has to cope with.
-`herdr plugin install` doesn't clone: it fetches one commit and detaches onto it, so the checkout has
-no branch. A linked clone sits on one, the way you'd expect.
-
-One command handles both ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md)):
-
-- **Linked clone** (on a branch) — `git pull --ff-only`, then **re-links the plugin** so Herdr picks
-  up any new actions and the new version. Tag-pinning is scoped to managed checkouts so a developer's
-  working branch is never detached.
-- **`herdr plugin install`** (detached, shallow) — fetches the newest `vX.Y.Z` release tag (matching the
-  banner) and re-detaches onto it. If no release tag exists, it refuses rather than checking out
-  unreleased origin HEAD (`COLLIE_UPDATE_REF=<tag-or-ref>` overrides). `--depth 1` only if it's already
-  shallow, so a full history is never truncated; `--force` so dirty untracked state can't wedge the
-  *next* update. It deliberately does **not** re-link:
-  linking re-registers the plugin as a local path, after which Herdr refuses `herdr plugin install` —
-  which is your recovery path if this checkout ever breaks.
-
-By hand: frontend (`web/`) → `collie-ctl.sh build` (live, no restart — served from disk); backend
-(`bridge/`) → `systemctl --user restart collie`. Run `scripts/install-hooks.sh` once to enable the
-repo's pre-commit / pre-push checks.
+Linked clones pull and re-link; managed installs advance to the newest release tag of the installed major. By hand, rebuild `web/` with `collie-ctl.sh build` (live) and restart after `bridge/` changes; run `scripts/install-hooks.sh` once. Why the two shapes differ: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.
 
 ### Surviving reboots
 
@@ -575,15 +512,13 @@ supervisor? A `nohup` process with a pidfile in the config dir instead.)
 
 ## Deployment variants
 
-The bridge always binds **loopback only**; what changes between deployments is *what sits in front
-of it* and *how a request proves who it is*. Variant A is the default and sits below; the other four
-are in [`DEPLOYMENT.md`](./DEPLOYMENT.md). Pick one.
+The bridge always binds **loopback only**; deployments differ in what sits in front and how a request
+proves who it is. Variant A is below; B–E are in [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ### Variant A — `tailscale serve` + person identity (default)
 
-The happy path from [Install](#install). `tailscale serve` terminates TLS on your MagicDNS name and
-injects `Tailscale-User-Login`; set `COLLIE_TRUSTED_USER` to your tailnet login and the bridge
-rejects anyone else.
+The happy path from [Install](#install). `tailscale serve` terminates TLS and injects
+`Tailscale-User-Login`; set `COLLIE_TRUSTED_USER` to your tailnet login.
 
 ```bash
 # in your .env
@@ -591,46 +526,27 @@ COLLIE_TRUSTED_USER=you@example.com
 ```
 
 - **Granularity:** the tailnet *person*, not the device.
-- **Why it's safe on bare `tailscale serve`:** serve is the *trusted injector* of
-  `Tailscale-User-Login` — it sets that header itself and a client can't forge it through the proxy.
-- Nothing else to configure; origins match automatically on the MagicDNS name.
+- **Why it's safe:** `serve` is the trusted injector of `Tailscale-User-Login`.
 
-This is the right choice unless you specifically need per-device control. If you do, or if Tailscale
-isn't in the path at all, [`DEPLOYMENT.md`](./DEPLOYMENT.md) has the rest:
+This is the right choice unless you need per-device control or no Tailscale; see [`DEPLOYMENT.md`](./DEPLOYMENT.md) for:
 
-- **[B — identity-aware proxy, authorised by device](./DEPLOYMENT.md#variant-b--identity-aware-proxy--per-device-authorisation)** — a proxy on this host; some devices drive, others watch.
-- **[C — reverse proxy as the only front door](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)** — no Tailscale anywhere in the path.
-- **[D — off-host identity proxy over the tailnet](./DEPLOYMENT.md#variant-d--off-host-identity-proxy-over-the-tailnet)** — one central ingress node fronting Collie among your other services.
-- **[E — any other mesh or tunnel](./DEPLOYMENT.md#variant-e--any-other-mesh-or-tunnel-netbird-zerotier-cloudflare-tunnel)** — NetBird, ZeroTier, Cloudflare Tunnel: you own the ingress, Collie publishes nothing.
+- [B — identity-aware proxy](./DEPLOYMENT.md#variant-b--identity-aware-proxy--per-device-authorisation)
+- [C — reverse proxy](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale)
+- [D — off-host identity proxy](./DEPLOYMENT.md#variant-d--off-host-identity-proxy-over-the-tailnet)
+- [E — any other mesh or tunnel](./DEPLOYMENT.md#variant-e--any-other-mesh-or-tunnel-netbird-zerotier-cloudflare-tunnel)
 
 ## Windows (experimental)
 
-The **bridge** runs on Windows against Herdr's Windows beta. Herdr there exposes its control socket
-as a *named pipe* named after the full socket path, not an AF_UNIX socket, so Collie dials it through
-`node:net` instead of `Bun.connect` — one shim, [`bridge/dial.ts`](./bridge/dial.ts), which explains
-the mapping at the top of the file.
+Herdr on Windows exposes its control socket as a named pipe, so Collie dials it through `node:net` — [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.
 
 What that means in practice:
 
-- **Lifecycle is Task Scheduler**, via [`contrib/windows/`](./contrib/windows/README.md). Herdr
-  action buttons (`update`, `restart`, `update-major`, …) run `build/collie-action-v1.exe`; PATH's
-  `bash.exe` is the WSL stub and cannot be the command. POSIX twins of those verbs are `*-posix`.
-- **`tailscale serve` isn't wired up here.** Use the
-  [Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) posture: loopback bind, your own ingress in front, `COLLIE_PUBLIC_HOSTS` pinned. The security
-  rules in [§Security](#%EF%B8%8F-security--read-before-you-run-it) are not relaxed on Windows.
+- **Lifecycle is Task Scheduler**, via [`contrib/windows/`](./contrib/windows/README.md). Herdr action buttons (`update`, `restart`, `update-major`, …) run `build/collie-action-v1.exe`; PATH's `bash.exe` is the WSL stub and cannot be the command. POSIX twins are `*-posix`.
+- **`tailscale serve` isn't wired up here.** Use [Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) posture with `COLLIE_PUBLIC_HOSTS` pinned.
 - **Set `COLLIE_MULTI_SESSION=off`** — session discovery derives POSIX paths.
-- The socket path defaults to `%APPDATA%\herdr\herdr.sock`; override with `HERDR_SOCKET_PATH`
-  (an explicit `\\.\pipe\…` value is passed through untouched).
+- The socket path defaults to `%APPDATA%\herdr\herdr.sock`; override with `HERDR_SOCKET_PATH`.
 
-**Want the lifecycle too?** The bridge has spoken Windows' named pipe since 0.15.0; a
-community-maintained Task Scheduler setup (start/stop/update, no supported-tree guarantees) lives in
-[`contrib/windows/`](./contrib/windows/README.md).
-
-**Is it actually working?** The bridge logs `[events] stream up` on start — the event stream works
-over the pipe, so Windows gets the same live updates as Linux, not degraded polling.
-
-`COLLIE_HERDR_DIAL=net` forces that same dialer on Linux/macOS. It exists so the Windows code path
-can be exercised — and regression-tested — without a Windows box; `bridge/dial.test.ts` uses it.
+The bridge logs `[events] stream up` on start, confirming live updates over the pipe.
 
 ## Web Push (optional)
 
@@ -654,11 +570,8 @@ shell one:
 bash scripts/collie-ctl.sh push-keys mailto:you@example.com
 ```
 
-Two behaviours worth knowing. It **refuses to replace keys that are already live** unless you pass
-`--force`, because new keys invalidate every existing subscription: each device must re-enable
-notifications, and until it does it silently receives nothing. But passing a subject on an
-already-configured install is *not* that — it updates the contact address and leaves the keys alone,
-so fixing a typo never costs you your subscribers.
+It refuses to replace live keys without `--force` because new keys invalidate subscriptions. Passing a
+subject on an already-configured install only updates the contact address and leaves keys alone.
 
 > **On a Herdr install older than 0.8.0**, actions are the set cached when the plugin was installed
 > ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md)), so `push-keys` and
@@ -689,12 +602,8 @@ Collie validates push endpoints against known Web Push hosts (Chrome, Firefox, S
 
 ## Troubleshooting
 
-Symptoms below, in order — search the page for yours. **`Os { NotFound }` from `herdr plugin`** ·
-**`update` says "not currently on a branch"** · **`tailscale serve failed`** · **isn't answering
-(service won't start)** · **phone can't open the URL** · **page loads but stays empty (blank page,
-403)** · **a password prompt won't take your reply** · **no push notifications** · **gone after a
-reboot** · **`herdr plugin list` shows the old version** · **stale UI after a rebuild** ·
-**footer says the server needs a rebuild**.
+Search below for your symptom: install/update errors, ingress or service failures, phone access,
+blank pages, password prompts, push notifications, reboots, old versions, or stale builds.
 
 **`herdr plugin …` fails with `Error: Os { code: 2, kind: NotFound, message: "No such file or
 directory" }`** (plugin install fails, action invoke fails)**.** This is *not* a Collie problem — it
@@ -813,30 +722,7 @@ and being wrong the other way once cost an hour of debugging a frontend that was
 
 ## Architecture
 
-A small Bun process sits between your phone and Herdr — the browser never touches the socket.
-
-```
-  phone (PWA)
-     │  HTTPS over the tailnet
-     ▼
-  tailscale serve        terminates TLS, injects the identity header
-     │  127.0.0.1:PORT    (the bridge binds loopback only)
-     ▼
-  Collie bridge (Bun)    serves the UI + a small JSON API; polls Herdr
-     │  one-shot JSON-RPC over a Unix socket
-     ▼
-  Herdr server           owns the panes, agents and terminal state
-```
-
-Under [Variant C](./DEPLOYMENT.md#variant-c--reverse-proxy-as-the-only-front-door-no-tailscale) a
-reverse proxy replaces the `tailscale serve` box; everything below the front door is identical.
-
-- **One module touches the socket** (`bridge/herdr-client.ts`); everything else speaks the bridge's HTTP API.
-- **Polling is still the model** — the bridge polls Herdr (via `session.snapshot`, one RPC per tick) and the browser polls `/api/snapshot`; a long-lived Herdr event stream only pokes the bridge's poll to go faster, it never replaces it. No resync logic.
-- **Actions are plain HTTP** — a reply or key `POST`s to `/api/pane/:id/{reply,keys}` → Herdr `pane.send_keys`, which types into a real terminal (hence the security posture).
-- **The UI is a static PWA** — Vite builds `web/dist`, served from disk, so a rebuild is live with no restart.
-
-Full design rationale in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+A small Bun process sits between your phone and Herdr — the browser never touches the socket. The bridge binds loopback only, polls Herdr over a one-shot JSON-RPC socket, and serves the built PWA from disk. Diagram, polling model, recovery loops and security model: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Developing this plugin
 
@@ -862,7 +748,6 @@ Herdr's plugin system itself is upstream's to document:
 - Deployment variants B–E — [`DEPLOYMENT.md`](./DEPLOYMENT.md)
 - Design & rationale — [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - Verified Herdr socket API — [`HERDR_API.md`](./HERDR_API.md)
-- Ops, versioning & conventions — [`CLAUDE.md`](./CLAUDE.md)
+- Ops, versioning, conventions & the system map — [`CLAUDE.md`](./CLAUDE.md)
 - Changes — [`CHANGELOG.md`](./CHANGELOG.md)
 
-In the works: more than one machine under a single URL — one Collie leads, the others join it.

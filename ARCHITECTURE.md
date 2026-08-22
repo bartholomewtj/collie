@@ -190,6 +190,8 @@ app. Closing this needs the server-side blocking-message capture described above
 - **PWA cache-busting.** Service workers serve stale clients after an update, so the build stamp
   travels in every response (`X-Collie-Build` header + `/api/config`); on mismatch the footer offers
   "new build — tap to update."
+- **Two checkout shapes, one `update` command.** `herdr plugin install` leaves a detached, shallow checkout with no branch; a linked clone sits on a branch. `git symbolic-ref -q HEAD` is the single predicate selecting the strategy: linked clones use `git pull --ff-only` and re-link, while managed installs fetch and pin the newest `vX.Y.Z` tag for the installed major, refusing unreleased HEAD (`COLLIE_UPDATE_REF` overrides). `--depth 1` is used only when already shallow, and `--force` prevents dirty untracked state from wedging the next update. Managed checkouts are deliberately not re-linked: that re-registers the plugin as local and makes Herdr refuse the reinstall that is the recovery path ([ADR 0006](./.adr/0006-update-advances-the-checkout-herdr-installed.md), [ADR 0019](./.adr/0019-update-pins-to-the-newest-release-tag.md), [ADR 0025](./.adr/0025-a-major-upgrade-is-consented-by-flag.md)).
+
 - **The operator's slash-command rows ride `/api/config`** too, read from their `commands.toml`
   behind an mtime check (`bridge/operator-commands.ts`), so editing the file is live like a web
   rebuild. On a pane they address they **replace** the shipped catalog rather than merging into it —

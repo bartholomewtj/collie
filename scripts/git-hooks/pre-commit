@@ -17,7 +17,7 @@ fi
 "$ROOT/scripts/check-version.sh" >/dev/null
 
 # (1b) doc links — if an entry doc is staged, every relative link / repo path in it must resolve.
-staged_docs="$(git diff --cached --name-only | grep -E '^(CLAUDE|CONTEXT|README|ARCHITECTURE|DEPLOYMENT|HARNESS_CONTRIBUTING|HERDR_API|NEXT-SESSION)\.md$|^\.adr/README\.md$' || true)"
+staged_docs="$(git diff --cached --name-only | grep -E '^(CLAUDE|README|ARCHITECTURE|DEPLOYMENT|HARNESS_CONTRIBUTING|HERDR_API|NEXT-SESSION)\.md$|^\.adr/README\.md$' || true)"
 if [ -n "$staged_docs" ]; then
   # shellcheck disable=SC2086
   "$ROOT/scripts/check-doc-links.sh" $staged_docs
