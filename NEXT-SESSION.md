@@ -1,6 +1,6 @@
 # Next session
 
-_Main at **0.56.9** (`e48adfd` merge of #144), tagged **v0.56.9**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`. `web/dist` rebuilt on 0.56.9 (2026-08-22); bridge not restarted since (static files are served off disk, so no restart needed — phone must reopen the PWA)._
+_Main at **0.56.13** (`5bd8f6d` merge of #146), tagged **v0.56.13**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`. `web/dist` rebuilt and bridge restarted on 0.56.13 (2026-08-23, `0.56.13+5bd8f6d`). Phone must reopen the PWA._
 
 ## Where this stopped
 
@@ -15,7 +15,16 @@ _Main at **0.56.9** (`e48adfd` merge of #144), tagged **v0.56.9**; Windows host 
 - Direct typing: click the mirror or Ctrl+` to arm; full keydown mapper (chords, F-keys, AltGr, IME, selection-aware Ctrl+C, "Herdr can't send …" notices); paste hold; image "Type path" chip; Ctrl+F find.
 - README "Desktop mode" section incl. keys the browser keeps.
 
-**Phases 3 and 4 are deliberately not started.** Spec §10: build them only if missed after a week of real desktop use. Phase 3 = right-click popover via `useLongPress` `disabled` + `{x,y}`, drag-and-drop upload. Phase 4 = number keys pick prompt options, History/Files width, README keys list. Requests for phases 1–2 are in `requests/desktop-*.md` as a pattern to copy.
+**Desktop mode phases 3 and 4 are done and merged** (2026-08-23; #145 mouse 0.56.10–0.56.12, #146 views 0.56.13). Bart chose to build them without waiting the week of use the spec asked for. What landed:
+
+- Right-click on a pane / tab / space row opens the same action rows in a popover at the pointer (`useLongPress` `disabled` + `{x,y}`; CLAUDE.md records the exception). App doc `app_docs/d94eddfa_*`.
+- Drag an image onto the pane to upload it; the host path appears as the "Type path" chip, never typed unprompted; stray drops never navigate; a failed upload shows an error status (`web/src/hooks/use-drop-upload.ts`).
+- Number keys pick prompt options from an empty composer box, routed through the dialog guard; no match or a non-prompt dialog shows a status and sends nothing. App doc `app_docs/ddbb7b54_*`.
+- History/Files width and the README "keys the browser keeps" list were already done in phase 2, so phase 4 was the number keys only.
+
+Desktop mode is now complete against `specs/desktop-mode-spec.md`. Nothing from it is parked except the §8 out-of-scope list.
+
+**Not yet done by a human:** manual check of phase 3–4 on a real desktop (right-click a row; long-press on the phone still opens the sheet; drop a PNG; press a digit on an AskUserQuestion; press a digit on a plan dialog and confirm nothing is sent). Plus the list below.
 
 **Not yet done by a human:** the manual checklist in #142's body (phone PWA unchanged after hard-refresh; Claude Code AskUserQuestion buttons; Pi ADW and Grok panes on both surfaces; vim in a shell; 3-line paste; AltGr on a non-US layout). Do that first next session and file anything wrong as an issue.
 
@@ -25,7 +34,7 @@ _Main at **0.56.9** (`e48adfd` merge of #144), tagged **v0.56.9**; Windows host 
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # expect v0.56.9
+git describe --tags --abbrev=0                        # expect v0.56.13
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -42,7 +51,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 ## Running ADWs here — what this session learned
 
-All chunks ran on `adw_simple_sdlc.py` (plan → build → test → review loop → commit → docs). 16 runs, ~$40.
+All chunks ran on `adw_simple_sdlc.py` (plan → build → test → review loop → commit → docs). Phases 1–2: 16 runs, ~$40. Phases 3–4 (2026-08-23): 4 runs, ~$11 — three went end to end; one (3b) stalled one finding short and was hand-committed, then closed with a small `adw_build_test` follow-up (`requests/desktop-3c-drop-status.md`).
 
 - **Write the ask as `requests/<slug>.md`**, four lines (see `claudeSSSF/cookbooks/how_to_prompt_for_the_eng.md`). The `Out of scope:` line is a parsed deny-list: **every backticked path or directory on it is denied**, even inside a caveat like "only X in `foo.tsx`", and a directory denies everything under it. Three runs died this way (claudeSSSF #72). Put partial-scope caveats in the ask sentence, never on that line.
 - **Bump a PATCH per chunk.** The pre-commit wants a version bump on every commit touching `web/src/` (tests included), so an ADW commit only lands if the request asks for a bump. Spec version numbers are a plan, not a rule.
@@ -57,6 +66,7 @@ All chunks ran on `adw_simple_sdlc.py` (plan → build → test → review loop 
 - #140: README harder cut (install / use / troubleshoot only). `adw_plan_build_test`.
 - claudeSSSF: #72 deny-list parsing, #73 revision-loop bound (collie copy patched; upstream `adws/` and `templates/adws/` not), #74 builder thinking level, PR #71 cookbook note.
 - Stale local remote refs for merged branches: `git fetch --prune`.
+- `tailscale serve status` shows a stray `/C:/Program Files/Git/` mapping next to `/` — Git Bash path conversion when `collie-ctl.sh restart` passes `/` to tailscale. Harmless (same backend); remove with `tailscale serve --https=443 --set-path="/C:/Program Files/Git/" off`, or restart via `collie-ctl.ps1` directly.
 - Parked: send this fork's security fixes upstream to `AltanS/collie`.
 - Parked: Windows `push-keys` / `push-test` Herdr actions are POSIX-only.
 
