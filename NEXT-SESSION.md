@@ -1,12 +1,12 @@
 # Next session
 
-_Main at **0.55.2** (`4456a30`); tags v0.55.1 / v0.55.2 may still need pushing (see Open); Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
+_Main at **0.55.2** (`4456a30`), tagged **v0.55.2**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
 
 ## Where this stopped
 
 Repo cleanup landed 2026-08-22 as #136 (factory litter untracked), #138 (one orientation doc, 0.55.1) and #139 (`bridge/server.ts` split into route-group modules, 0.55.2). All merged; branches deleted. Phases 1–3 were run as ADWs; phase 4 ran three times before passing (scope-gate wording, see #137 and the claudeSSSF prompting cookbook).
 
-**The bridge has not been restarted on 0.55.2.** Restart it (`collie-ctl.ps1 restart`) before trusting any bridge behaviour; the split touched every route.
+Bridge restarted on 0.55.2 (`[events] stream up` confirmed). Only `main` and `origin/v1` remain as branches.
 
 ## Resume with
 
@@ -31,8 +31,6 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 ## Open
 
-- Tags `v0.55.1` (`5b6b4ed`) and `v0.55.2` (`4456a30`) — create and push if `git tag` does not show them.
-- Four stale unmerged branches still exist (`chore/release-0.44.0`, `docs/handoff-0.47.0`, `docs/handoff-2026-08-20`, `fix/69-out-of-scope-gate`, the last three also on origin). Bart decided to delete them; the session could not (`-D` blocked).
 - #137: ADW commit phase fails on builder-staged deletions and on the version-bump pre-commit; phases 2–4 were committed by hand.
 - README trim in #138 was modest; a harder cut is a follow-up if wanted.
 - Parked: send this fork's security fixes upstream to `AltanS/collie`.
