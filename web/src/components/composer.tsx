@@ -21,12 +21,14 @@ import { useOperatorCommands, useOperatorKeys } from "@/lib/operator-commands";
 import { ctrlPresetsFor } from "@/lib/operator-keys";
 import { isDestructiveInput } from "@/lib/destructive";
 import { clearDraft, fitsDraftStore, loadDraft, saveDraft } from "@/lib/drafts";
+import { textToKeySequence } from "@/lib/key-queue";
 import { useHoldReload } from "@/lib/reload-guard";
 import { isSelfEcho, normalizeDraft } from "@/hooks/use-terminal-draft";
 import { adapterFor } from "@/lib/harness";
 import { sendGuardedReply } from "@/lib/reply-action";
 import { TerminalDraftPreview } from "@/components/terminal-draft-preview";
 import { DirectTypingStrip } from "@/components/direct-typing-strip";
+import { usePasteHold } from "@/lib/paste-hold";
 import { NoEchoNotice } from "@/components/no-echo-notice";
 import { useDesktop } from "@/lib/desktop";
 import { onArmToggleRequest } from "@/lib/direct-arm";
@@ -46,6 +48,8 @@ export interface ComposerHandle {
   releaseDirect: () => void;
   /** Toggle direct typing from the desktop chord. */
   toggleDirect: () => void;
+  /** Type a held uploaded-image path into the terminal. */
+  typePath: (path: string) => void;
 }
 
 interface ComposerProps {
@@ -360,10 +364,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const effectiveStable = suppressEcho(terminalDraft);
   const effectiveRaw = suppressEcho(rawTerminalDraft);
   const stripReason = gone ? "pane is gone" : readOnly ? "read-only device" : null;
-  const showDesktopStrip = desktop && (direct.active || (typing === "direct" && stripReason !== null));
-
   const directRef = useRef(direct);
   directRef.current = direct;
+  const pathHold = usePasteHold();
+  const showDesktopStrip = desktop && (direct.active || (pathHold?.kind === "path" && stripReason === null) || (typing === "direct" && stripReason !== null));
   function toggleDirect() {
     const d = directRef.current;
     if (d.active) d.deactivate();
@@ -374,6 +378,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     armDirect: () => { if (!directRef.current.active) directRef.current.activate(); },
     releaseDirect: () => { if (directRef.current.active) directRef.current.deactivateSilently(); },
     toggleDirect,
+    typePath: (path: string) => { focusInputImmediately(); void pressKeys(textToKeySequence(path)); },
   }), []);
 
   useEffect(() => {
@@ -1064,7 +1069,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <div className="absolute inset-0 flex items-center rounded-md border border-you bg-background px-2">
                 <DirectTypingStrip
                   onStop={() => direct.deactivate()}
-                  disabled={!direct.active}
+                  disabled={!direct.active && !(pathHold?.kind === "path" && stripReason === null)}
                   reason={stripReason ?? undefined}
                 />
               </div>
