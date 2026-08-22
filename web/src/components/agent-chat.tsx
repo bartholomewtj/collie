@@ -749,9 +749,8 @@ export function AgentChat({
         {/* Read-only notice when this device isn't allowlisted (the composer below is disabled too). */}
         <ReadOnlyBanner device={device} />
 
-        {/* Pane switcher: the panes that share this tab (space › tab › pane). Mobile shows them as a
-            tabbed row rather than tiling the panes; only appears when the tab holds more than one. */}
-        {agent && (
+        {/* Pane switcher: phone-only; desktop uses the sidebar and header navigation instead. */}
+        {!desktop && agent && (
           <PaneStrip
             panes={[...agents, ...shellPanes]
               .filter((p) => p.workspaceId === agent.workspaceId && p.tabId === agent.tabId)
@@ -847,12 +846,8 @@ export function AgentChat({
             up-levelled prompt buttons) — it now lives as a slim row just below the header. */}
         <div className="relative">
 
-          {/* Swipe-up / tap handle for the quick pane switcher — the sheet that switches AND closes
-              panes (each row has a ✕). A tall, full-width hit area so the swipe is easy to land (and a
-              tap always works). Shown whenever a pane is open — even the last one, so it stays
-              closable now that the nav drawer is gone. `touch-none` so the gesture is ours, not a
-              browser scroll. */}
-          {agents.length + shellPanes.length > 0 && (
+          {/* Swipe-up pane switching is phone-only; desktop uses the sidebar and pane header instead. */}
+          {!desktop && agents.length + shellPanes.length > 0 && (
             <button
               type="button"
               aria-label="Switch pane"
@@ -926,9 +921,8 @@ export function AgentChat({
         </div>
       </div>
 
-      {/* Swipe-up quick switcher — just the panes (agents + shells), reached by the thumb gesture.
-          Switch-only: pane closing lives in the pane pill's long-press sheet, not here. */}
-      <BottomSheet open={drawer === "switcher"} onClose={closeDrawer} title="Switch pane">
+      {/* Phone-only pane switcher sheet; desktop switches from the sidebar and pane header. */}
+      {!desktop && <BottomSheet open={drawer === "switcher"} onClose={closeDrawer} title="Switch pane">
         <ThreadSidebar
           agents={agents}
           shellPanes={shellPanes}
@@ -943,7 +937,7 @@ export function AgentChat({
           onShellsOpenChange={dash.setShellsOpen}
           className="px-0 py-1"
         />
-      </BottomSheet>
+      </BottomSheet>}
     </div>
   );
 }

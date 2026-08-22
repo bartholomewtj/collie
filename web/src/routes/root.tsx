@@ -14,6 +14,8 @@ import { useDesktop } from "@/lib/desktop";
 import { homePath } from "@/lib/nav";
 import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import { PANE_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
+import { bucketOf } from "@/lib/triage";
+import { useEffect } from "react";
 
 /**
  * The "last seen" stamp the connection surface should show — the stamp of the data actually on
@@ -51,6 +53,11 @@ export function RootLayout() {
   const showNav = pathname === "/" || pathname === "/traces" || pathname === "/files" || pathname === "/settings";
   const anyTraces = data.workspaces.some((w) => w.sssf);
   const desktop = useDesktop().on;
+  useEffect(() => {
+    if (!desktop) return;
+    const needs = data.agents.filter((agent) => bucketOf(agent) === "needs").length;
+    document.title = needs > 0 ? `(${needs}) Collie` : "Collie";
+  }, [desktop, data.agents]);
 
   // A viewport-height flex column: the top banners (when shown) are in-flow rows at the top and the
   // active route fills the rest (each route root is `min-h-0 flex-1`). This is what keeps a banner

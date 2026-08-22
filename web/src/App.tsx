@@ -5,6 +5,7 @@ import { BusyBar } from "@/components/busy-bar";
 import { IdleLock } from "@/components/idle-lock";
 import { useIdleLock } from "@/hooks/use-idle-lock";
 import { useCatchingUp } from "@/lib/idle";
+import { useDesktop } from "@/lib/desktop";
 
 // The idle lock COVERS the app rather than replacing it. It used to render instead of the router,
 // which unmounted the whole route tree — and with it every piece of local component state, including
@@ -16,7 +17,8 @@ import { useCatchingUp } from "@/lib/idle";
 // generating a box, so it can't change layout — the cover already blocks pointers, this closes the
 // keyboard path behind it.
 export function App() {
-  const { locked, unlock } = useIdleLock();
+  const desktop = useDesktop().on;
+  const { locked, unlock } = useIdleLock(desktop ? 2 * 60 * 60 * 1000 : 30 * 60 * 1000);
   // The cover outlives the lock by one beat: resuming refetches, and dropping the cover the instant
   // you tap would hand you back the same stale screen it just told you was frozen (see lib/idle).
   const catchingUp = useCatchingUp();
