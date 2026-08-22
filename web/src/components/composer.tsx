@@ -29,10 +29,23 @@ import { TerminalDraftPreview } from "@/components/terminal-draft-preview";
 import { DirectTypingStrip } from "@/components/direct-typing-strip";
 import { NoEchoNotice } from "@/components/no-echo-notice";
 import { useDesktop } from "@/lib/desktop";
+import { onArmToggleRequest } from "@/lib/direct-arm";
+
+// Herdr's +-joined key grammar for empty desktop composer pass-through.
+const PASS_THROUGH_KEYS: Readonly<Record<string, string>> = {
+  Escape: "Escape", Tab: "Tab", ArrowUp: "Up", ArrowDown: "Down",
+  ArrowLeft: "Left", ArrowRight: "Right",
+};
 
 export interface ComposerHandle {
   /** Focus the input and put the caret at the end — used by the mirror-tap-to-focus in AgentChat. */
   focusInput: () => void;
+  /** Arm direct typing from the desktop mirror. */
+  armDirect: () => void;
+  /** Release direct typing without a status announcement. */
+  releaseDirect: () => void;
+  /** Toggle direct typing from the desktop chord. */
+  toggleDirect: () => void;
 }
 
 interface ComposerProps {
@@ -69,6 +82,8 @@ interface ComposerProps {
   /** Snap the mirror to the live tail (follow + revalidate + scroll) after a successful send. */
   /** Called with the text that was sent, after a VERIFIED send. */
   onSent: (text: string) => void;
+  /** Desktop mode reports the textarea-owned armed state to the mirror. */
+  onArmedChange?: (armed: boolean) => void;
 }
 
 // The composer cluster at the bottom of the pane view — everything a phone keyboard can't do on its
@@ -139,7 +154,7 @@ function ComposerDock({
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, text, terminalDraft, rawTerminalDraft, prefs, stepFontSize, setRawTerminal, setTapToFocus, onSent },
+  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, text, terminalDraft, rawTerminalDraft, prefs, stepFontSize, setRawTerminal, setTapToFocus, onSent, onArmedChange },
   ref,
 ) {
   const revalidator = useRevalidator();
@@ -285,7 +300,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (next !== null) clearDraft(session, paneId);
   }
 
-  const desktop = useDesktop().on;
+  const { on: desktop, typing } = useDesktop();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const direct = useDirectTyping({
@@ -306,6 +321,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       noticeNoEcho(null); // the notice's whole job was to get you here
     },
     focusInput: focusInputEnd,
+    desktop,
   });
   const sentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,8 +359,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // its text tracks and that the send()-time pre-clear sweeps.
   const effectiveStable = suppressEcho(terminalDraft);
   const effectiveRaw = suppressEcho(rawTerminalDraft);
+  const stripReason = gone ? "pane is gone" : readOnly ? "read-only device" : null;
+  const showDesktopStrip = desktop && (direct.active || (typing === "direct" && stripReason !== null));
 
-  useImperativeHandle(ref, () => ({ focusInput: focusInputImmediately }), []);
+  const directRef = useRef(direct);
+  directRef.current = direct;
+  function toggleDirect() {
+    const d = directRef.current;
+    if (d.active) d.deactivate();
+    else d.activate();
+  }
+  useImperativeHandle(ref, () => ({
+    focusInput: focusInputImmediately,
+    armDirect: () => { if (!directRef.current.active) directRef.current.activate(); },
+    releaseDirect: () => { if (directRef.current.active) directRef.current.deactivateSilently(); },
+    toggleDirect,
+  }), []);
+
+  useEffect(() => {
+    onArmedChange?.(direct.active);
+  }, [direct.active]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    return onArmToggleRequest(toggleDirect);
+  }, [desktop]);
 
   useEffect(
     () => () => {
@@ -924,7 +963,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
         {/* Armed indicator for direct typing. In the same in-flow slot as the "You sent:" strip,
             deliberately NOT only on the button and textarea — see the component. */}
-        {direct.active && <DirectTypingStrip onStop={() => direct.deactivate()} />}
+        {!desktop && direct.active && <DirectTypingStrip onStop={() => direct.deactivate()} />}
         {/* A draft too large for the disk tier (lib/drafts.ts). It survives a pane switch — the
             memory tier holds it whole — but not the app closing, and that difference is invisible
             without saying so: the old behaviour silently restored an OLDER, SHORTER draft instead.
@@ -959,9 +998,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
                       onSendClick();
+                      return;
                     }
+                    if (!desktop) return;
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      onSendClick();
+                      return;
+                    }
+                    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || input.length !== 0) return;
+                    const key = PASS_THROUGH_KEYS[e.key];
+                    if (key === undefined) return;
+                    e.preventDefault();
+                    pressKeys([key]);
                   }
             }
+            onBlur={direct.onBlur}
             onPaste={onPasteImage}
             placeholder={
               gone
@@ -984,6 +1036,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               "block pr-11",
               direct.active &&
                 "border-you focus-visible:border-you focus-visible:ring-you/30",
+              showDesktopStrip && "opacity-0",
             )}
             disabled={locked}
             rows={1}
@@ -1007,8 +1060,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <ImagePlus className="size-4" />
               )}
             </Button>}
+            {showDesktopStrip && (
+              <div className="absolute inset-0 flex items-center rounded-md border border-you bg-background px-2">
+                <DirectTypingStrip
+                  onStop={() => direct.deactivate()}
+                  disabled={!direct.active}
+                  reason={stripReason ?? undefined}
+                />
+              </div>
+            )}
           </div>
-          {!direct.active && forcingSend ? (
+          {!showDesktopStrip && (!direct.active && forcingSend ? (
             // The pre-flight refused and the user is being offered the override. Labelled for what it
             // actually does — TYPE the text into whatever is on screen — not "send", because the
             // submit key is still conditional on the verify step behind it.
@@ -1050,7 +1112,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <Send className="size-4" />
               )}
             </Button>
-          )}
+          ))}
         </div>
       </div>
 

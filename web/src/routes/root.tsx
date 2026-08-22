@@ -16,6 +16,7 @@ import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import { PANE_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
 import { bucketOf } from "@/lib/triage";
 import { useEffect } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * The "last seen" stamp the connection surface should show — the stamp of the data actually on
@@ -63,7 +64,7 @@ export function RootLayout() {
   // active route fills the rest (each route root is `min-h-0 flex-1`). This is what keeps a banner
   // from covering the route's sticky header — it reserves real space instead of overlaying.
   return (
-    <div className="flex h-[100dvh] flex-col">
+    <div className={cn("flex h-[100dvh] flex-col", desktop && "overflow-hidden")}>
       {/* API-observed self-update: mounted unconditionally so its controller runs (and can
           auto-update) for the app's lifetime; renders the slim "tap to update" row only when a fresh
           build is confirmed but auto-update is held off (unsent work) or already spent. */}

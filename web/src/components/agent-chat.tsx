@@ -20,6 +20,7 @@ import { parseAnsi } from "@/lib/ansi";
 import { splitLines } from "@/lib/blocks";
 import { adapterFor } from "@/lib/harness";
 import { FindBar } from "@/components/find-bar";
+import { onFindOpenRequest } from "@/lib/find-request";
 import { Composer, type ComposerHandle } from "@/components/composer";
 import { ThreadSidebar } from "@/components/agent-sidebar";
 import { AgentIcon } from "@/components/agent-icon";
@@ -132,6 +133,8 @@ export function AgentChat({
   // This device isn't allowlisted to type into agents: the backend rejects every write, so the
   // composer drops to read-only (and shows a banner). The mirror still polls (reading is fine).
   const readOnly = isReadOnly(device);
+  const { on: desktop, typing } = useDesktop();
+  const [armed, setArmed] = useState(false);
 
   // Drawers/sheets are mutually exclusive — at most one open. A single value makes that invariant
   // unrepresentable to violate.
@@ -247,6 +250,7 @@ export function AgentChat({
     setFollowing(false); // freeze the buffer so the search target is stable while you type
     setFindOpen(true);
   }
+  useEffect(() => onFindOpenRequest(openFind), []);
   function closeFind() {
     setFindOpen(false);
     setFindQuery("");
@@ -585,7 +589,7 @@ export function AgentChat({
   //  - the user is selecting text (a long-press selection), so copy works instead of the tap
   //    collapsing the selection and popping the keyboard.
   function focusFromMirror(e: ReactMouseEvent<HTMLDivElement>) {
-    if (!prefs.tapToFocus) return;
+    if (!desktop && !prefs.tapToFocus) return;
     const target = e.target as Element | null;
     // The `a` is what keeps a tap on an autolinked URL (components/ansi-output) from popping the
     // keyboard on top of the page it just opened. Don't trim it out of this selector.
@@ -593,14 +597,24 @@ export function AgentChat({
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     composerRef.current?.focusInput();
+    if (desktop && typing === "direct" && !readOnly && !gone) composerRef.current?.armDirect();
   }
 
-  const desktop = useDesktop().on;
+  useEffect(() => {
+    if (!desktop || !armed) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-slot='chat-input']")) return;
+      composerRef.current?.releaseDirect();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [desktop, armed]);
 
   // max-w-[100dvw] is a phone guard (the mirror must never widen the page). In desktop mode the
   // grid track (minmax(0,1fr)) is the constraint and the viewport is not this element's width.
   return (
-    <div className={desktop ? "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden" : "flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden"}>
+    <div className={desktop ? "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden" : "flex min-h-0 w-full min-w-0 max-w-[100dvw] flex-1 flex-col overflow-x-hidden"}>
       {/* Header — the SAME AppHeader shell the dashboard and space mount, so the Collie mark is
           identical on every screen (no hand-rolled bar to drift). The pane's own bits ride in via
           slots: the `space › tab` breadcrumb as the center, the agent StatusBadge as the right-cluster
@@ -774,7 +788,14 @@ export function AgentChat({
             straight into terminal output — the chrome and the mirror read as one surface. Drawing it
             here rather than as a border-b on PaneStrip covers the case where that strip is absent
             (a tab holding a single pane), which is the common one. */}
-        <div className="min-h-0 min-w-0 flex-1 border-t border-border/40" onClick={focusFromMirror}>
+        <div
+          data-testid="mirror-region"
+          className={cn(
+            "min-h-0 min-w-0 flex-1 border-t border-border/40",
+            desktop && armed && "ring-2 ring-inset ring-you",
+          )}
+          onClick={focusFromMirror}
+        >
           <ChatMessageList
             ref={listRef}
             dep={display}
@@ -844,7 +865,7 @@ export function AgentChat({
         {/* Bottom region: the pane-switch handle + composer. The status line USED to float here as an
             overlay just above the composer, but it covered the terminal tail (the prompt/cursor and
             up-levelled prompt buttons) — it now lives as a slim row just below the header. */}
-        <div className="relative">
+        <div className={cn("relative", desktop && "shrink-0")}>
 
           {/* Swipe-up pane switching is phone-only; desktop uses the sidebar and pane header instead. */}
           {!desktop && agents.length + shellPanes.length > 0 && (
@@ -917,6 +938,7 @@ export function AgentChat({
             setRawTerminal={setRawTerminal}
             setTapToFocus={setTapToFocus}
             onSent={onSent}
+            onArmedChange={setArmed}
           />
         </div>
       </div>

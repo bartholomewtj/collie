@@ -40,6 +40,7 @@ public access, Collie isn't built for it. Read the
 - [Configure](#configure) · [Your own slash commands](#your-own-slash-commands) · [SSSF traces tab](#sssf-traces-tab) ·
   [Multi-session](#multi-session)
 - [Dark mode / light mode](#dark-mode--light-mode)
+- [Desktop mode](#desktop-mode)
 - [Commands](#commands)
 - [Manage & update](#manage--update)
 - [Deployment variants](#deployment-variants) · [B–E in `DEPLOYMENT.md`](./DEPLOYMENT.md)
@@ -415,6 +416,27 @@ Collie follows your phone by default; pin System, Light or Dark in **Settings �
 display (raw terminal, text size, tap-to-type) is under composer ⚙ and stored per device. Raw
 terminal is on by default; turn it off for parsed prompt buttons. The mirror stays dark and inverts
 in light mode so agents' absolute colours remain readable ([ADR 0002](./.adr/0002-invert-the-light-terminal-mirror.md)).
+
+## Desktop mode
+
+Turn it on in **Settings → Desktop mode**. It is stored per browser and is not auto-detected. The always-visible “Desktop mode is on · Turn off” strip is the way back.
+
+Choose **Settings → Typing surface**:
+
+- **Composer** — Enter sends, Shift+Enter makes a new line, and Ctrl+Enter still sends. Esc, Tab and the arrows pass through to the terminal when the box is empty.
+- **Direct** — keys go straight into the terminal. Arm it by clicking the mirror or pressing Ctrl+`; the strip over the input says so. It releases on Stop, Ctrl+`, a click outside, window focus loss, or the idle pause. It is never remembered; a reload starts unarmed.
+
+When typing directly, one line of ordinary text goes straight through. Text with a line break or that looks destructive (`rm -r`, `sudo`, `--force`) is held with “Paste N lines into the terminal? Send · Discard”. Send keeps line breaks as Enter presses but never adds one at the end. Pasting an image uploads it and offers a **Type path** chip; the path is never typed for you.
+
+| Hotkey | Action |
+|---|---|
+| Ctrl+` | Arm / release direct typing |
+| Ctrl+F | Find in this pane or its history; ignored while direct typing |
+| Ctrl+Alt+↑ / Ctrl+Alt+↓ | Previous / next pane, “needs you” first |
+
+**Keys the browser keeps:** Ctrl+T, Ctrl+W, Ctrl+N, Ctrl+Shift+N, Ctrl+Tab, Ctrl+Shift+T, Alt+Left / Alt+Right, F11. It also keeps Ctrl+C when text is selected (copy), Ctrl+R and F5 (reload). Ctrl+C with nothing selected sends the interrupt.
+
+Herdr cannot send Home, End, PageUp, PageDown, Insert or Delete — Collie says so instead of sending a look-alike.
 
 ## Commands
 

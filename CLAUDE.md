@@ -193,12 +193,15 @@ major; crossing one is `herdr plugin action invoke update-major --plugin herdr.c
   still-mounted router (unmounting it ate in-progress composer drafts) and pauses polling through
   `lib/idle.ts`. Don't restore it as a security control or re-describe it as one
   ([ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
-- **"Type into terminal" is armed by a named choice and dies with the pane view.** It is the "Type"
-  toggle in the Controls row beside Keys — never a gesture on Send, and never a bare long-press. It
-  disarms on a pane switch, a composer lock (gone pane, read-only, idle pause), a hidden page, and a
-  failed batch — never persisted, never restored. Don't lift it, and don't add the reply guard's
-  `composerReady` pre-flight to it; the reasoning for the entry point sits at the toggle in
-  `web/src/components/composer.tsx`, and for the pre-flight in `web/src/hooks/use-direct-typing.ts`.
+- **"Type into terminal" is armed by a named choice and dies with the pane view.** On the phone it is the
+  "Type" toggle in the Controls row beside Keys — never a gesture on Send, and never a bare long-press.
+  In desktop mode the named choice is the "Typing surface" pref in Settings, and a mirror click or Ctrl+`
+  arms it; the surface pref is stored (`lib/desktop.ts`), the armed state is not — it is the textarea's
+  own focus, released by blur, outside pointerdown, window blur or the idle cover. It disarms on a pane
+  switch, a composer lock (gone pane, read-only, idle pause), a hidden page, and a failed batch — never
+  persisted, never restored. Don't lift it, and don't add the reply guard's `composerReady` pre-flight to
+  it; the reasoning for the entry point sits at the toggle in `web/src/components/composer.tsx`, and for
+  the pre-flight in `web/src/hooks/use-direct-typing.ts`.
 - **The operator's rows in `commands.toml` replace the shipped command catalog on the panes they
   address, never merge into it** ([ADR 0018](./.adr/0018-operator-command-rows-replace-the-catalog.md));
   the bridge re-reads the file behind an mtime check, so edits are live and need no restart. The
@@ -329,7 +332,7 @@ entry, a ctl-discovered Tailscale host, or an allowed origin's host
 - **Raw terminal** — a persisted display pref, **on by default**. Not the same as **Type into terminal** (the send-mode toggle beside Keys).
 - **Session** means three things: the agent's on-disk transcript id (`bridge/journal/`), Herdr's daemon session (`session.snapshot`), and Collie's multi-session URL `?s=<name>` (`web/src/lib/session.ts`, `bridge/sessions.ts`).
 - **Idle lock** — a pause, not a security gate (`web/src/lib/idle.ts`, [ADR 0007](./.adr/0007-the-idle-lock-is-a-pause-not-a-gate.md)).
-- **Type into terminal** — a per-session send mode armed by the "Type" toggle beside Keys; never persisted. Entry point + reasoning at the toggle in `web/src/components/composer.tsx`; the keystroke pump in `web/src/hooks/use-direct-typing.ts`. (Older docs cite a `send-mode-menu.tsx` — it no longer exists.)
+- **Type into terminal** — a per-session send mode armed by the "Type" toggle beside Keys; never persisted. In desktop mode the entry point is the "Typing surface" pref plus a mirror click or Ctrl+`; the pref is stored, the armed state is not. Entry point + reasoning at the toggle in `web/src/components/composer.tsx`; the keystroke pump in `web/src/hooks/use-direct-typing.ts`. (Older docs cite a `send-mode-menu.tsx` — it no longer exists.)
 - **SSSF** = Super Simple Software Factory (the `adws/` universe above). Its trace visualiser is an external Vue app that Collie mounts in an iframe at `/sssf/*` from `SSSF_VIZ_DIR` (`bridge/sssf-viz.ts`, [ADR 0024](./.adr/0024-the-sssf-module-is-the-second-filesystem-reader.md)).
 - **Harness** — a CLI agent Collie can drive (`claude`, `codex`, `pi`, `grok`, `omp`, `opencode`). Two independent adapter sets share the word: **screen grammar** in `web/src/lib/harness/<name>/` (parses the live pane) and **journal adapters** in `bridge/journal/<name>.ts` (read the log on disk). Adding one: [`HARNESS_CONTRIBUTING.md`](./HARNESS_CONTRIBUTING.md).
 

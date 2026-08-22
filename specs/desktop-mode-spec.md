@@ -142,6 +142,17 @@ Check again before each PR; line numbers drift.
   where `n` = agents with `bucketOf(a) === "needs"`. When `off`, the title is never touched. No
   `setAppBadge` (Chromium-installed-PWA only; deferred, §10).
 
+
+### 2a. Scroll regions (added 2026-08-22, phase 2)
+
+In desktop mode **only two things scroll: the pane mirror and the History transcript.** Everything
+else is static and always on screen: the off-ramp strip, the sidebar (the space tree scrolls inside
+its own box if it overflows), the pane `AppHeader`, the statusline strip, the composer / direct-typing
+strip, and the prompt buttons. The page itself never scrolls (`body` / `#root` overflow hidden at
+100 dvh). The mirror is a `min-h-0 flex-1 overflow-y-auto` box between the fixed header and the
+fixed bottom controls; History is the same shape with the transcript as the scrolling child. The
+phone keeps whatever it does today — this applies only when `on`.
+
 ### 3. Typing
 
 `typing` picks which surface is shown under the mirror. **Armed state stays exactly what it is

@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { triage } from "@/lib/triage";
 import { panePath } from "@/lib/nav";
+import { desktopPrefs, setTyping } from "@/lib/desktop";
+import { isDirectArmed, requestArmToggle } from "@/lib/direct-arm";
+import { requestFindOpen } from "@/lib/find-request";
 import type { AgentView } from "@/lib/types";
 
 export interface DesktopHotkeyArgs {
@@ -19,6 +22,18 @@ export function useDesktopHotkeys({ agents, currentPaneId, session }: DesktopHot
   latest.current = { agents, currentPaneId, session };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.key === "`") {
+        event.preventDefault();
+        if (desktopPrefs().typing === "composer") setTyping("direct");
+        requestArmToggle();
+        return;
+      }
+      if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && (event.key === "f" || event.key === "F")) {
+        if (isDirectArmed() || latest.current.currentPaneId === undefined) return;
+        event.preventDefault();
+        requestFindOpen();
+        return;
+      }
       if (event.shiftKey || event.metaKey || !event.ctrlKey || !event.altKey) return;
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
       const { agents: currentAgents, currentPaneId: current, session: currentSession } = latest.current;

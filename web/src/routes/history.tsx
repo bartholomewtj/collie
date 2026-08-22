@@ -5,6 +5,7 @@ import { ArrowUpToLine, ChevronDown, ChevronUp, Loader2, ScrollText, Search } fr
 import { AppHeader } from "@/components/app-header";
 import { ChatMessageList, type ChatMessageListHandle } from "@/components/ui/chat/chat-message-list";
 import { FindBar } from "@/components/find-bar";
+import { onFindOpenRequest } from "@/lib/find-request";
 import { TranscriptView } from "@/components/transcript-view";
 import { fetchHistory } from "@/lib/api";
 import { HISTORY_PAGE_SIZE, ROOT_ROUTE_ID, type HistoryData, type HomeData } from "@/lib/loaders";
@@ -92,6 +93,7 @@ export function HistoryRoute() {
   const allRendered = renderCount >= entries.length;
 
   const [findOpen, setFindOpen] = useState(false);
+  useEffect(() => onFindOpenRequest(() => setFindOpen(true)), []);
   const [query, setQuery] = useState("");
   // Index into `entries` (not `shown`) of the turn a find/jump landed on; -1 = nowhere yet.
   const [cursor, setCursor] = useState(-1);

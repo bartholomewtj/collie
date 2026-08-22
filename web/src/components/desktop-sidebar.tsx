@@ -22,10 +22,11 @@ export function DesktopSidebar({ data, currentPaneId }: { data: HomeData; curren
     ...(data.files ? [{ label: "Files", icon: Folder, to: filesPath(data.session), active: pathname.startsWith("/files") }] : []),
     { label: "Settings", icon: Settings, to: settingsPath(data.session), active: pathname === "/settings" },
   ];
-  return <aside className="flex min-h-0 flex-col border-r-2 border-border bg-muted">
-    <div className="flex items-center justify-between border-b border-border p-3"><span className="font-semibold">Collie</span><SessionSwitcher sessions={data.sessions ?? []} current={data.session} /></div>
+  // Ends are pinned; only the tree box scrolls (spec §2a).
+  return <aside className="flex min-h-0 flex-col overflow-hidden border-r-2 border-border bg-muted">
+    <div className="flex shrink-0 items-center justify-between border-b border-border p-3"><span className="font-semibold">Collie</span><SessionSwitcher sessions={data.sessions ?? []} current={data.session} /></div>
     <div className="min-h-0 flex-1 overflow-y-auto"><SpaceTree workspaces={data.workspaces} tabs={data.tabs} agents={data.agents} shellPanes={data.shellPanes} onNewSpace={() => setNewSpaceOpen(true)} onNewTab={newTab} onRenamed={() => revalidator.revalidate()} session={data.session} readOnly={isReadOnly(data.device)} currentPaneId={currentPaneId} error={data.error} lastSeenAt={data.lastSeenAt} /></div>
-    <nav aria-label="Desktop navigation" className="border-t-2 border-border p-2">{items.map((item) => <button key={item.label} type="button" aria-current={item.active ? "page" : undefined} onClick={() => navigate(item.to)} className={cn("flex w-full items-center gap-3 rounded px-3 py-2 text-left text-sm", item.active ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50")}><item.icon className="size-4" />{item.label}</button>)}</nav>
+    <nav aria-label="Desktop navigation" className="shrink-0 border-t-2 border-border p-2">{items.map((item) => <button key={item.label} type="button" aria-current={item.active ? "page" : undefined} onClick={() => navigate(item.to)} className={cn("flex w-full items-center gap-3 rounded px-3 py-2 text-left text-sm", item.active ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50")}><item.icon className="size-4" />{item.label}</button>)}</nav>
     <NewSpaceSheet open={newSpaceOpen} onClose={() => setNewSpaceOpen(false)} onCreate={newSpace} />
   </aside>;
 }

@@ -8,7 +8,13 @@ import type {
 
 import { useOrderedKeySender } from "@/hooks/use-ordered-key-sender";
 import { textToKeySequence } from "@/lib/key-queue";
+import { handleDesktopKeyDown, isAltKeyUp } from "@/lib/desktop-keymap";
 import { setStatus } from "@/lib/status";
+import { useLocked } from "@/lib/idle";
+import { clearPasteHold, setPasteHold } from "@/lib/paste-hold";
+import { isDestructiveInput } from "@/lib/destructive";
+import * as api from "@/lib/api";
+import { setDirectArmed } from "@/lib/direct-arm";
 
 // Physical-keyboard events that do not change a textarea value still need wire names. Printable
 // text, spaces and line breaks normally arrive through the input/change path instead.
@@ -33,6 +39,13 @@ function keyForKeyDown(key: string): string | undefined {
   return SPECIAL_KEYS[key];
 }
 
+/** Mirrors Composer's session\\0pane construction; malformed keys fail closed. */
+export function parsePaneKey(paneKey: string): { session?: string; paneId: string } | null {
+  const parts = paneKey.split("\u0000");
+  if (parts.length !== 2 || parts[1] === "") return null;
+  return { session: parts[0] || undefined, paneId: parts[1] };
+}
+
 interface DirectTypingOptions {
   paneKey: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -48,6 +61,10 @@ interface DirectTypingOptions {
   sendKeys: (keys: string[]) => Promise<boolean>;
   onActivate: () => void;
   focusInput: () => void;
+  /** Desktop mode: focus owns the armed state and drafts do not block arming. */
+  desktop: boolean;
+  /** Desktop paste image upload; defaults to the pane upload endpoint. */
+  uploadImage?: (file: File) => Promise<string | null>;
 }
 
 // The composer textarea's direct-terminal mode: what you type goes to the pane as keystrokes,
@@ -58,6 +75,12 @@ interface DirectTypingOptions {
 //
 // It does NOT own the entry point. Arming is an explicit NAMED choice — the "Type" toggle in the
 // composer's Controls row, beside Keys.
+// DESKTOP MODE HAS A SECOND ENTRY POINT, AND IT IS STILL NAMED. There is no "Type" toggle on a
+// desktop (the Controls row hides it); the named choice moved into Settings as the "Typing surface"
+// pref, and clicking the terminal or pressing Ctrl+` arms the surface already chosen. The surface
+// PREF is stored (lib/desktop.ts, localStorage). The ARMED STATE still is not, and is not lifted
+// anywhere: on desktop it is simply the textarea's own focus, released by blur, outside pointerdown,
+// window.blur, or the idle cover. Nothing survives a reload.
 //
 // WHY A NAMED CHOICE AND NOT A GESTURE. The submitted version of this feature armed the mode on a
 // bare long press of the Send button. That reads as a saving of one tap, but the tap is priced per
@@ -89,9 +112,12 @@ export function useDirectTyping({
   sendKeys,
   onActivate,
   focusInput,
+  desktop,
+  uploadImage: uploadImageOption,
 }: DirectTypingOptions) {
   const [active, setActive] = useState(false);
   const [value, setValue] = useState("");
+  const idleLocked = useLocked();
   // Live read for the visibility listener below, which outlives any one armed session. Written at
   // the transitions themselves, not during render: the listener fires between renders, and a ref
   // that only catches up on the next one would let it misread which state it is reporting on.
@@ -111,7 +137,7 @@ export function useDirectTyping({
     if (!canActivate()) return;
     // A buffered reply and live keystrokes cannot safely share one field. Keep the durable draft
     // exactly where it is and make the user send or clear it before arming direct terminal input.
-    if (replyDraft().length > 0) {
+    if (!desktop && replyDraft().length > 0) {
       setStatus("Send or clear the draft before typing into the terminal.", "info");
       return;
     }
@@ -124,7 +150,7 @@ export function useDirectTyping({
     committedComposition.current = null;
     activeRef.current = true;
     setActive(true);
-    setStatus("Typing into the terminal — keys send as you type.", "success");
+    if (!desktop) setStatus("Typing into the terminal — keys send as you type.", "success");
     // Focus synchronously while the long-press/contextmenu gesture still carries browser user
     // activation; a deferred focus selects the field but mobile browsers may refuse to open their
     // software keyboard once that activation has expired. The existing callback still runs after
@@ -135,6 +161,7 @@ export function useDirectTyping({
 
   /** Disarm and forget the transient state. Leaves the field alone — callers decide about focus. */
   function resetMode() {
+    clearPasteHold();
     activeRef.current = false;
     setActive(false);
     setValue("");
@@ -186,6 +213,23 @@ export function useDirectTyping({
   function deactivateSilently() {
     clearMode();
   }
+
+  function releaseOnFocusLoss() {
+    if (!activeRef.current) return;
+    resetMode();
+  }
+
+  useEffect(() => {
+    if (!desktop || !active) return;
+    window.addEventListener("blur", releaseOnFocusLoss);
+    return () => window.removeEventListener("blur", releaseOnFocusLoss);
+  }, [desktop, active]);
+
+  useEffect(() => {
+    if (!desktop || !active || !idleLocked) return;
+    inputRef.current?.blur();
+    releaseOnFocusLoss();
+  }, [desktop, active, idleLocked]);
 
   // Arming dies with the view it belongs to. A backgrounded tab, an idle pause and a lost bridge
   // all mean the same thing: the mirror on screen has stopped tracking the pane, and the next
@@ -244,6 +288,12 @@ export function useDirectTyping({
 
   useEffect(() => cancelPendingBlur, []);
 
+  useEffect(() => {
+    setDirectArmed(desktop && active);
+    return () => setDirectArmed(false);
+  }, [desktop, active]);
+  useEffect(() => clearPasteHold, []);
+
   // Android virtual Backspace/Enter can arrive as beforeinput without a useful keydown. A native
   // listener is intentional: React's synthetic beforeinput omits these events on some engines.
   useEffect(() => {
@@ -300,11 +350,71 @@ export function useDirectTyping({
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    // Desktop capture uses the pure mapper so browser-reserved keys and modifier chords retain
+    // their deliberate precedence; the phone path below remains unchanged.
+    if (desktop) {
+      const action = handleDesktopKeyDown(event.nativeEvent);
+      if (action.kind !== "swallow" && action.notice) setStatus(action.notice.text, action.notice.tone);
+      if (action.kind === "send") sender.enqueue(action.keys);
+      return;
+    }
     const key = keyForKeyDown(event.key);
     if (key === undefined) return;
     event.preventDefault();
     sender.enqueue([key]);
   }
+
+  useEffect(() => {
+    const inputEl = inputRef.current;
+    if (!desktop || !active || inputEl === null) return;
+    const uploadImage = uploadImageOption ?? (async (file: File) => {
+      const parsed = parsePaneKey(paneKey);
+      if (parsed === null) return null;
+      const result = await api.uploadImage(parsed.paneId, file, parsed.session);
+      if (!result.ok) { setStatus("Image upload failed.", "error"); return null; }
+      return result.path;
+    });
+    const onPaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (items) for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item?.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            event.preventDefault();
+            void uploadImage(file).then((path) => {
+              if (path) {
+                setStatus("Image uploaded — tap Type path to insert it", "success");
+                setPasteHold({ kind: "path", path, onSend: () => { clearPasteHold(); sender.enqueue(textToKeySequence(path)); inputRef.current?.focus(); }, onDiscard: () => { clearPasteHold(); inputRef.current?.focus(); } });
+              }
+            });
+            return;
+          }
+        }
+      }
+      const raw = event.clipboardData?.getData("text/plain") ?? "";
+      if (raw === "") return;
+      event.preventDefault();
+      const normalised = raw.replace(/\r\n?/g, "\n");
+      const reason = isDestructiveInput(normalised);
+      if (!normalised.includes("\n") && reason === null) { sender.enqueue(textToKeySequence(normalised)); return; }
+      // Remove trailing line breaks: interior breaks become Enter, but Send never runs the command.
+      const body = normalised.replace(/\n+$/, "");
+      setPasteHold({ kind: "text", lines: body.split("\n").length, reason: isDestructiveInput(body), onSend: () => { clearPasteHold(); sender.enqueue(textToKeySequence(body)); inputRef.current?.focus(); }, onDiscard: () => { clearPasteHold(); inputRef.current?.focus(); } });
+    };
+    inputEl.addEventListener("paste", onPaste);
+    return () => inputEl.removeEventListener("paste", onPaste);
+  }, [desktop, active, inputRef, paneKey, uploadImageOption, sender.enqueue]);
+
+  useEffect(() => {
+    const inputEl = inputRef.current;
+    if (!desktop || !active || inputEl === null) return;
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (isAltKeyUp(event)) event.preventDefault();
+    };
+    inputEl.addEventListener("keyup", onKeyUp);
+    return () => inputEl.removeEventListener("keyup", onKeyUp);
+  }, [desktop, active, inputRef]);
 
   return {
     active,
@@ -317,5 +427,6 @@ export function useDirectTyping({
     onCompositionStart,
     onCompositionEnd,
     onKeyDown,
+    onBlur: () => { if (desktop) releaseOnFocusLoss(); },
   };
 }
