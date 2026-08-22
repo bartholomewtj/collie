@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLoaderData, useLocation, useNavigate, useParams, useRouteLoaderData } from "react-router";
+import { useBack } from "@/hooks/use-back";
 
 import { AgentChat } from "@/components/agent-chat";
 import { useLoadingStalled } from "@/hooks/use-loading-stalled";
@@ -57,7 +58,8 @@ export function DetailRoute() {
   // `lastWorkspace` ref that used to remember a space for a just-closed pane went with that route:
   // there is no longer a per-space screen for it to land on.
   const upPath = () => from ?? homePath(session);
-  const up = () => navigate(upPath());
+  // "‹" pops one history entry like the phone's back gesture; upPath is the cold-entry fallback only.
+  const up = useBack(upPath());
 
   // Recover from a closed pane: once a healthy snapshot no longer has it, bounce up (to `from`, or
   // home)

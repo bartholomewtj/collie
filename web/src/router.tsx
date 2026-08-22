@@ -8,6 +8,7 @@ import { DetailRoute } from "@/routes/detail";
 import { HistoryRoute } from "@/routes/history";
 import { SettingsRoute } from "@/routes/settings";
 import { FilesRoute } from "@/routes/files";
+import { rememberPath, resumeOnBoot } from "@/lib/resume";
 import { filesLoader, filesShouldRevalidate, historyLoader, rootLoader, paneLoader, PANE_ROUTE_ID, ROOT_ROUTE_ID } from "@/lib/loaders";
 
 // We don't use view transitions. React Router persists an "applied view transitions" map to
@@ -22,6 +23,9 @@ try {
 } catch {
   // sessionStorage access can throw in locked-down / private contexts — ignore.
 }
+
+// Put the URL back where you were if Android relaunched the app at start_url (lib/resume).
+resumeOnBoot();
 
 // Created once at module scope so the idle-lock in App can unmount/remount RouterProvider without
 // losing the current location (the router instance retains it; loaders re-run fresh on remount).
@@ -58,3 +62,6 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
+
+// Every settled location is remembered so a relaunch can resume it (lib/resume).
+router.subscribe((state) => rememberPath(state.location.pathname + state.location.search));

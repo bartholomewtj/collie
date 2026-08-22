@@ -1,6 +1,7 @@
 import { File, Folder, Download, Copy, ChevronRight, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useNavigate, useRouteLoaderData } from "react-router";
+import { useBack } from "@/hooks/use-back";
 import { AppHeader } from "@/components/app-header";
 import { filesPath, filePath } from "@/lib/nav";
 import { downloadFileUrl, openFileUrl, searchFiles } from "@/lib/api";
@@ -24,7 +25,9 @@ export function FilesRoute() {
   }, [query]);
   const parts = loaded.rel ? loaded.rel.split("/") : [];
   const parent = parts.slice(0, -1).join("/");
-  const back = loaded.rel ? () => navigate(parent ? filePath(parent, home.session) : filesPath(home.session)) : undefined;
+  // "‹" goes back one step (matches the swipe gesture); the parent folder is only the cold-entry fallback.
+  const goBack = useBack(parent ? filePath(parent, home.session) : filesPath(home.session));
+  const back = loaded.rel ? goBack : undefined;
   const title = loaded.rel ? baseName(loaded.rel) : "Files";
   const desktop = useDesktop().on;
   if (loaded.error || !loaded.data) return <div className="flex flex-1 items-center justify-center p-6 text-muted-foreground">{loaded.rel ? "Not found" : "Files isn't turned on — set COLLIE_WORK_ROOT on the host"}</div>;
