@@ -1,19 +1,22 @@
 # Next session
 
-_Last handoff: 2026-08-22 — `main` at **0.53.0** (`f437f17`, #127), tagged **v0.53.0**.
-0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
-Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set in the plugin `.env`
-and the checkout `.env`. One listener on `:8787`._
+_Last handoff: 2026-08-22 — `main` at **0.53.0** (`a3e909b`, Files tab #127, roster #126),
+tagged **v0.53.0**. 0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
+Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set. One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
-Balanced roster: `adws/adw_sssf_config/sssf.config.yaml` (pi/OpenRouter, metered).
+Roster: planner Claude Code **opus** (subscription, thinking high); builder
+`gpt-5.6-luna`, scout `deepseek-v4-flash-0731`, reviewer `grok-4.6`, documenter
+`muse-spark-1.2-contributor` (pi / OpenRouter). Config:
+`adws/adw_sssf_config/sssf.config.yaml`.
 
 ## Where this stopped
 
-#127 is on `main`. Files tab is live: read-only browser of `COLLIE_WORK_ROOT` (walk folders,
-search names, preview text, copy relative path, download). Hidden when the env is unset.
-Skip list (`.env`, `node_modules`, `.git`, `config`, caches, keys) never lists or serves.
-Phone: reopen the PWA after this rebuild+restart.
+Files tab is on `main` and live. Read-only browser of `COLLIE_WORK_ROOT`: walk folders,
+search names, preview text, copy relative path, download. Hidden when the env is unset.
+Skip list never lists or serves. Roster #126 is also on `main`. No open PRs.
+
+Phone: reopen the PWA if the Files tab is missing (old service worker).
 
 ## Resume with
 
@@ -36,8 +39,6 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.test_permissions
 ```
 
-CI runs those as the `factory unittests` job, separate from `bun run test`.
-
 ## Next thing to do
 
 1. Tag the remaining untagged releases: **v0.52.2** `70c1bea`, **v0.52.3** `ee5d7b2`,
@@ -48,6 +49,7 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 ## Open
 
+- No open PRs.
 - Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.0 is tagged.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
@@ -56,6 +58,9 @@ CI runs those as the `factory unittests` job, separate from `bun run test`.
 
 - **Files tab is opt-in.** Plugin `.env` must have `COLLIE_WORK_ROOT`. Unset = no tab and no
   `/api/files*` routes. Dot-names (including `.adr`) never list. Read-only — no send-to-pane.
+- **Planner is Claude Code opus, not OpenRouter.** The other four seats are pi. `flash-0731`
+  and `muse-spark-1.2-contributor` live in `~/.pi/agent/models.json`; `pi --list-models` if a
+  seat fails to resolve.
 - **The live mirror always pans; there is no wrap toggle.** Long Grok diffs stay one row — swipe
   sideways. Do not reintroduce wrap classifiers.
 - **Grok history is per-tab now.** Several grok panes in one space share a cwd; the adapter
