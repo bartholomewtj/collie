@@ -4,4 +4,4 @@ Where: `web/src/components/agent-chat-desktop.test.tsx`, `web/src/hooks/use-desk
 
 Done means: all three files carry the assertions above and `cd web && bun run test` passes with every file that existed before 730efcf unedited; `bun run test` at root still reports 859 tests; `bun run typecheck` clean; PATCH bump to **0.56.2** in `herdr-plugin.toml`, `package.json`, `web/package.json` with a `CHANGELOG.md` `### Changed` line under a new `## [0.56.2]` heading: "Desktop mode phase 1: test coverage for hidden controls, hotkeys and tab title".
 
-Out of scope: `web/src/hooks/use-display-prefs.ts`; `bridge/`; `web/src/hooks/use-direct-typing.ts`; `web/src/hooks/use-long-press.ts`; any change to a non-test file under `web/src/`.
+Out of scope: `web/src/hooks/use-display-prefs.ts`; `bridge/`; `web/src/hooks/use-direct-typing.ts`; `web/src/hooks/use-long-press.ts`; any non-test file (production code is approved and does not change).
