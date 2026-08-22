@@ -9,7 +9,8 @@ import { StatusDot } from "@/components/status-badge";
 import { SpaceActionsSheet } from "@/components/space-actions-sheet";
 import { TabActionsSheet } from "@/components/tab-actions-sheet";
 import { PaneActionsSheet } from "@/components/pane-actions-sheet";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress, type LongPressPoint } from "@/hooks/use-long-press";
+import { useDesktop } from "@/lib/desktop";
 import { useDashPrefs } from "@/hooks/use-dash-prefs";
 import {
   filterSpaces,
@@ -26,7 +27,7 @@ import type { AgentView, TabView, WorkspaceView } from "@/lib/types";
 
 interface TreeRowButtonProps {
   onClick?: () => void;
-  onLongPress?: () => void;
+  onLongPress?: (at: LongPressPoint) => void;
   className?: string;
   children: ReactNode;
   disabled?: boolean;
@@ -39,7 +40,7 @@ function TreeRowButton({
   children,
   disabled,
 }: TreeRowButtonProps) {
-  const longPress = useLongPress(onLongPress);
+  const longPress = useLongPress(onLongPress, { disabled: useDesktop().on });
   return (
     <button
       type="button"
@@ -97,6 +98,7 @@ export function SpaceTree({
   const [sheetSpace, setSheetSpace] = useState<WorkspaceView | null>(null);
   const [sheetTab, setSheetTab] = useState<TabView | null>(null);
   const [sheetPane, setSheetPane] = useState<AgentView | null>(null);
+  const [sheetAnchor, setSheetAnchor] = useState<LongPressPoint | null>(null);
 
   const actionsEnabled = !!onRenamed;
 
@@ -268,7 +270,7 @@ export function SpaceTree({
 
                   <TreeRowButton
                     onClick={() => handleSpaceRowClick(w, wsTabGroups, isSpaceExpanded)}
-                    onLongPress={actionsEnabled ? () => setSheetSpace(w) : undefined}
+                    onLongPress={actionsEnabled ? (at) => { setSheetAnchor(at); setSheetSpace(w); } : undefined}
                   >
                     {status ? (
                       <>
@@ -335,7 +337,7 @@ export function SpaceTree({
                               disabled={isEmptyTab}
                               onClick={() => handleTabRowClick(group.tabId, tabPanes, isTabExpanded)}
                               onLongPress={
-                                actionsEnabled && tabRecord ? () => setSheetTab(tabRecord) : undefined
+                                actionsEnabled && tabRecord ? (at) => { setSheetAnchor(at); setSheetTab(tabRecord); } : undefined
                               }
                             >
                               {tabStatus ? (
@@ -375,7 +377,7 @@ export function SpaceTree({
                                     <TreeRowButton
                                       onClick={() => navigate(panePath(p.paneId, session))}
                                       onLongPress={
-                                        actionsEnabled ? () => setSheetPane(p) : undefined
+                                        actionsEnabled ? (at) => { setSheetAnchor(at); setSheetPane(p); } : undefined
                                       }
                                     >
                                       <StatusDot status={pStatus} runningCommand={p.runningCommand} />
@@ -422,16 +424,18 @@ export function SpaceTree({
         <>
           <SpaceActionsSheet
             open={sheetSpace !== null}
-            onClose={() => setSheetSpace(null)}
+            onClose={() => { setSheetSpace(null); setSheetAnchor(null); }}
             workspace={sheetSpace}
+             anchor={sheetAnchor}
             session={session}
             readOnly={readOnly}
             onRenamed={onRenamed}
           />
           <TabActionsSheet
             open={sheetTab !== null}
-            onClose={() => setSheetTab(null)}
+            onClose={() => { setSheetTab(null); setSheetAnchor(null); }}
             tab={sheetTab}
+             anchor={sheetAnchor}
             session={session}
             readOnly={readOnly}
             onRenamed={onRenamed}
@@ -442,8 +446,9 @@ export function SpaceTree({
           />
           <PaneActionsSheet
             open={sheetPane !== null}
-            onClose={() => setSheetPane(null)}
+            onClose={() => { setSheetPane(null); setSheetAnchor(null); }}
             pane={sheetPane}
+             anchor={sheetAnchor}
             session={session}
             readOnly={readOnly}
             onRenamed={onRenamed}

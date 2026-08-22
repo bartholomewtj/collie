@@ -42,6 +42,8 @@ import { TranscriptView } from "@/components/transcript-view";
 import { shortCwd } from "@/lib/format";
 import { historyPath, tracePath } from "@/lib/nav";
 import { useOpenSpace } from "@/hooks/use-open-space";
+import { useDropUpload } from "@/hooks/use-drop-upload";
+import { clearPasteHold, setPasteHold } from "@/lib/paste-hold";
 import { isReadOnly } from "@/lib/types";
 import type { AgentView, BridgeStatus, DeviceAuth } from "@/lib/types";
 import type {
@@ -144,6 +146,17 @@ export function AgentChat({
   const composerRef = useRef<ComposerHandle>(null);
 
   const gone = !agent;
+  useDropUpload({
+    paneId,
+    session,
+    enabled: desktop && !gone && !readOnly,
+    onPath: (path) => setPasteHold({
+      kind: "path",
+      path,
+      onSend: () => { clearPasteHold(); composerRef.current?.typePath(path); },
+      onDiscard: clearPasteHold,
+    }),
+  });
 
   // Swipe up (or just tap) the handle above the composer to bring up the pane switcher. A lowish
   // threshold + a taller hit area (below) make the gesture easy to land with a thumb; tapping is the

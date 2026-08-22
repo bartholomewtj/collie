@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ShellBadge, StatusBadge, StatusDot } from "@/components/status-badge";
 import { AgentIcon } from "@/components/agent-icon";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress, type LongPressPoint } from "@/hooks/use-long-press";
+import { useDesktop } from "@/lib/desktop";
 import { timeAgoShort } from "@/lib/format";
 import { paneParts, paneTitleInTab } from "@/lib/pane-name";
 import { STATUS_LABEL } from "@/lib/types";
@@ -18,7 +19,7 @@ interface AgentCardProps {
    * opening the pane (the hook swallows the click that follows a completed hold). Unset — the herd
    * list — leaves the row exactly as it was.
    */
-  onLongPress?: () => void;
+  onLongPress?: (at: LongPressPoint) => void;
   /**
    * Show "how long ago" on the second line, and which timestamp it means: "seen" for the Recent
    * section (when you last opened it), "active" for Ready · unseen (when it finished). Omitted
@@ -84,7 +85,7 @@ export function AgentCard({
   // title, then crossed 200px of empty card to a 10px mark describing it.
   const cornerDot = statusStyle === "dot" && !isShell;
 
-  const longPress = useLongPress(onLongPress);
+  const longPress = useLongPress(onLongPress, { disabled: useDesktop().on });
 
   const Shell = flat ? "div" : Card;
 

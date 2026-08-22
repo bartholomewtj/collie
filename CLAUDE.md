@@ -182,7 +182,7 @@ major; crossing one is `herdr plugin action invoke update-major --plugin herdr.c
   passes `AppHeader onBack` — a "‹" that goes up exactly one level (pane → tree, trace → Traces,
   history → pane). Don't add a second way back (a Back chip in a strip, the Collie mark as home) or
   a sibling-switcher row on a pushed screen; that's the mess 0.35.0 removed.
-- **Tap-and-hold is the one way to manage a pane, tab or space in place.** Pane pills and all three
+- **Tap-and-hold is the one way to manage a pane, tab or space in place. Desktop mode is the one exception, and it is a container swap, not a second sheet. With `useDesktop().on`, `useLongPress({ disabled: true })` turns off the hold timer while `contextmenu` opens the same rows in a popover at the pointer; rename remains inline and close remains two-step. There is still no hover `…` button, swipe-to-delete, or second set of rows.** Pane pills and all three
   row kinds in the home tree (space, tab, pane) open a small actions sheet on a hold
   (`use-long-press.ts` + `*-actions-sheet.tsx`, rows shared via `action-sheet-rows.tsx`). Rename +
   close for panes and tabs; **rename only for spaces** — Collie never deletes a space. Don't add a
@@ -482,7 +482,7 @@ Router: `router.tsx` (module-scoped, keeps location). Loaders: `lib/loaders.ts`.
 | Screen → blocks → UI | `lib/ansi.ts` → `lib/blocks.ts` → `lib/harness/*` → `components/{prompt-select,preview-select,wizard,multi-select,menu}-block.tsx` · raw: `components/ansi-output.tsx` |
 | Spaces tree (home) | `components/space-tree.tsx` · `lib/spaces.ts` (grouping/ordering) · `lib/triage.ts` (buckets) · `hooks/use-dash-prefs.ts` (persisted expansion) · `hooks/use-open-space.ts` |
 | Agent cards / in-pane switcher | `components/agent-card.tsx` · `agent-sidebar.tsx` · `lib/triage.ts` (ordering) · `lib/status.ts` |
-| Long-press actions | `hooks/use-long-press.ts` · `components/{pane,tab,space}-actions-sheet.tsx` · `action-sheet-rows.tsx` |
+| Long-press actions | `hooks/use-long-press.ts` · `components/{pane,tab,space}-actions-sheet.tsx` · `action-sheet-rows.tsx` · `components/ui/popover.tsx` |
 | Command palette / operator rows | `components/command-palette.tsx` · `lib/agent-commands.ts` · `lib/operator-commands.ts` |
 | Push & notifications (client) | `lib/push.ts` · `lib/push-decision.ts` · `hooks/use-push.ts` · `hooks/use-notify-prefs.ts` · `components/{notify-prefs,snooze}-control.tsx` · `sw.ts` |
 | Update banner / self-update | `lib/self-update.ts` · `lib/build.ts` · `lib/server-build.ts` · `components/update-banner.tsx` · `update-available-banner.tsx` · `update-check-control.tsx` · `build-stamp.tsx` |

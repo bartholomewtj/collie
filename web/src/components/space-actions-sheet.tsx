@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 
 import { BottomSheet } from "@/components/ui/sheet";
+import { ActionPopover } from "@/components/ui/popover";
+import { useDesktop } from "@/lib/desktop";
 import { ActionRow, RenameView } from "@/components/action-sheet-rows";
 import * as api from "@/lib/api";
 import { setStatus } from "@/lib/status";
@@ -18,6 +20,7 @@ interface SpaceActionsSheetProps {
   readOnly?: boolean;
   /** Fired after a successful rename so the parent can revalidate. */
   onRenamed: () => void;
+  anchor?: { x: number; y: number } | null;
 }
 
 type Mode = "actions" | "rename";
@@ -36,7 +39,9 @@ export function SpaceActionsSheet({
   session,
   readOnly = false,
   onRenamed,
+  anchor = null,
 }: SpaceActionsSheetProps) {
+  const desktop = useDesktop().on;
   const [mode, setMode] = useState<Mode>("actions");
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -78,9 +83,8 @@ export function SpaceActionsSheet({
     }
   }
 
-  return (
-    <BottomSheet open={open} onClose={onClose} title={workspace ? `Space ${workspace.label}` : "Space"}>
-      {readOnly ? (
+  const title = workspace ? `Space ${workspace.label}` : "Space";
+  const body = readOnly ? (
         <p className="py-2 text-sm text-muted-foreground">
           Read-only — this device isn't authorised to rename spaces.
         </p>
@@ -105,7 +109,10 @@ export function SpaceActionsSheet({
           canSave={!!trimmed}
           placeholder="name this space"
         />
-      )}
-    </BottomSheet>
+      );
+  return desktop ? (
+    <ActionPopover open={open} onClose={onClose} anchor={anchor} title={title}>{body}</ActionPopover>
+  ) : (
+    <BottomSheet open={open} onClose={onClose} title={title}>{body}</BottomSheet>
   );
 }

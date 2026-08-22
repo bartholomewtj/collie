@@ -10,9 +10,13 @@ const LONG_PRESS_MS = 450;
 // cancelled real holds on a phone; a scroll still moves well past this before the timer would fire.
 const MOVE_CANCEL_PX = 16;
 
+export interface LongPressPoint { x: number; y: number }
+
 interface LongPressOptions {
   delayMs?: number;
   moveTolerance?: number;
+  /** Desktop mode switch: skips the pointerdown hold timer while keeping contextmenu active. */
+  disabled?: boolean;
   // Runs from the trusted pointer/contextmenu event that ends a completed hold. Use this for browser
   // APIs (notably opening a phone keyboard) that reject calls made from the hold timer itself.
   onReleaseAfterLongPress?: () => void;
@@ -34,14 +38,16 @@ interface LongPressOptions {
  * per gesture so the timer and the contextmenu path can never double-open.
  *
  * Deliberately does NOT set `touch-action: none`: the element stays scrollable, and a scroll gesture
- * cancels the timer through the move/cancel path instead. Pass `onLongPress: undefined` to disable
+ * cancels the timer through the move/cancel path instead. The callback receives the triggering `{x,y}`
+ * point. Pass `onLongPress: undefined` to disable
  * (the handlers become inert) so a caller can conditionally opt out without breaking the hook rules.
  */
 export function useLongPress(
-  onLongPress: (() => void) | undefined,
+  onLongPress: ((at: LongPressPoint) => void) | undefined,
   {
     delayMs = LONG_PRESS_MS,
     moveTolerance = MOVE_CANCEL_PX,
+    disabled = false,
     onReleaseAfterLongPress,
   }: LongPressOptions = {},
 ) {
@@ -50,6 +56,14 @@ export function useLongPress(
   // A long-press fired on the in-progress gesture → suppress the ensuing click so it doesn't navigate.
   const fired = useRef(false);
   const releaseHandled = useRef(false);
+
+  function pointFrom(e: { clientX?: number; clientY?: number; currentTarget?: unknown }): LongPressPoint {
+    const x = e.clientX || 0;
+    const y = e.clientY || 0;
+    if (x !== 0 || y !== 0) return { x, y };
+    const rect = (e.currentTarget as HTMLElement | undefined)?.getBoundingClientRect?.();
+    return rect ? { x: rect.left, y: rect.bottom } : { x: 0, y: 0 };
+  }
 
   const clear = useCallback(() => {
     if (timer.current !== null) {
@@ -65,11 +79,11 @@ export function useLongPress(
   // Open the sheet exactly once per gesture. Shared by the hold timer and the contextmenu trigger, so
   // whichever wins the race opens it and the other is a no-op. Also disarms the timer so a pending
   // hold can't re-open after contextmenu already did.
-  const fire = useCallback(() => {
+  const fire = useCallback((at: LongPressPoint) => {
     if (!onLongPress || fired.current) return;
     fired.current = true;
     clear();
-    onLongPress();
+    onLongPress(at);
   }, [onLongPress, clear]);
 
   const finish = useCallback(() => {
@@ -89,11 +103,13 @@ export function useLongPress(
       // Primary pointer only (0 for touch/pen too) — ignore right-click / secondary contacts for the
       // hold timer (right-click still opens via onContextMenu below).
       if (e.button !== 0) return;
+      if (disabled) return;
+      const at = pointFrom(e);
       startPos.current = { x: e.clientX, y: e.clientY };
       if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = setTimeout(fire, delayMs);
+      timer.current = setTimeout(() => fire(at), delayMs);
     },
-    [onLongPress, delayMs, fire],
+    [onLongPress, delayMs, disabled, fire],
   );
 
   const onPointerMove = useCallback(
@@ -128,7 +144,7 @@ export function useLongPress(
     (e: ReactMouseEvent) => {
       if (!onLongPress) return;
       e.preventDefault();
-      fire();
+      fire(pointFrom(e));
       finish();
     },
     [onLongPress, fire, finish],

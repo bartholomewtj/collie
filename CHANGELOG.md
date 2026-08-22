@@ -6,6 +6,21 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.12] - 2026-08-23
+
+### Fixed
+- Desktop mode: a failed drag-and-drop upload shows an error status
+
+## [0.56.11] - 2026-08-23
+
+### Added
+- Desktop mode: drag an image onto the pane to upload it; the host path appears as a Type path chip
+
+## [0.56.10] - 2026-08-22
+
+### Added
+- Desktop mode: right-click opens the pane, tab and space actions in a popover at the pointer
+
 ## [0.56.9] - 2026-08-22
 
 ### Fixed
