@@ -16,10 +16,10 @@ export const SEARCH_MAX_DIRS = 5000;
 export const BINARY_SNIFF_BYTES = 8192;
 
 /**
- * MIME types Chrome on a phone will display rather than download. HTML, SVG, XML and JS are
- * absent on purpose: an inline response with those types would run same-origin against the
- * bridge (ADR 0026). `/api/files/open` uses this map and nothing else — never `h.contentTypes`,
- * which includes text/html for the static UI.
+ * MIME types Chrome on a phone will display rather than download. `/api/files/open` uses this
+ * map and nothing else — never `h.contentTypes`, which includes text/html for the static UI.
+ * HTML is allowed only with `BROWSER_HTML_CSP` (unique origin, no scripts). SVG, XML and JS
+ * stay out: they are scriptable and do not get that sandbox (ADR 0027).
  */
 const BROWSER_OPEN_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -49,7 +49,17 @@ const BROWSER_OPEN_TYPES: Record<string, string> = {
   ".log": "text/plain; charset=utf-8",
   ".csv": "text/plain; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
 };
+
+/** Unique origin, no scripts, no forms. Never add `allow-same-origin` or `allow-scripts`. */
+export const BROWSER_HTML_CSP =
+  "sandbox; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+export function browserOpenCsp(type: string): string | undefined {
+  return type.startsWith("text/html") ? BROWSER_HTML_CSP : undefined;
+}
 
 export function browserOpenType(name: string): string | null {
   return BROWSER_OPEN_TYPES[extname(name).toLowerCase()] ?? null;
@@ -130,13 +140,16 @@ async function inspect(root: string, segs: string[]): Promise<WorkdirListing | W
 function fileBytes(h: WorkdirHelpers, real: string, size: number, type: string, disposition: "attachment" | "inline"): Response {
   const name = basename(real);
   const fallback = name.replace(/[^\x20-\x7e]|["\\\u0000-\u001f]/g, "_");
-  return h.secure(new Response(Bun.file(real), { headers: {
+  const headers: Record<string, string> = {
     "content-type": type,
     "content-disposition": `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`,
     "content-length": String(size),
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
-  } }));
+  };
+  const csp = disposition === "inline" ? browserOpenCsp(type) : undefined;
+  if (csp) headers["content-security-policy"] = csp;
+  return h.secure(new Response(Bun.file(real), { headers }));
 }
 
 async function search(root: string, q: string): Promise<{ q: string; results: WorkdirSearchResult[]; truncated: boolean }> {

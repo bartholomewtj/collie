@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, symlink, truncate } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { readWorkRoot } from "./config.ts";
-import { browserEmbedKind, browserOpenType, createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
+import { browserEmbedKind, browserOpenCsp, browserOpenType, BROWSER_HTML_CSP, createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
 import type { Config } from "./config.ts";
 import { CAN_SYMLINK } from "./platform-support.ts";
 
@@ -79,12 +79,18 @@ describe("workdir", () => {
     const w = createWorkdir(cfg(""), helpers); expect(w.enabled).toBe(false); expect(w.owns("/api/files")).toBe(false); expect(w.owns("/api/files/search")).toBe(false);
   });
 
-  test("opens allowlisted types inline and refuses scriptable ones", async () => {
+  test("opens allowlisted types inline and refuses SVG/JS", async () => {
     expect(browserOpenType("shot.PNG")).toBe("image/png");
     expect(browserOpenType("notes.md")).toBe("text/plain; charset=utf-8");
-    expect(browserOpenType("page.html")).toBeNull();
+    expect(browserOpenType("page.html")).toBe("text/html; charset=utf-8");
+    expect(browserOpenType("index.HTM")).toBe("text/html; charset=utf-8");
     expect(browserOpenType("icon.svg")).toBeNull();
     expect(browserOpenType("app.js")).toBeNull();
+    expect(browserOpenCsp("text/html; charset=utf-8")).toBe(BROWSER_HTML_CSP);
+    expect(BROWSER_HTML_CSP).toContain("sandbox");
+    expect(BROWSER_HTML_CSP).not.toContain("allow-same-origin");
+    expect(BROWSER_HTML_CSP).not.toContain("allow-scripts");
+    expect(browserOpenCsp("image/png")).toBeUndefined();
     const root = await mkdtemp(join(tmpdir(), "collie-workdir-open-"));
     try {
       await writeFile(join(root, "shot.png"), "png-bytes");
@@ -96,28 +102,36 @@ describe("workdir", () => {
       expect(png.headers.get("content-disposition")).toContain("inline");
       expect(png.headers.get("content-type")).toBe("image/png");
       expect(png.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(png.headers.get("content-security-policy")).toBeNull();
       const listed = await (await w.handle(new Request("http://x/api/files?path=shot.png"), new URL("http://x/api/files?path=shot.png"))).json();
       expect(listed.openInBrowser).toBe(true);
       expect(listed.embed).toBe("image");
       const html = await w.handle(new Request("http://x/api/files/open?path=page.html"), new URL("http://x/api/files/open?path=page.html"));
-      expect(html.status).toBe(404);
-      expect(await html.text()).not.toContain("alert");
+      expect(html.status).toBe(200);
+      expect(html.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(html.headers.get("content-disposition")).toContain("inline");
+      expect(html.headers.get("content-security-policy")).toBe(BROWSER_HTML_CSP);
+      expect(await html.text()).toContain("alert(1)");
       const htmlMeta = await (await w.handle(new Request("http://x/api/files?path=page.html"), new URL("http://x/api/files?path=page.html"))).json();
-      expect(htmlMeta.openInBrowser).toBe(false);
+      expect(htmlMeta.openInBrowser).toBe(true);
       expect(htmlMeta.embed).toBeUndefined();
+      expect(htmlMeta.binary).toBe(false);
       const txt = await w.handle(new Request("http://x/api/files/open?path=notes.txt"), new URL("http://x/api/files/open?path=notes.txt"));
       expect(txt.headers.get("content-type")).toBe("text/plain; charset=utf-8");
       const dl = await w.handle(new Request("http://x/api/files/download?path=page.html"), new URL("http://x/api/files/download?path=page.html"));
       expect(dl.status).toBe(200);
       expect(dl.headers.get("content-disposition")).toContain("attachment");
+      expect(dl.headers.get("content-security-policy")).toBeNull();
       await writeFile(join(root, "clip.mp4"), "mp4");
       await writeFile(join(root, "track.mp3"), "mp3");
       await writeFile(join(root, "doc.pdf"), "%PDF");
+      await writeFile(join(root, "icon.svg"), "<svg></svg>");
       expect(browserEmbedKind("shot.png")).toBe("image");
       expect(browserEmbedKind("clip.mp4")).toBe("video");
       expect(browserEmbedKind("track.mp3")).toBe("audio");
       expect(browserEmbedKind("doc.pdf")).toBeUndefined();
       expect(browserEmbedKind("notes.txt")).toBeUndefined();
+      expect(browserEmbedKind("page.html")).toBeUndefined();
       const mp4 = await (await w.handle(new Request("http://x/api/files?path=clip.mp4"), new URL("http://x/api/files?path=clip.mp4"))).json();
       expect(mp4.embed).toBe("video");
       const mp3 = await (await w.handle(new Request("http://x/api/files?path=track.mp3"), new URL("http://x/api/files?path=track.mp3"))).json();
@@ -125,6 +139,8 @@ describe("workdir", () => {
       const pdf = await (await w.handle(new Request("http://x/api/files?path=doc.pdf"), new URL("http://x/api/files?path=doc.pdf"))).json();
       expect(pdf.openInBrowser).toBe(true);
       expect(pdf.embed).toBeUndefined();
+      const svg = await w.handle(new Request("http://x/api/files/open?path=icon.svg"), new URL("http://x/api/files/open?path=icon.svg"));
+      expect(svg.status).toBe(404);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

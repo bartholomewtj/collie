@@ -82,10 +82,11 @@ A superseded ADR is never deleted or edited into agreement with the present. Mar
 | [0024](./0024-the-sssf-module-is-the-second-filesystem-reader.md) | The SSSF traces module is the second sanctioned filesystem reader | Accepted |
 | [0025](./0025-a-major-upgrade-is-consented-by-flag.md) | A major upgrade is consented by flag; routine update stays inside the installed major | Accepted |
 | [0026](./0026-the-files-tab-is-the-third-filesystem-reader.md) | The Files tab is the third filesystem reader | Accepted |
+| [0027](./0027-html-open-is-a-unique-origin-sandbox.md) | HTML from the work root opens as a unique-origin sandbox | Accepted |
 
 **0011–0016 are not missing** — they are the pack/federation decisions, accepted on the `v1`
 integration branch and arriving here when it merges. Numbers are claimed across *both* branches, so
 the next ADR written on `main` continues from the highest number in use anywhere, not from the highest
 one in this table.
 
-**0019–0026 are this fork's** (bartholomewtj/collie) decisions. 0019–0023 were first numbered 0011–0014, then moved above upstream's reserved block so the `v1` merge cannot collide with them.
+**0019–0027 are this fork's** (bartholomewtj/collie) decisions. 0019–0023 were first numbered 0011–0014, then moved above upstream's reserved block so the `v1` merge cannot collide with them.
