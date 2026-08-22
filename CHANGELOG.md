@@ -6,6 +6,12 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.55.1] - 2026-08-22
+
+### Changed
+- One orientation file: `CONTEXT.md` folded into `CLAUDE.md`; the doc-link checker and pre-commit hook no longer list it. README trimmed to install/use; architecture detail links to `ARCHITECTURE.md`.
+- Factory run artefacts under `adws/adw_data/` are no longer tracked (only `prompt_engineering/` is); shipped `requests/`, `specs/`, `app_docs/` files removed.
+
 ## [0.55.0] - 2026-08-22
 
 ### Added

@@ -1,26 +1,10 @@
 # Next session
 
-_Last handoff: 2026-08-22 — `main` at **0.55.0** (`5e551d6`, HTML Open in browser
-#134), tagged **v0.55.0**. 0.52.2–0.52.4 are still untagged. Bridge:
-`C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`.
-`COLLIE_WORK_ROOT=C:\claudeos` is set. Restarted after 0.55.0. One listener on
-`:8787`._
-
-Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
-Roster: planner Claude Code **opus** (subscription, thinking high); builder
-`gpt-5.6-luna`, scout `deepseek-v4-flash-0731`, reviewer `grok-4.6`, documenter
-`muse-spark-1.2-contributor` (pi / OpenRouter). Config:
-`adws/adw_sssf_config/sssf.config.yaml`.
+_Main at **0.55.0** / **v0.55.0**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
 
 ## Where this stopped
 
-Files tab on `main`: walk nested folders; Open in browser for PDF, images, audio,
-video, text, and **HTML** (unique-origin sandbox, scripts do not run). Images/audio/video
-play in the tab. PDF and HTML stay on Open in browser (no iframe). SVG/XML/JS stay
-download-only. Bridge restarted after 0.55.0. No web rebuild — this was bridge-only.
-No open PRs.
-
-Phone: leave and re-open an `.html` file so the listing refetches. No PWA reinstall.
+Files tab shipped on `main`. PR #136 (`chore/cleanup-2-litter`) is open; this docs cleanup is on `chore/cleanup-3-docs` and its PR follows.
 
 ## Resume with
 
@@ -43,58 +27,22 @@ Tests: `bun run test` (root) and `cd web && bun run test`. ADW inner loop: `run_
 PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.test_permissions
 ```
 
-## Next thing to do
-
-1. Tag the remaining untagged releases: **v0.52.2** `70c1bea`, **v0.52.3** `ee5d7b2`,
-   **v0.52.4** `96679ac`.
-2. Parked: send this fork's security fixes upstream to AltanS/collie.
-3. Parked: `push-keys` / `push-test` Herdr actions are still POSIX-only (the Windows ctl has no
-   wrappers; PATH's bash is the WSL stub).
-
 ## Open
 
-- No open PRs.
-- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.1, v0.54.0, and v0.55.0 are tagged.
-- Parked: send the security fixes upstream to AltanS/collie.
-- Parked: Windows `push-keys` / `push-test` Herdr actions.
+- PR #136: stop tracking factory litter and drop shipped planning docs.
+- This docs cleanup PR on `chore/cleanup-3-docs`, after #136.
+- Parked: send this fork's security fixes upstream to `AltanS/collie`.
+- Parked: Windows `push-keys` / `push-test` Herdr actions are POSIX-only.
 
 ## Watch out for
 
-- **Files tab is opt-in.** Plugin `.env` must have `COLLIE_WORK_ROOT`. Unset = no tab and no
-  `/api/files*` routes. Dot-names (including `.adr`) never list. Read-only — no send-to-pane.
-  HTML Open in browser is a unique-origin sandbox (`CSP: sandbox`, no
-  `allow-same-origin` / `allow-scripts`). SVG/XML/JS stay download-only. PDF and HTML
-  are Open in browser only (no in-page iframe). Do not add `allow-scripts` without
-  a new ADR (0027).
-- **Planner is Claude Code opus, not OpenRouter.** The other four seats are pi. `flash-0731`
-  and `muse-spark-1.2-contributor` live in `~/.pi/agent/models.json`; `pi --list-models` if a
-  seat fails to resolve.
-- **The live mirror always pans; there is no wrap toggle.** Long Grok diffs stay one row — swipe
-  sideways. Do not reintroduce wrap classifiers.
-- **Grok history is per-tab now.** Several grok panes in one space share a cwd; the adapter
-  matches the live viewport to that pane's session (`bridge/journal/grok.ts`). Empty history
-  on a grok tab usually means the visible screen has no distinctive user turn yet — do not
-  "fix" it by picking newest.
-- **`collie-ctl.ps1 status` can WARN "cannot reach Herdr" while the bridge is fine.** The probe
-  hits `/api/snapshot`, which needs identity. Trust `[events] stream up` in the log, not that WARN.
-- **Herdr rejects duplicate action ids.** Canonical `update` / `restart` / `update-major` are the
-  Windows exe. POSIX twins are `*-posix`. Banner copy stays `invoke update`.
-- **PATH's `bash` is the WSL stub.** Use `C:\Program Files\Git\bin\bash.exe`. Windows Herdr
-  actions must not call `bash`.
-- **Restarting can still lock a file** if an ACE is missing. Recovery:
-  `icacls <file> /grant:r "$env:USERDOMAIN\$env:USERNAME:(F)"` on the file, then
-  `collie-ctl.ps1 start`. Directory protect now grants `(OI)(CI)(F)` so new children inherit.
-  Do not `taskkill /IM bun.exe`.
-- **Raw terminal on means no prompt buttons and no idle-tail / commands-only collapse.** 0.45.0
-  default. Grammar / hide-live bugs need ⚙ → Raw terminal off.
-- **Do not trust an ADW's own success line.** The denylist rolls back named files, but still
-  read the diff's file list against Out of scope.
-- **The source being right tells you nothing about what the phone runs.** `/api/config` → `build`
-  is the commit being served; `staleBuild` is the mtime guard. Local curl gets `identity required`.
-  0.55.0 bumped `web/package.json` with no UI source change — that flags staleBuild. Ignore it.
-- **`run_quality()` publishes `web/dist`.** SDLC inner loop (`run_tests()`) does not build.
-- **`adws/adw_modules/` is protected_files.** An ADW cannot implement factory-gate changes.
-- **CI has no `uv`.** Factory tests go through the `factory unittests` job, not `bun test`.
-- **Do not `git merge upstream/main`.** Git still thinks you split at 0.29.0. Port leftovers only.
-- Never `taskkill /IM bun.exe`.
-- If `AGENTS.md` or `GEMINI.md` reappear, delete them. `CLAUDE.md` is the working agreement.
+- Planner is Claude Code **opus**, not OpenRouter; the other seats are pi.
+- `collie-ctl.ps1 status` can warn falsely; trust `[events] stream up` in the log.
+- Herdr rejects duplicate action ids; canonical Windows actions use the exe and POSIX twins are `*-posix`.
+- PATH's `bash` is the WSL stub; use Git Bash. Windows Herdr actions must not call `bash`.
+- If an ACL/file lock blocks recovery, grant the file with `icacls`, then start; never `taskkill /IM bun.exe`.
+- `/api/config` → `build` is what the phone runs; `staleBuild` means rebuild `web/dist`.
+- `run_quality()` publishes `web/dist`; `run_tests()` does not build.
+- `adws/adw_modules/` is protected; CI has no `uv`.
+- Do not `git merge upstream/main`.
+- `CLAUDE.md` is the working agreement **and** the system map. `CONTEXT.md` is gone — don't recreate it. If `AGENTS.md` or `GEMINI.md` reappear, delete them.
