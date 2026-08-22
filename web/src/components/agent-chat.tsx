@@ -132,6 +132,8 @@ export function AgentChat({
   // This device isn't allowlisted to type into agents: the backend rejects every write, so the
   // composer drops to read-only (and shows a banner). The mirror still polls (reading is fine).
   const readOnly = isReadOnly(device);
+  const { on: desktop, typing } = useDesktop();
+  const [armed, setArmed] = useState(false);
 
   // Drawers/sheets are mutually exclusive — at most one open. A single value makes that invariant
   // unrepresentable to violate.
@@ -585,7 +587,7 @@ export function AgentChat({
   //  - the user is selecting text (a long-press selection), so copy works instead of the tap
   //    collapsing the selection and popping the keyboard.
   function focusFromMirror(e: ReactMouseEvent<HTMLDivElement>) {
-    if (!prefs.tapToFocus) return;
+    if (!desktop && !prefs.tapToFocus) return;
     const target = e.target as Element | null;
     // The `a` is what keeps a tap on an autolinked URL (components/ansi-output) from popping the
     // keyboard on top of the page it just opened. Don't trim it out of this selector.
@@ -593,9 +595,19 @@ export function AgentChat({
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     composerRef.current?.focusInput();
+    if (desktop && typing === "direct" && !readOnly && !gone) composerRef.current?.armDirect();
   }
 
-  const desktop = useDesktop().on;
+  useEffect(() => {
+    if (!desktop || !armed) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-slot='chat-input']")) return;
+      composerRef.current?.releaseDirect();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [desktop, armed]);
 
   // max-w-[100dvw] is a phone guard (the mirror must never widen the page). In desktop mode the
   // grid track (minmax(0,1fr)) is the constraint and the viewport is not this element's width.
@@ -774,7 +786,14 @@ export function AgentChat({
             straight into terminal output — the chrome and the mirror read as one surface. Drawing it
             here rather than as a border-b on PaneStrip covers the case where that strip is absent
             (a tab holding a single pane), which is the common one. */}
-        <div className="min-h-0 min-w-0 flex-1 border-t border-border/40" onClick={focusFromMirror}>
+        <div
+          data-testid="mirror-region"
+          className={cn(
+            "min-h-0 min-w-0 flex-1 border-t border-border/40",
+            desktop && armed && "ring-2 ring-inset ring-you",
+          )}
+          onClick={focusFromMirror}
+        >
           <ChatMessageList
             ref={listRef}
             dep={display}
@@ -917,6 +936,7 @@ export function AgentChat({
             setRawTerminal={setRawTerminal}
             setTapToFocus={setTapToFocus}
             onSent={onSent}
+            onArmedChange={setArmed}
           />
         </div>
       </div>

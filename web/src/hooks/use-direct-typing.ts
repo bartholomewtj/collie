@@ -9,6 +9,7 @@ import type {
 import { useOrderedKeySender } from "@/hooks/use-ordered-key-sender";
 import { textToKeySequence } from "@/lib/key-queue";
 import { setStatus } from "@/lib/status";
+import { useLocked } from "@/lib/idle";
 
 // Physical-keyboard events that do not change a textarea value still need wire names. Printable
 // text, spaces and line breaks normally arrive through the input/change path instead.
@@ -48,6 +49,8 @@ interface DirectTypingOptions {
   sendKeys: (keys: string[]) => Promise<boolean>;
   onActivate: () => void;
   focusInput: () => void;
+  /** Desktop mode: focus owns the armed state and drafts do not block arming. */
+  desktop: boolean;
 }
 
 // The composer textarea's direct-terminal mode: what you type goes to the pane as keystrokes,
@@ -58,6 +61,12 @@ interface DirectTypingOptions {
 //
 // It does NOT own the entry point. Arming is an explicit NAMED choice — the "Type" toggle in the
 // composer's Controls row, beside Keys.
+// DESKTOP MODE HAS A SECOND ENTRY POINT, AND IT IS STILL NAMED. There is no "Type" toggle on a
+// desktop (the Controls row hides it); the named choice moved into Settings as the "Typing surface"
+// pref, and clicking the terminal or pressing Ctrl+` arms the surface already chosen. The surface
+// PREF is stored (lib/desktop.ts, localStorage). The ARMED STATE still is not, and is not lifted
+// anywhere: on desktop it is simply the textarea's own focus, released by blur, outside pointerdown,
+// window.blur, or the idle cover. Nothing survives a reload.
 //
 // WHY A NAMED CHOICE AND NOT A GESTURE. The submitted version of this feature armed the mode on a
 // bare long press of the Send button. That reads as a saving of one tap, but the tap is priced per
@@ -89,9 +98,11 @@ export function useDirectTyping({
   sendKeys,
   onActivate,
   focusInput,
+  desktop,
 }: DirectTypingOptions) {
   const [active, setActive] = useState(false);
   const [value, setValue] = useState("");
+  const idleLocked = useLocked();
   // Live read for the visibility listener below, which outlives any one armed session. Written at
   // the transitions themselves, not during render: the listener fires between renders, and a ref
   // that only catches up on the next one would let it misread which state it is reporting on.
@@ -111,7 +122,7 @@ export function useDirectTyping({
     if (!canActivate()) return;
     // A buffered reply and live keystrokes cannot safely share one field. Keep the durable draft
     // exactly where it is and make the user send or clear it before arming direct terminal input.
-    if (replyDraft().length > 0) {
+    if (!desktop && replyDraft().length > 0) {
       setStatus("Send or clear the draft before typing into the terminal.", "info");
       return;
     }
@@ -124,7 +135,7 @@ export function useDirectTyping({
     committedComposition.current = null;
     activeRef.current = true;
     setActive(true);
-    setStatus("Typing into the terminal — keys send as you type.", "success");
+    if (!desktop) setStatus("Typing into the terminal — keys send as you type.", "success");
     // Focus synchronously while the long-press/contextmenu gesture still carries browser user
     // activation; a deferred focus selects the field but mobile browsers may refuse to open their
     // software keyboard once that activation has expired. The existing callback still runs after
@@ -186,6 +197,23 @@ export function useDirectTyping({
   function deactivateSilently() {
     clearMode();
   }
+
+  function releaseOnFocusLoss() {
+    if (!activeRef.current) return;
+    resetMode();
+  }
+
+  useEffect(() => {
+    if (!desktop || !active) return;
+    window.addEventListener("blur", releaseOnFocusLoss);
+    return () => window.removeEventListener("blur", releaseOnFocusLoss);
+  }, [desktop, active]);
+
+  useEffect(() => {
+    if (!desktop || !active || !idleLocked) return;
+    inputRef.current?.blur();
+    releaseOnFocusLoss();
+  }, [desktop, active, idleLocked]);
 
   // Arming dies with the view it belongs to. A backgrounded tab, an idle pause and a lost bridge
   // all mean the same thing: the mirror on screen has stopped tracking the pane, and the next
@@ -317,5 +345,6 @@ export function useDirectTyping({
     onCompositionStart,
     onCompositionEnd,
     onKeyDown,
+    onBlur: () => { if (desktop) releaseOnFocusLoss(); },
   };
 }
