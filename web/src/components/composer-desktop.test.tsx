@@ -9,6 +9,16 @@ import { server } from "@/test/setup";
 import { recordReply } from "@/test/handlers";
 import { clearStatus, useStatus } from "@/lib/status";
 
+function replyHandler(onTyped: (text: string) => void, onSubmit?: () => void) {
+  return http.post(/\/api\/pane\/[^/]+\/reply$/, async ({ request }) => {
+    const body = (await request.json()) as { text: string; submit?: boolean };
+    recordReply(body);
+    if (body.submit) onSubmit?.();
+    else onTyped(body.text);
+    return HttpResponse.json({ ok: true });
+  });
+}
+
 function StatusSentinel() { const status = useStatus(); return <output data-testid="status">{status?.text ?? ""}</output>; }
 
 function mount(overrides: Partial<React.ComponentProps<typeof Composer>> = {}, withStatus = false) {
@@ -27,16 +37,21 @@ beforeEach(() => { localStorage.clear(); __resetDesktop(); clearStatus(); });
 afterEach(() => { cleanup(); __resetDesktop(); });
 
 describe("desktop composer behavior", () => {
-  it("keeps phone Enter as a newline and does not prevent it", () => {
+  it("keeps phone Enter as a newline and does not prevent it", async () => {
+    setDesktop(false);
+    const replies: string[] = [];
+    server.use(replyHandler((text) => replies.push(text)));
     const box = mount();
-    fireEvent.change(box, { target: { value: "hello" } });
-    const event = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
-    box.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(false);
-    expect(box).toHaveValue("hello");
+    const user = userEvent.setup();
+    await user.type(box, "hello");
+    expect(fireEvent.keyDown(box, { key: "Enter" })).toBe(true);
+    await user.type(box, "{enter}");
+    expect(box).toHaveValue("hello\n");
+    expect(replies).toEqual([]);
   });
 
   it("keeps phone draft refusal and its status", () => {
+    setDesktop(false);
     const box = mount({}, true);
     fireEvent.change(box, { target: { value: "draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Type into terminal" }));
@@ -45,35 +60,46 @@ describe("desktop composer behavior", () => {
 
   it("sends desktop Enter and uses Shift+Enter for a newline", async () => {
     setDesktop(true);
-    server.use(http.post(/\/api\/pane\/[^/]+\/reply$/, async ({ request }) => {
-      const body = (await request.json()) as { text: string; submit?: boolean };
-      recordReply(body);
-      return HttpResponse.json({ ok: true });
-    }));
+    const replies: string[] = [];
+    let submits = 0;
+    server.use(replyHandler((text) => replies.push(text), () => submits++));
     const box = mount();
-    await userEvent.setup().type(box, "hello");
-    fireEvent.keyDown(box, { key: "Enter" });
+    const user = userEvent.setup();
+    await user.type(box, "hello");
+    expect(fireEvent.keyDown(box, { key: "Enter" })).toBe(false);
     await waitFor(() => expect(box).toHaveValue(""));
-    fireEvent.change(box, { target: { value: "\n" } });
-    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
-    expect(box).toHaveValue("\n");
+    expect(replies).toEqual(["hello"]);
+    await waitFor(() => expect(submits).toBe(1));
+
+    await user.type(box, "line");
+    await user.type(box, "{shift>}{enter}{/shift}");
+    expect(box).toHaveValue("line\n");
+    expect(replies).toEqual(["hello"]);
   });
 
-  it("keeps Ctrl+Enter sending and ignores composing Enter", async () => {
+  it("keeps Ctrl+Enter sending", async () => {
     setDesktop(true);
-    server.use(http.post(/\/api\/pane\/[^/]+\/reply$/, async ({ request }) => {
-      const body = (await request.json()) as { text: string; submit?: boolean };
-      recordReply(body); return HttpResponse.json({ ok: true });
-    }));
+    const replies: string[] = [];
+    server.use(replyHandler((text) => replies.push(text)));
     const box = mount();
+    await userEvent.setup().type(box, "ctrl");
+    expect(fireEvent.keyDown(box, { key: "Enter", ctrlKey: true })).toBe(false);
+    await waitFor(() => expect(box).toHaveValue(""));
+    expect(replies).toEqual(["ctrl"]);
+  });
+
+  it("does nothing for Enter while composing", async () => {
+    setDesktop(true);
+    const replies: string[] = [];
+    server.use(replyHandler((text) => replies.push(text)));
+    const box = mount();
+    await userEvent.setup().type(box, "ctrl");
     const composing = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
     Object.defineProperty(composing, "isComposing", { value: true });
     box.dispatchEvent(composing);
     expect(composing.defaultPrevented).toBe(false);
-    fireEvent.change(box, { target: { value: "ctrl" } });
-    box.focus();
-    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
     expect(box).toHaveValue("ctrl");
+    expect(replies).toEqual([]);
   });
 
   it("passes empty navigation keys through and never Ctrl+C", async () => {
@@ -94,15 +120,29 @@ describe("desktop composer behavior", () => {
   });
 
   it("does not pass editing keys through when non-empty", () => {
-    setDesktop(true); const box = mount(); fireEvent.change(box, { target: { value: "text" } });
-    fireEvent.keyDown(box, { key: "Escape" }); fireEvent.keyDown(box, { key: "ArrowUp" });
+    setDesktop(true);
+    const keys: string[][] = [];
+    server.use(http.post(/\/api\/pane\/[^/]+\/keys$/, async ({ request }) => {
+      keys.push(((await request.json()) as { keys: string[] }).keys); return HttpResponse.json({ ok: true });
+    }));
+    const box = mount();
+    fireEvent.change(box, { target: { value: "text" } });
+    expect(fireEvent.keyDown(box, { key: "Escape" })).toBe(true);
+    expect(fireEvent.keyDown(box, { key: "ArrowUp" })).toBe(true);
+    expect(keys).toEqual([]);
   });
 
   it("keeps destructive sends behind the two-tap confirm", async () => {
-    setDesktop(true); const box = mount({}, true); const user = userEvent.setup();
+    setDesktop(true);
+    const replies: string[] = [];
+    server.use(replyHandler((text) => replies.push(text)));
+    const box = mount({}, true); const user = userEvent.setup();
     await user.type(box, "rm -rf /tmp/x");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(screen.getByTestId("status")).toHaveTextContent(/Destructive: .*tap Send again/);
+    expect(replies).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "Really send?" }));
+    await waitFor(() => expect(replies).toEqual(["rm -rf /tmp/x"]));
   });
 
   it("does not send or prevent an IME Enter", () => {

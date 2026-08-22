@@ -21,5 +21,15 @@ describe("AgentChat direct arm", () => {
   it("toggles from the arm signal and releases outside", () => { show(); act(() => requestArmToggle()); expect(screen.getByText("Typing into terminal")).toBeInTheDocument(); act(() => requestArmToggle()); expect(screen.queryByText("Typing into terminal")).toBeNull(); });
   it("releases on outside pointer, mirror buttons, and window blur but not textarea", () => { show(); act(() => requestArmToggle()); const box = screen.getByPlaceholderText(/terminal/i); fireEvent.pointerDown(box); expect(screen.getByText("Typing into terminal")).toBeInTheDocument(); fireEvent.pointerDown(document.body); expect(screen.queryByText("Typing into terminal")).toBeNull(); act(() => requestArmToggle()); const button = document.createElement("button"); screen.getByTestId("mirror-region").append(button); fireEvent.pointerDown(button); expect(screen.queryByText("Typing into terminal")).toBeNull(); act(() => requestArmToggle()); fireEvent.blur(window); expect(screen.queryByText("Typing into terminal")).toBeNull(); });
   it("shows locked strip for read-only device and cannot arm", () => { show(fixtureAgents[0], { enforced: true, device: "x", authorized: false }); expect(screen.getByText(/read-only device/)).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "Stop" })).toBeNull(); fireEvent.click(screen.getByText("output")); expect(screen.queryByRole("button", { name: "Stop" })).toBeNull(); });
-  it("shows locked strip for gone pane", () => { const a = fixtureAgents[0]!; const router = createMemoryRouter([{ path: "/", element: <AgentChat paneId={a.paneId} agent={undefined} agents={[]} shellPanes={[]} text="output" onBack={vi.fn()} onSelect={vi.fn()} /> }]); render(<RouterProvider router={router} />); expect(screen.getByText(/pane is gone/)).toBeInTheDocument(); });
+  it("shows locked strip for gone pane and cannot arm", () => {
+    const a = fixtureAgents[0]!;
+    const router = createMemoryRouter([{ path: "/", element: <AgentChat paneId={a.paneId} agent={undefined} agents={[]} shellPanes={[]} text="output" onBack={vi.fn()} onSelect={vi.fn()} /> }]);
+    render(<RouterProvider router={router} />);
+    // The gone-pane strip is present but disabled on purpose; arming is refused by !gone.
+    expect(screen.getByText(/pane is gone/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    fireEvent.click(screen.getByText("output"));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByTestId("mirror-region")).not.toHaveClass("ring-2");
+  });
 });
