@@ -4,19 +4,43 @@ import { createMemoryRouter, RouterProvider, Outlet } from "react-router";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/setup";
 import { FilesRoute } from "./files";
-import { ROOT_ROUTE_ID } from "@/lib/loaders";
-import type { HomeData } from "@/lib/loaders";
+import { filesShouldRevalidate, ROOT_ROUTE_ID } from "@/lib/loaders";
+import type { FilesData, HomeData } from "@/lib/loaders";
+import type { FilesResponse } from "@/lib/types";
 
 const home: HomeData = { bridge: "connected", agents: [], shellPanes: [], workspaces: [], tabs: [], device: undefined, sessions: [], session: undefined, snoozedUntil: null, update: undefined, files: true, error: false, authError: false };
 function renderFiles(data: unknown) {
   const router = createMemoryRouter([{ id: ROOT_ROUTE_ID, path: "/", loader: () => home, element: <Outlet />, children: [{ path: "files", loader: () => data, element: <FilesRoute /> }, { path: "files/*", loader: () => data, element: <FilesRoute /> }] }], { initialEntries: ["/files"] });
   render(<RouterProvider router={router} />); return router;
 }
+
+function splatLoader(listings: Record<string, FilesResponse>) {
+  return ({ params }: { params: Record<string, string | undefined> }): FilesData => {
+    const rel = (params["*"] ?? "").split("/").filter(Boolean).map(decodeURIComponent).join("/");
+    return { rel, data: listings[rel] };
+  };
+}
 describe("FilesRoute", () => {
   it("renders folders and navigates into one", async () => {
     server.use(http.get("/api/files", () => HttpResponse.json({ kind: "dir", path: "", entries: [{ name: "src", kind: "dir", mtimeMs: 1 }], truncated: false })));
     const router = renderFiles({ rel: "", data: { kind: "dir", path: "", entries: [{ name: "src", kind: "dir", mtimeMs: 1 }], truncated: false } });
     const folder = await screen.findByText("src"); fireEvent.click(folder); await waitFor(() => expect(router.state.location.pathname).toContain("/files/src"));
+  });
+  it("walks a nested folder, not just the first one", async () => {
+    const loader = splatLoader({
+      "": { kind: "dir", path: "", entries: [{ name: "src", kind: "dir", mtimeMs: 1 }], truncated: false },
+      src: { kind: "dir", path: "src", entries: [{ name: "lib", kind: "dir", mtimeMs: 1 }], truncated: false },
+      "src/lib": { kind: "dir", path: "src/lib", entries: [{ name: "nav.ts", kind: "file", size: 10, mtimeMs: 1 }], truncated: false },
+    });
+    const router = createMemoryRouter([{ id: ROOT_ROUTE_ID, path: "/", loader: () => home, element: <Outlet />, children: [
+      { path: "files", loader, element: <FilesRoute />, shouldRevalidate: filesShouldRevalidate },
+      { path: "files/*", loader, element: <FilesRoute />, shouldRevalidate: filesShouldRevalidate },
+    ] }], { initialEntries: ["/files"] });
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByText("src"));
+    expect(await screen.findByText("lib")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("lib"));
+    expect(await screen.findByText("nav.ts")).toBeInTheDocument();
   });
   it("debounces filename search", async () => {
     vi.useFakeTimers(); const search = vi.fn(() => HttpResponse.json({ q: "abc", results: [{ path: "abc.txt", name: "abc.txt", kind: "file" }], truncated: false }));

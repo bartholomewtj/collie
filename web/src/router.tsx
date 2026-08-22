@@ -8,7 +8,7 @@ import { DetailRoute } from "@/routes/detail";
 import { HistoryRoute } from "@/routes/history";
 import { SettingsRoute } from "@/routes/settings";
 import { FilesRoute } from "@/routes/files";
-import { filesLoader, historyLoader, rootLoader, paneLoader, PANE_ROUTE_ID, ROOT_ROUTE_ID } from "@/lib/loaders";
+import { filesLoader, filesShouldRevalidate, historyLoader, rootLoader, paneLoader, PANE_ROUTE_ID, ROOT_ROUTE_ID } from "@/lib/loaders";
 
 // We don't use view transitions. React Router persists an "applied view transitions" map to
 // sessionStorage ("remix-router-transitions") and replays a phantom same-location transition on every
@@ -42,8 +42,8 @@ export const router = createBrowserRouter([
       { path: "traces", element: <TracesRoute /> },
       { path: "traces/:spaceId/:repo", element: <TraceRoute /> },
       { path: "settings", element: <SettingsRoute /> },
-      { path: "files", loader: filesLoader, element: <FilesRoute />, shouldRevalidate: () => false },
-      { path: "files/*", loader: filesLoader, element: <FilesRoute />, shouldRevalidate: () => false },
+      { path: "files", loader: filesLoader, element: <FilesRoute />, shouldRevalidate: filesShouldRevalidate },
+      { path: "files/*", loader: filesLoader, element: <FilesRoute />, shouldRevalidate: filesShouldRevalidate },
       { id: PANE_ROUTE_ID, path: "pane/:paneId", loader: paneLoader, element: <DetailRoute /> },
       {
         path: "pane/:paneId/history",

@@ -684,3 +684,13 @@ describe("cold boot with no network", () => {
     });
   });
 });
+
+describe("filesShouldRevalidate", () => {
+  it("skips a same-path poll and reloads when the folder changes", async () => {
+    const { filesShouldRevalidate } = await import("./loaders");
+    const folder = new URL("http://x/files/src");
+    const nested = new URL("http://x/files/src/lib");
+    expect(filesShouldRevalidate({ currentUrl: folder, nextUrl: folder })).toBe(false);
+    expect(filesShouldRevalidate({ currentUrl: folder, nextUrl: nested })).toBe(true);
+  });
+});

@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.53.1] - 2026-08-22
+
+### Fixed
+- Files tab walks nested folders: tapping a folder below the first one loads it instead of sticking on that listing (65c38be)
+
 ## [0.53.0] - 2026-08-22
 
 ### Added
