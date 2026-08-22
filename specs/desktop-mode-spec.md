@@ -2,7 +2,7 @@
 
 **Version:** 0.55.2 → **0.56.0** (MINOR — a new surface and new settings)
 **Repo:** `C:\claudeOS\Projects\tools\collie` (Windows checkout, Git Bash)
-**Status:** v2, 2026-08-22. Interview → draft → six-lens council review → this revision. Ready to build.
+**Status:** v2, 2026-08-22. Interview → draft → six-lens council review → this revision. **All four phases built and merged** — phases 1–2 on 2026-08-22 (0.56.0–0.56.9), phases 3–4 on 2026-08-23 (0.56.10–0.56.13, PRs #145 #146).
 
 ## What this is
 
