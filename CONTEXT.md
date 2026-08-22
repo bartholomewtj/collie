@@ -19,7 +19,7 @@
 |---|---|---|
 | **live** | `bridge/` (Bun backend) · `web/src/` (Vite + React frontend) · `scripts/` · `herdr-plugin.toml` · `.adr/` · `contrib/windows/` (**live on this box** — the ctl bash script delegates `start/stop/restart/update` to `collie-ctl.ps1` on Git Bash) | Active code. Functional changes need a version bump (`CLAUDE.md` → Versioning) and pass `bun test`. |
 | **factory** | `adws/` — claudeSSSF agent-workflow scripts (Python, `uv`) that *operate on* this repo. `adws/adw_data/sssf.db` is what the Traces tab reads. | Not app code. Don't edit `adws/adw_sssf_config/sssf.config.yaml` mid-run. |
-| **historical** | `specs/`, `requests/`, `app_docs/` — the plan/request/doc artefacts those factory runs produced, one file per issue. | Read for background on *why a change was made*; never the source of truth for how the code works now. |
+| **historical** | `specs/`, `requests/` — the plan and request artefacts those factory runs produced for work that is still open. | Read for background on *why a change was made*; never the source of truth for how the code works now. |
 | **ghost** | Ideas parked in [`ARCHITECTURE.md` §8](./ARCHITECTURE.md) — `herdr terminal session observe`/`control`, a client-side terminal emulator, speech APIs. | **Do not implement.** Closed by ADRs ([0008](./.adr/0008-collie-does-not-run-a-terminal-emulator.md)). |
 | **generated / vendored** | `web/dist`, `web/dist-staging`, `build/`, `node_modules/`, `web/src/components/ui/` (shadcn — regenerate, don't hand-edit) | Don't edit by hand. |
 

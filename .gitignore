@@ -47,8 +47,8 @@ docs/bugs/
 # Local tooling scratch (browser-automation captures)
 .playwright-mcp/
 
-# sssf runtime
-adws/adw_data/sessions/
-adws/adw_data/sssf.db*
+# sssf runtime and factory run artefacts (prompt_engineering is live config)
+adws/adw_data/*
+!adws/adw_data/prompt_engineering/
 __pycache__/
 *.pyc
