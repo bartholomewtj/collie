@@ -426,6 +426,8 @@ Choose **Settings → Typing surface**:
 - **Composer** — Enter sends, Shift+Enter makes a new line, and Ctrl+Enter still sends. Esc, Tab and the arrows pass through to the terminal when the box is empty.
 - **Direct** — keys go straight into the terminal. Arm it by clicking the mirror or pressing Ctrl+`; the strip over the input says so. It releases on Stop, Ctrl+`, a click outside, window focus loss, or the idle pause. It is never remembered; a reload starts unarmed.
 
+When the Composer surface is active, number keys pick prompt options through the dialog guard. They are not sent as raw terminal keys; other dialogs keep their number keys for the dialog itself.
+
 When typing directly, one line of ordinary text goes straight through. Text with a line break or that looks destructive (`rm -r`, `sudo`, `--force`) is held with “Paste N lines into the terminal? Send · Discard”. Send keeps line breaks as Enter presses but never adds one at the end. Pasting an image uploads it and offers a **Type path** chip; the path is never typed for you.
 
 | Hotkey | Action |

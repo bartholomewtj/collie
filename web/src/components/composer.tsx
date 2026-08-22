@@ -32,6 +32,8 @@ import { usePasteHold } from "@/lib/paste-hold";
 import { NoEchoNotice } from "@/components/no-echo-notice";
 import { useDesktop } from "@/lib/desktop";
 import { onArmToggleRequest } from "@/lib/direct-arm";
+import type { PromptSelectBlock } from "@/lib/blocks";
+import type { PromptBlockAction } from "@/components/prompt-select-block";
 
 // Herdr's +-joined key grammar for empty desktop composer pass-through.
 const PASS_THROUGH_KEYS: Readonly<Record<string, string>> = {
@@ -67,6 +69,10 @@ interface ComposerProps {
   /** A dialog (prompt/wizard/preview/multi-select) is on screen, so the TUI's keyboard belongs to it.
    * Free-text sending is refused while true — see send(). Answer it with its own buttons instead. */
   dialogPresent: boolean;
+  /** The current recognised prompt, used for desktop number-key picking. */
+  promptBlock?: PromptSelectBlock;
+  /** Runs a prompt option through the existing dialog guard. */
+  onPromptAction?: (action: PromptBlockAction, prompt: PromptSelectBlock["prompt"]) => Promise<boolean>;
   /** Latest pane text — clears the pending-send preview once the mirror echoes the send back. */
   text: string;
   /** A user draft stranded on the terminal's "❯" input line (extractInputDraft), STABILISED across
@@ -158,7 +164,7 @@ function ComposerDock({
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, text, terminalDraft, rawTerminalDraft, prefs, stepFontSize, setRawTerminal, setTapToFocus, onSent, onArmedChange },
+  { paneId, session, agent, isShell, gone, readOnly, dialogPresent, promptBlock, onPromptAction, text, terminalDraft, rawTerminalDraft, prefs, stepFontSize, setRawTerminal, setTapToFocus, onSent, onArmedChange },
   ref,
 ) {
   const revalidator = useRevalidator();
@@ -1012,6 +1018,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                       return;
                     }
                     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || input.length !== 0) return;
+                    if (/^[0-9]$/.test(e.key)) {
+                      if (!dialogPresent) return;
+                      e.preventDefault();
+                      if (promptBlock && onPromptAction) {
+                        if (promptBlock.prompt.feedback?.focused) {
+                          setStatus("Use the buttons for this dialog", "warn");
+                          return;
+                        }
+                        const option = promptBlock.prompt.options.find((o) => o.keys[0] === e.key);
+                        if (option) {
+                          void onPromptAction({ kind: "option", option }, promptBlock.prompt);
+                        } else {
+                          setStatus(`No option ${e.key}`, "warn");
+                        }
+                      } else if (dialogPresent) {
+                        setStatus("Use the buttons for this dialog", "warn");
+                      }
+                      return;
+                    }
                     const key = PASS_THROUGH_KEYS[e.key];
                     if (key === undefined) return;
                     e.preventDefault();
