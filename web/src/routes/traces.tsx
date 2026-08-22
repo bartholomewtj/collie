@@ -1,4 +1,5 @@
 import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from "react-router";
+import { useBack } from "@/hooks/use-back";
 
 import { AppHeader } from "@/components/app-header";
 import { LanesIcon, SssfFrame } from "@/components/sssf-frame";
@@ -234,7 +235,8 @@ export function TraceRoute() {
   // ‹ returns where you came from when the opener said (a space's tab heading), else the scoping
   // pane, else the Traces list — same rule as the pane's back.
   const from = (useLocation().state as { from?: string } | null)?.from;
-  const back = () => navigate(from ?? (paneId ? panePath(paneId, data.session) : tracesPath(data.session)));
+  // One step back, like the gesture; the computed screen is only the cold-entry fallback.
+  const back = useBack(from ?? (paneId ? panePath(paneId, data.session) : tracesPath(data.session)));
   const live = sssf?.attached?.repo === repo ? sssf.attached.adwId : undefined;
   const pane = scopedPane(data, paneId);
   const paneRuns = pane?.sssf?.runs ?? [];

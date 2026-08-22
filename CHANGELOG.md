@@ -6,6 +6,15 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.9] - 2026-08-22
+
+### Fixed
+- Phone: the header "‹" now goes back exactly one step, the same as the swipe gesture, instead of
+  jumping to a computed parent screen (pane → pane → "‹" no longer skips the pane you just left).
+  A cold entry with nothing behind it still falls back to the old target.
+- Phone: after "Open in browser" on a file, swiping back no longer lands you on the dashboard when
+  Android relaunched the app at its start URL — the last screen is remembered and resumed.
+
 ## [0.56.8] - 2026-08-22
 
 ### Changed

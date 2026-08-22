@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useLoaderData, useNavigate, useParams, useRouteLoaderData } from "react-router";
+import { useLoaderData, useParams, useRouteLoaderData } from "react-router";
+import { useBack } from "@/hooks/use-back";
 import { ArrowUpToLine, ChevronDown, ChevronUp, Loader2, ScrollText, Search } from "lucide-react";
 
 import { AppHeader } from "@/components/app-header";
@@ -58,8 +59,9 @@ export function HistoryRoute() {
   const data = useLoaderData() as HistoryData;
   const root = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData;
   const { paneId = "" } = useParams();
-  const navigate = useNavigate();
   const session = data.session;
+  // "‹" pops one entry like the gesture; the live pane is the fallback for a cold entry.
+  const back = useBack(panePath(paneId, session));
 
   const agent =
     root.agents.find((a) => a.paneId === paneId) ??
@@ -285,7 +287,7 @@ export function HistoryRoute() {
       <AppHeader
         bridge={root.bridge}
         error={root.error}
-        onBack={() => navigate(panePath(paneId, session))}
+        onBack={back}
         override={
           findOpen ? (
             <FindBar
