@@ -50,6 +50,7 @@ import type {
   MenuModel,
   MultiSelectModel,
   PreviewSelectModel,
+  Block,
   PromptModel,
   WizardModel,
 } from "@/lib/blocks";
@@ -222,15 +223,13 @@ export function AgentChat({
   // the two probes above, so the three can't drift. This is the zero-latency fail-fast; the
   // load-bearing protection is reply-action's verify-before-submit, which also covers a dialog that
   // appears after this render.
-  const dialogPresent = useMemo(
-    () =>
-      grammarsOn
-        ? (adapterFor(agent?.agent)?.buildBlocks(splitLines(parseAnsi(display))) ?? []).some(
-            (b) => b.kind !== "raw",
-          )
-        : false,
+  const blocks = useMemo<Block[]>(
+    () => grammarsOn ? adapterFor(agent?.agent)?.buildBlocks(splitLines(parseAnsi(display))) ?? [] : [],
     [display, agent?.agent, grammarsOn],
   );
+  const currentDialog = [...blocks].reverse().find((b) => b.kind !== "raw");
+  const dialogPresent = currentDialog !== undefined;
+  const promptBlock = currentDialog?.kind === "prompt-select" ? currentDialog : undefined;
 
   // Both are threaded to the composer: the RAW value (live) plus a stabilised one. extractInputDraft
   // is stateless, so it can't distinguish a stranded draft from the ~350ms flash where our OWN
@@ -943,6 +942,8 @@ export function AgentChat({
             gone={gone}
             readOnly={readOnly}
             dialogPresent={dialogPresent}
+            promptBlock={promptBlock}
+            onPromptAction={handlePromptAction}
             text={text}
             terminalDraft={terminalDraft}
             rawTerminalDraft={rawTerminalDraft}
