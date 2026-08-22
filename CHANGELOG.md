@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.2] - 2026-08-22
+
+### Changed
+- Desktop mode phase 1: test coverage for hidden controls, hotkeys and tab title
+
 ## [0.56.1] - 2026-08-22
 
 ### Added
