@@ -7,4 +7,4 @@ Done means:
 - `bun run test` at root still reports 859 tests across 37 files and `cd web && bun run test` still reports every existing test passing with **no existing test file edited**; new tests only add to the web count. `bun run typecheck` is clean.
 - PATCH bump to **0.56.1** in `herdr-plugin.toml`, `package.json`, `web/package.json`, with one `CHANGELOG.md` `### Added` line under a new `## [0.56.1]` heading: "phone-only controls hidden, 2 h idle pause, `(n) Collie` tab title, Ctrl+Alt+Up/Down pane switch".
 
-Out of scope: `web/src/hooks/use-display-prefs.ts`; `bridge/`; `web/src/hooks/use-direct-typing.ts`, `web/src/components/composer.tsx`, `web/src/hooks/use-long-press.ts` (phases 2–3); Ctrl+` and Ctrl+F (phase 2); `setAppBadge`; any change to what renders when `on` is false.
+Out of scope: `web/src/hooks/use-display-prefs.ts`; `bridge/`; `web/src/hooks/use-direct-typing.ts`, `web/src/hooks/use-long-press.ts` (phases 2–3); in `web/src/components/composer.tsx` only hiding the attach button is in scope — no keydown or send-behaviour change; Ctrl+` and Ctrl+F (phase 2); `setAppBadge`; any change to what renders when `on` is false.
