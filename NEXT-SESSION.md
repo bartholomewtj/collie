@@ -1,8 +1,10 @@
 # Next session
 
-_Last handoff: 2026-08-22 — `main` at **0.53.0** (`a3e909b`, Files tab #127, roster #126),
-tagged **v0.53.0**. 0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
-Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set. One listener on `:8787`._
+_Last handoff: 2026-08-22 — `main` at **0.54.0** (`09df5a0`, Files nested nav #131,
+open-in-browser + in-place media #132), tagged **v0.53.1** and **v0.54.0**.
+0.52.2–0.52.4 are still untagged. Bridge: `C:\ClaudeOS\Projects\tools\collie`,
+Task Scheduler `herdr.collie`. `COLLIE_WORK_ROOT=C:\claudeos` is set. Restarted.
+One listener on `:8787`._
 
 Fork of [AltanS/collie](https://github.com/AltanS/collie). Plugin id `herdr.collie`.
 Roster: planner Claude Code **opus** (subscription, thinking high); builder
@@ -12,11 +14,11 @@ Roster: planner Claude Code **opus** (subscription, thinking high); builder
 
 ## Where this stopped
 
-Files tab is on `main` and live. Read-only browser of `COLLIE_WORK_ROOT`: walk folders,
-search names, preview text, copy relative path, download. Hidden when the env is unset.
-Skip list never lists or serves. Roster #126 is also on `main`. No open PRs.
+Files tab on `main`: walk nested folders, Open in browser for Chrome-viewable types,
+images/audio/video play in the tab, PDF stays on Open in browser. HTML/SVG stay
+download-only. Bridge was restarted after 0.54.0. No open PRs.
 
-Phone: reopen the PWA if the Files tab is missing (old service worker).
+Phone: reopen the PWA so it picks up the new bundle.
 
 ## Resume with
 
@@ -24,7 +26,7 @@ Phone: reopen the PWA if the Files tab is missing (old service worker).
 cd C:\claudeOS\Projects\tools\collie
 git checkout main && git pull
 git branch --show-current && git status --short      # expect main; untracked adws/adw_data/* is fine
-git describe --tags --abbrev=0                        # newest tag is v0.53.0
+git describe --tags --abbrev=0                        # newest tag is v0.54.0
 netstat -ano | findstr :8787                          # expect ONE listener
 ```
 
@@ -50,7 +52,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 ## Open
 
 - No open PRs.
-- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.0 is tagged.
+- Tag v0.52.2 (`70c1bea`), v0.52.3 (`ee5d7b2`), v0.52.4 (`96679ac`). v0.53.1 and v0.54.0 are tagged.
 - Parked: send the security fixes upstream to AltanS/collie.
 - Parked: Windows `push-keys` / `push-test` Herdr actions.
 
@@ -58,6 +60,7 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 - **Files tab is opt-in.** Plugin `.env` must have `COLLIE_WORK_ROOT`. Unset = no tab and no
   `/api/files*` routes. Dot-names (including `.adr`) never list. Read-only — no send-to-pane.
+  HTML/SVG/XML/JS are never opened inline. PDF is Open in browser only (no in-page iframe).
 - **Planner is Claude Code opus, not OpenRouter.** The other four seats are pi. `flash-0731`
   and `muse-spark-1.2-contributor` live in `~/.pi/agent/models.json`; `pi --list-models` if a
   seat fails to resolve.
