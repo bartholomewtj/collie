@@ -55,6 +55,16 @@ export function browserOpenType(name: string): string | null {
   return BROWSER_OPEN_TYPES[extname(name).toLowerCase()] ?? null;
 }
 
+/** In-app player for image/audio/video. PDF and text stay out — PDF is flaky in an iOS iframe. */
+export function browserEmbedKind(name: string): "image" | "video" | "audio" | undefined {
+  const type = browserOpenType(name);
+  if (!type) return undefined;
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return undefined;
+}
+
 export function isRefusedName(name: string): boolean {
   if (name.startsWith(".")) return true;
   const lower = name.toLowerCase();
@@ -107,12 +117,14 @@ async function inspect(root: string, segs: string[]): Promise<WorkdirListing | W
   if (!info.isFile()) return null;
   const name = basename(real);
   const openInBrowser = browserOpenType(name) !== null;
+  const embed = browserEmbedKind(name);
   const file = Bun.file(real);
   const sniff = new Uint8Array(await file.slice(0, Math.min(info.size, BINARY_SNIFF_BYTES)).arrayBuffer());
   let binary = sniff.includes(0);
   if (!binary) { try { new TextDecoder("utf-8", { fatal: true }).decode(sniff); } catch { binary = true; } }
-  if (binary) return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, binary: true, openInBrowser };
-  return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, text: await file.slice(0, PREVIEW_CAP_BYTES).text(), truncated: info.size > PREVIEW_CAP_BYTES, binary: false, openInBrowser };
+  const media = { openInBrowser, ...(embed ? { embed } : {}) };
+  if (binary) return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, binary: true, ...media };
+  return { kind: "file", path, name, size: info.size, mtimeMs: info.mtimeMs, text: await file.slice(0, PREVIEW_CAP_BYTES).text(), truncated: info.size > PREVIEW_CAP_BYTES, binary: false, ...media };
 }
 
 function fileBytes(h: WorkdirHelpers, real: string, size: number, type: string, disposition: "attachment" | "inline"): Response {

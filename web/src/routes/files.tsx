@@ -35,5 +35,14 @@ export function FilesRoute() {
 function FileDetail({ data }: { data: Extract<FilesData["data"], { kind: "file" }> }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(data.path); } catch { const t = document.createElement("textarea"); t.value = data.path; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); } setCopied(true); setTimeout(() => setCopied(false), 1500); };
-  return <div className="flex-1 overflow-auto p-3"><div className="mb-3 flex flex-wrap gap-2">{data.openInBrowser && <a className="rounded bg-primary px-3 py-2 text-primary-foreground" href={openFileUrl(data.path)} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1 inline size-4" />Open in browser</a>}<button className="rounded bg-primary px-3 py-2 text-primary-foreground" onClick={copy}><Copy className="mr-1 inline size-4" />{copied ? "Copied" : "Copy path"}</button><a className="rounded bg-primary px-3 py-2 text-primary-foreground" href={downloadFileUrl(data.path)} download={data.name}><Download className="mr-1 inline size-4" />Download</a></div>{data.binary ? <p className="text-muted-foreground">{data.openInBrowser ? "Can't preview this file here — open it in the browser or download it" : "Can't preview this file — download it instead"}</p> : <><pre className="whitespace-pre-wrap break-words font-mono text-sm">{data.text}</pre>{data.truncated && <p className="text-xs text-muted-foreground">truncated at 512 KB</p>}</>}</div>;
+  const src = openFileUrl(data.path);
+  return <div className="flex-1 overflow-auto p-3"><div className="mb-3 flex flex-wrap gap-2">{data.openInBrowser && <a className="rounded bg-primary px-3 py-2 text-primary-foreground" href={src} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1 inline size-4" />Open in browser</a>}<button className="rounded bg-primary px-3 py-2 text-primary-foreground" onClick={copy}><Copy className="mr-1 inline size-4" />{copied ? "Copied" : "Copy path"}</button><a className="rounded bg-primary px-3 py-2 text-primary-foreground" href={downloadFileUrl(data.path)} download={data.name}><Download className="mr-1 inline size-4" />Download</a></div><FilePreview data={data} src={src} /></div>;
+}
+
+function FilePreview({ data, src }: { data: Extract<FilesData["data"], { kind: "file" }>; src: string }) {
+  if (data.embed === "image") return <img src={src} alt={data.name} className="max-h-[70dvh] max-w-full object-contain" />;
+  if (data.embed === "video") return <video src={src} controls playsInline preload="metadata" className="max-h-[70dvh] w-full bg-black" />;
+  if (data.embed === "audio") return <audio src={src} controls preload="metadata" className="w-full" />;
+  if (data.binary) return <p className="text-muted-foreground">{data.openInBrowser ? "Can't preview this file here — open it in the browser or download it" : "Can't preview this file — download it instead"}</p>;
+  return <><pre className="whitespace-pre-wrap break-words font-mono text-sm">{data.text}</pre>{data.truncated && <p className="text-xs text-muted-foreground">truncated at 512 KB</p>}</>;
 }

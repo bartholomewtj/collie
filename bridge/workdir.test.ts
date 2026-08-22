@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, symlink, truncate } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { readWorkRoot } from "./config.ts";
-import { browserOpenType, createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
+import { browserEmbedKind, browserOpenType, createWorkdir, isRefusedName, parseRelPath, PREVIEW_CAP_BYTES, DOWNLOAD_CAP_BYTES } from "./workdir.ts";
 import type { Config } from "./config.ts";
 import { CAN_SYMLINK } from "./platform-support.ts";
 
@@ -98,16 +98,33 @@ describe("workdir", () => {
       expect(png.headers.get("x-content-type-options")).toBe("nosniff");
       const listed = await (await w.handle(new Request("http://x/api/files?path=shot.png"), new URL("http://x/api/files?path=shot.png"))).json();
       expect(listed.openInBrowser).toBe(true);
+      expect(listed.embed).toBe("image");
       const html = await w.handle(new Request("http://x/api/files/open?path=page.html"), new URL("http://x/api/files/open?path=page.html"));
       expect(html.status).toBe(404);
       expect(await html.text()).not.toContain("alert");
       const htmlMeta = await (await w.handle(new Request("http://x/api/files?path=page.html"), new URL("http://x/api/files?path=page.html"))).json();
       expect(htmlMeta.openInBrowser).toBe(false);
+      expect(htmlMeta.embed).toBeUndefined();
       const txt = await w.handle(new Request("http://x/api/files/open?path=notes.txt"), new URL("http://x/api/files/open?path=notes.txt"));
       expect(txt.headers.get("content-type")).toBe("text/plain; charset=utf-8");
       const dl = await w.handle(new Request("http://x/api/files/download?path=page.html"), new URL("http://x/api/files/download?path=page.html"));
       expect(dl.status).toBe(200);
       expect(dl.headers.get("content-disposition")).toContain("attachment");
+      await writeFile(join(root, "clip.mp4"), "mp4");
+      await writeFile(join(root, "track.mp3"), "mp3");
+      await writeFile(join(root, "doc.pdf"), "%PDF");
+      expect(browserEmbedKind("shot.png")).toBe("image");
+      expect(browserEmbedKind("clip.mp4")).toBe("video");
+      expect(browserEmbedKind("track.mp3")).toBe("audio");
+      expect(browserEmbedKind("doc.pdf")).toBeUndefined();
+      expect(browserEmbedKind("notes.txt")).toBeUndefined();
+      const mp4 = await (await w.handle(new Request("http://x/api/files?path=clip.mp4"), new URL("http://x/api/files?path=clip.mp4"))).json();
+      expect(mp4.embed).toBe("video");
+      const mp3 = await (await w.handle(new Request("http://x/api/files?path=track.mp3"), new URL("http://x/api/files?path=track.mp3"))).json();
+      expect(mp3.embed).toBe("audio");
+      const pdf = await (await w.handle(new Request("http://x/api/files?path=doc.pdf"), new URL("http://x/api/files?path=doc.pdf"))).json();
+      expect(pdf.openInBrowser).toBe(true);
+      expect(pdf.embed).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

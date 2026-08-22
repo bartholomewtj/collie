@@ -57,11 +57,37 @@ describe("FilesRoute", () => {
     expect(screen.queryByText("Open in browser")).toBeNull();
   });
   it("offers Open in browser for types Chrome can display", async () => {
-    renderFiles({ rel: "shot.png", data: { kind: "file", path: "shot.png", name: "shot.png", size: 2, mtimeMs: 1, binary: true, openInBrowser: true } });
+    renderFiles({ rel: "shot.png", data: { kind: "file", path: "shot.png", name: "shot.png", size: 2, mtimeMs: 1, binary: true, openInBrowser: true, embed: "image" } });
     const link = await screen.findByRole("link", { name: /Open in browser/ });
     expect(link.getAttribute("href")).toBe("/api/files/open?path=shot.png");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
     expect(link.getAttribute("download")).toBeNull();
+  });
+  it("embeds an image in place", async () => {
+    renderFiles({ rel: "shot.png", data: { kind: "file", path: "shot.png", name: "shot.png", size: 2, mtimeMs: 1, binary: true, openInBrowser: true, embed: "image" } });
+    const img = await screen.findByRole("img", { name: "shot.png" });
+    expect(img.getAttribute("src")).toBe("/api/files/open?path=shot.png");
+  });
+  it("embeds video in place", async () => {
+    renderFiles({ rel: "clip.mp4", data: { kind: "file", path: "clip.mp4", name: "clip.mp4", size: 2, mtimeMs: 1, binary: true, openInBrowser: true, embed: "video" } });
+    await screen.findByRole("link", { name: /Open in browser/ });
+    const video = document.querySelector("video");
+    expect(video?.getAttribute("src")).toBe("/api/files/open?path=clip.mp4");
+    expect(video?.hasAttribute("controls")).toBe(true);
+  });
+  it("embeds audio in place", async () => {
+    renderFiles({ rel: "track.mp3", data: { kind: "file", path: "track.mp3", name: "track.mp3", size: 2, mtimeMs: 1, binary: true, openInBrowser: true, embed: "audio" } });
+    await screen.findByRole("link", { name: /Open in browser/ });
+    expect(document.querySelector("audio")?.getAttribute("src")).toBe("/api/files/open?path=track.mp3");
+  });
+  it("does not iframe a PDF", async () => {
+    renderFiles({ rel: "doc.pdf", data: { kind: "file", path: "doc.pdf", name: "doc.pdf", size: 2, mtimeMs: 1, binary: true, openInBrowser: true } });
+    expect(await screen.findByText(/Can't preview this file here/)).toBeInTheDocument();
+    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector("video")).toBeNull();
+    expect(document.querySelector("audio")).toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByRole("link", { name: /Open in browser/ })).toBeInTheDocument();
   });
 });

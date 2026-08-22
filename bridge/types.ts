@@ -225,7 +225,7 @@ export interface WorkdirEntry {
   mtimeMs: number;
 }
 export interface WorkdirListing { kind: "dir"; path: string; entries: WorkdirEntry[]; truncated: boolean; }
-export interface WorkdirFile { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean; openInBrowser?: boolean; }
+export interface WorkdirFile { kind: "file"; path: string; name: string; size: number; mtimeMs: number; binary: boolean; text?: string; truncated?: boolean; openInBrowser?: boolean; embed?: "image" | "video" | "audio"; }
 export interface WorkdirSearchResult { path: string; name: string; kind: "dir" | "file"; }
 
 export interface SnapshotResponse {
