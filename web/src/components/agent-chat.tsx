@@ -20,6 +20,7 @@ import { parseAnsi } from "@/lib/ansi";
 import { splitLines } from "@/lib/blocks";
 import { adapterFor } from "@/lib/harness";
 import { FindBar } from "@/components/find-bar";
+import { onFindOpenRequest } from "@/lib/find-request";
 import { Composer, type ComposerHandle } from "@/components/composer";
 import { ThreadSidebar } from "@/components/agent-sidebar";
 import { AgentIcon } from "@/components/agent-icon";
@@ -249,6 +250,7 @@ export function AgentChat({
     setFollowing(false); // freeze the buffer so the search target is stable while you type
     setFindOpen(true);
   }
+  useEffect(() => onFindOpenRequest(openFind), []);
   function closeFind() {
     setFindOpen(false);
     setFindQuery("");

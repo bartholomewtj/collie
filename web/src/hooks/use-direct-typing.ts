@@ -11,6 +11,10 @@ import { textToKeySequence } from "@/lib/key-queue";
 import { handleDesktopKeyDown, isAltKeyUp } from "@/lib/desktop-keymap";
 import { setStatus } from "@/lib/status";
 import { useLocked } from "@/lib/idle";
+import { clearPasteHold, setPasteHold } from "@/lib/paste-hold";
+import { isDestructiveInput } from "@/lib/destructive";
+import * as api from "@/lib/api";
+import { setDirectArmed } from "@/lib/direct-arm";
 
 // Physical-keyboard events that do not change a textarea value still need wire names. Printable
 // text, spaces and line breaks normally arrive through the input/change path instead.
@@ -35,6 +39,13 @@ function keyForKeyDown(key: string): string | undefined {
   return SPECIAL_KEYS[key];
 }
 
+/** Mirrors Composer's session\\0pane construction; malformed keys fail closed. */
+export function parsePaneKey(paneKey: string): { session?: string; paneId: string } | null {
+  const parts = paneKey.split("\u0000");
+  if (parts.length !== 2 || parts[1] === "") return null;
+  return { session: parts[0] || undefined, paneId: parts[1] };
+}
+
 interface DirectTypingOptions {
   paneKey: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -52,6 +63,8 @@ interface DirectTypingOptions {
   focusInput: () => void;
   /** Desktop mode: focus owns the armed state and drafts do not block arming. */
   desktop: boolean;
+  /** Desktop paste image upload; defaults to the pane upload endpoint. */
+  uploadImage?: (file: File) => Promise<string | null>;
 }
 
 // The composer textarea's direct-terminal mode: what you type goes to the pane as keystrokes,
@@ -100,6 +113,7 @@ export function useDirectTyping({
   onActivate,
   focusInput,
   desktop,
+  uploadImage: uploadImageOption,
 }: DirectTypingOptions) {
   const [active, setActive] = useState(false);
   const [value, setValue] = useState("");
@@ -147,6 +161,7 @@ export function useDirectTyping({
 
   /** Disarm and forget the transient state. Leaves the field alone — callers decide about focus. */
   function resetMode() {
+    clearPasteHold();
     activeRef.current = false;
     setActive(false);
     setValue("");
@@ -273,6 +288,12 @@ export function useDirectTyping({
 
   useEffect(() => cancelPendingBlur, []);
 
+  useEffect(() => {
+    setDirectArmed(desktop && active);
+    return () => setDirectArmed(false);
+  }, [desktop, active]);
+  useEffect(() => clearPasteHold, []);
+
   // Android virtual Backspace/Enter can arrive as beforeinput without a useful keydown. A native
   // listener is intentional: React's synthetic beforeinput omits these events on some engines.
   useEffect(() => {
@@ -342,6 +363,48 @@ export function useDirectTyping({
     event.preventDefault();
     sender.enqueue([key]);
   }
+
+  useEffect(() => {
+    const inputEl = inputRef.current;
+    if (!desktop || !active || inputEl === null) return;
+    const uploadImage = uploadImageOption ?? (async (file: File) => {
+      const parsed = parsePaneKey(paneKey);
+      if (parsed === null) return null;
+      const result = await api.uploadImage(parsed.paneId, file, parsed.session);
+      if (!result.ok) { setStatus("Image upload failed.", "error"); return null; }
+      return result.path;
+    });
+    const onPaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (items) for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item?.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            event.preventDefault();
+            void uploadImage(file).then((path) => {
+              if (path) {
+                setStatus("Image uploaded — tap Type path to insert it", "success");
+                setPasteHold({ kind: "path", path, onSend: () => { clearPasteHold(); sender.enqueue(textToKeySequence(path)); inputRef.current?.focus(); }, onDiscard: () => { clearPasteHold(); inputRef.current?.focus(); } });
+              }
+            });
+            return;
+          }
+        }
+      }
+      const raw = event.clipboardData?.getData("text/plain") ?? "";
+      if (raw === "") return;
+      event.preventDefault();
+      const normalised = raw.replace(/\r\n?/g, "\n");
+      const reason = isDestructiveInput(normalised);
+      if (!normalised.includes("\n") && reason === null) { sender.enqueue(textToKeySequence(normalised)); return; }
+      // Remove trailing line breaks: interior breaks become Enter, but Send never runs the command.
+      const body = normalised.replace(/\n+$/, "");
+      setPasteHold({ kind: "text", lines: body.split("\n").length, reason: isDestructiveInput(body), onSend: () => { clearPasteHold(); sender.enqueue(textToKeySequence(body)); inputRef.current?.focus(); }, onDiscard: () => { clearPasteHold(); inputRef.current?.focus(); } });
+    };
+    inputEl.addEventListener("paste", onPaste);
+    return () => inputEl.removeEventListener("paste", onPaste);
+  }, [desktop, active, inputRef, paneKey, uploadImageOption, sender.enqueue]);
 
   useEffect(() => {
     const inputEl = inputRef.current;

@@ -1,14 +1,10 @@
 # Next session
 
-_Main at **0.55.2** (`4456a30`), tagged **v0.55.2**; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
+_Main/`feat/desktop-typing` at **0.56.7**, tagged **v0.56.7** when pushed; Windows host `C:\ClaudeOS\Projects\tools\collie`, Task Scheduler `herdr.collie`, `COLLIE_WORK_ROOT=C:\claudeos`, one listener on `:8787`._
 
 ## Where this stopped
 
-**Desktop mode is specced, not started.** `specs/desktop-mode-spec.md` (untracked, 2026-08-22) is
-the full plan: interview → draft → six-lens council review → v2. Four phases; build 1 (shell,
-0.56.0) then 2 (typing, 0.56.1); phases 3–4 only if missed after a week of use. Read the
-"Decisions" table first — those are settled, don't re-open them. Start with
-`git checkout -b feat/desktop-shell`, commit the spec on that branch.
+**Desktop mode phases 1 and 2 are done** at 0.56.7: shell, sidebar, Settings card, Enter-sends, direct typing with the full keydown mapper, paste hold, Ctrl+F find, and README section. Phases 3 (mouse/right-click popover, drag-and-drop) and 4 (number-key prompt picking, History and Files widths) wait a week of real use; build them only if actually missed (`specs/desktop-mode-spec.md` §10). The branch is `feat/desktop-typing` → PR → merge → tag `v0.56.7`.
 
 Repo cleanup landed 2026-08-22 as #136 (factory litter untracked), #138 (one orientation doc, 0.55.1) and #139 (`bridge/server.ts` split into route-group modules, 0.55.2). All merged; branches deleted. Phases 1–3 were run as ADWs; phase 4 ran three times before passing (scope-gate wording, see #137 and the claudeSSSF prompting cookbook).
 
@@ -37,7 +33,6 @@ PYTHONPATH=adws python -m unittest adw_modules.test_out_of_scope adw_modules.tes
 
 ## Open
 
-- Desktop mode phase 1: `specs/desktop-mode-spec.md` §10. Not a git-tracked file yet.
 - #137: ADW commit phase fails on builder-staged deletions and on the version-bump pre-commit. Until fixed, any ADW that deletes files or touches `scripts/` needs a hand commit.
 - #140: README harder cut (install / use / troubleshoot only). `adw_plan_build_test`.
 - claudeSSSF PR #71: cookbook note — the `Out of scope:` line is a parsed deny-list; never put a file the ask must change on it.
