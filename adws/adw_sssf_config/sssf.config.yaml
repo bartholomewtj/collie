@@ -1,17 +1,16 @@
 # sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
 #
-# This is the BALANCED roster (openrouter-roster log, 2026-08-20): every agent
-# runs through pi on OpenRouter, so a full run costs roughly $1.56 in METERED
-# API dollars — this is not the old zero-cost subscription roster. Judgement sits
-# with the planner (glm-5.3) and the reviewer (grok-4.6), both on different
-# vendors from the builder (gemini-3.7-flash), which is real blind-spot diversity
-# rather than just a different tier.
+# Mixed roster. Planner is Claude Code opus (subscription, thinking high) —
+# glm-5.3 via OpenRouter hung on an idle timeout while dumping thinking.
+# The other seats are the 2026-08-22 Balanced OpenRouter set via pi: builder
+# gpt-5.6-luna, scout deepseek-v4-flash-0731, reviewer grok-4.6, documenter
+# muse-spark-1.2-contributor. Metered cost is the four pi seats only.
 #
 # The key comes from pi's own models.json (`~/.pi/agent/models.json`, or
 # PI_MODELS_PATH), NOT from .env — nothing in adws/ reads OPENROUTER_API_KEY.
-# `z-ai/glm-5.3` is newer than pi 0.83.0's bundled catalog, so it is registered
-# as a custom model in that same file; `pi --list-models | grep glm-5.3` is the
-# check if the planner ever fails to resolve its model.
+# `deepseek/deepseek-v4-flash-0731` and `meta/muse-spark-1.2-contributor`
+# are registered as custom models in that file; `pi --list-models` is the
+# check if a pi seat ever fails to resolve. Planner uses the local `claude` CLI.
 #
 # There are no shipped cost tiers to choose from. This file IS the roster: edit
 # it once, here, after install. `coding_agent:` is per-agent — `claude_code`,
@@ -59,10 +58,9 @@ observability:
 
 agents:
   - name: planner
-    coding_agent: pi               # judgement seat, on a different vendor from the
-    model: openrouter/z-ai/glm-5.3 # builder — AA intel 59.5 / agentic 59.1 for
-    thinking: high                 # ~$0.26 a run. Registered as a custom model in
-                                   # pi's models.json (see the header note).
+    coding_agent: claude_code      # subscription CLI — not OpenRouter
+    model: opus                    # judgement seat; --effort high
+    thinking: high
     color: "#a78bfa"                 # optional hex — the agent's lane color in the visualizer
     purpose: Turn a request into a plan the builder can implement without asking questions.
     prompt_engineering:
@@ -79,9 +77,9 @@ agents:
       - Task                       # Claude Code's built-in subagents, in place of pi's subagents.ts
 
   - name: builder
-    coding_agent: pi               # cheapest model within 2 coding-index points of the
-    model: openrouter/google/gemini-3.7-flash   # leader (76.1 vs opus-5's 78), at ~4%
-    thinking: medium               # of opus-5's builder cost — ~$0.42 a run
+    coding_agent: pi               # Arena #6 · Scale Code 59.1 · Showdown SWE #1
+    model: openrouter/openai/gpt-5.6-luna   # ~$0.23 a run. Left gemini-3.7-flash
+    thinking: medium               # (Arena slipped to #21; luna is cheaper and stronger).
     color: "#22d3ee"
     purpose: Implement the plan exactly; report every changed file in the envelope.
     prompt_engineering:
@@ -89,13 +87,12 @@ agents:
       user: adws/adw_data/prompt_engineering/builder/user.md
     # No `writes` key: unrestricted, and the only agent that is. It still cannot
     # touch defaults.protected_files — the builder does not get to edit its own grader.
-    # No `tools` key either: agy has no tools flag, so a list would be ignored
-    # (references/config.md in the skill). `writes:` is the boundary that holds.
+    # No `tools` key: inherits defaults.tools. `writes:` is the boundary that holds.
 
   - name: scout
-    coding_agent: pi               # mechanical recon, cheapest capable seat — ~$0.06 a run
-    model: openrouter/openai/gpt-5.6-luna
-    thinking: low
+    coding_agent: pi               # mechanical recon — latest DeepSeek flash, 1310K ctx
+    model: openrouter/deepseek/deepseek-v4-flash-0731
+    thinking: low                  # ~$0.02 a run. luna moved to builder.
     color: "#fbbf24"
     purpose: Find and report where things live; change nothing.
     prompt_engineering:
@@ -115,7 +112,7 @@ agents:
   - name: reviewer
     coding_agent: pi               # a different model FAMILY from the builder — real
     model: openrouter/x-ai/grok-4.6   # blind-spot diversity, not just a different tier.
-    thinking: high                 # intel 60.9 / code 76.8, ~$0.76 a run
+    thinking: high                 # Arena #9 · Showdown SWE #1 · ~$0.76 a run
     color: "#fb7185"
     purpose: Confirm that what was built is what was asked for; change nothing.
     prompt_engineering:
@@ -131,9 +128,9 @@ agents:
       - Write                      # reviewer then runs with nothing to read the diff with.
 
   - name: documenter
-    coding_agent: pi               # writing up a diff is mechanical — cheap seat, ~$0.06
-    model: openrouter/google/gemini-3.7-flash
-    thinking: low
+    coding_agent: pi               # writing up a diff is mechanical — cheap 1M-ctx seat
+    model: openrouter/meta/muse-spark-1.2-contributor
+    thinking: low                  # ~$0.01 a run. Scale Code 61.5.
     color: "#e879f9"
     purpose: Write up the change that was just made, from the diff; document only.
     prompt_engineering:
