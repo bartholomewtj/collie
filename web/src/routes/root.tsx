@@ -9,6 +9,8 @@ import { UpdateAvailableBanner } from "@/components/update-available-banner";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { DogGallop } from "@/components/dog-gallop";
 import { BottomNav } from "@/components/bottom-nav";
+import { DesktopShell } from "@/components/desktop-shell";
+import { useDesktop } from "@/lib/desktop";
 import { homePath } from "@/lib/nav";
 import { SESSION_PARAM, normalizeSession } from "@/lib/session";
 import { PANE_ROUTE_ID, type HomeData, type PaneData } from "@/lib/loaders";
@@ -48,6 +50,7 @@ export function RootLayout() {
   const { pathname } = useLocation();
   const showNav = pathname === "/" || pathname === "/traces" || pathname === "/files" || pathname === "/settings";
   const anyTraces = data.workspaces.some((w) => w.sssf);
+  const desktop = useDesktop().on;
 
   // A viewport-height flex column: the top banners (when shown) are in-flow rows at the top and the
   // active route fills the rest (each route root is `min-h-0 flex-1`). This is what keeps a banner
@@ -68,8 +71,8 @@ export function RootLayout() {
         authError={data.authError}
         lastSeenAt={shownLastSeenAt(data, pane)}
       />
-      <Outlet />
-      {showNav && <BottomNav session={data.session} traces={anyTraces} files={data.files === true} />}
+      {desktop ? <DesktopShell /> : <Outlet />}
+      {!desktop && showNav && <BottomNav session={data.session} traces={anyTraces} files={data.files === true} />}
     </div>
   );
 }

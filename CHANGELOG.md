@@ -6,6 +6,11 @@ All notable changes to Collie are recorded here. The format follows
 `version` in `herdr-plugin.toml`, `package.json`, and `web/package.json` (enforced by
 `scripts/check-version.sh`). See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.56.0] - 2026-08-22
+
+### Added
+- Desktop mode (Settings toggle): sidebar + pane layout
+
 ## [0.55.2] - 2026-08-22
 
 ### Changed

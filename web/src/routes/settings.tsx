@@ -10,6 +10,8 @@ import { NotifyPrefsControl } from "@/components/notify-prefs-control";
 import { SnoozeControl } from "@/components/snooze-control";
 import { ThemeControl } from "@/components/theme-control";
 import { HapticsControl } from "@/components/haptics-control";
+import { DesktopControl } from "@/components/desktop-control";
+import { useDesktop } from "@/lib/desktop";
 import { UpdateCheckControl } from "@/components/update-check-control";
 import { Switch } from "@/components/ui/switch";
 import { fetchConfig } from "@/lib/api";
@@ -27,6 +29,7 @@ export function SettingsRoute() {
   // Settings lives under the root route, so the live snapshot (bridge + device auth) is right here.
   const root = useRouteLoaderData(ROOT_ROUTE_ID) as HomeData | undefined;
   const readOnly = isReadOnly(root?.device);
+  const desktop = useDesktop().on;
   // The build the bridge reports it's serving — handy in the diagnostics panel alongside the local
   // stamp in the footer. Best-effort: stays undefined if the bridge is unreachable.
   const [serverBuild, setServerBuild] = useState<string | undefined>();
@@ -65,7 +68,8 @@ export function SettingsRoute() {
 
         {/* Device behaviour sits with appearance — both are "how this phone treats you", as opposed
             to the herd/notification settings below. Renders nothing where vibrate is unsupported. */}
-        <HapticsControl />
+        <DesktopControl />
+        {!desktop && <HapticsControl />}
 
         <Card className="gap-0 py-0">
           <div className="flex items-center justify-between gap-4 p-4">
