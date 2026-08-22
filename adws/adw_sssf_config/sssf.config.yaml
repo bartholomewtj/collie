@@ -1,16 +1,16 @@
 # sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
 #
-# Mixed roster. Planner is Claude Code opus (subscription, thinking high) —
-# glm-5.3 via OpenRouter hung on an idle timeout while dumping thinking.
-# The other seats are the 2026-08-22 Balanced OpenRouter set via pi: builder
-# gpt-5.6-luna, scout deepseek-v4-flash-0731, reviewer grok-4.6, documenter
-# muse-spark-1.2-contributor. Metered cost is the four pi seats only.
+# Mixed roster (2026-08-22). Planner is Claude Code opus (subscription,
+# thinking high) — glm-5.3 via OpenRouter hung on an idle timeout while
+# dumping thinking. Builder is gpt-5.6-luna via pi/OpenRouter — the only
+# metered seat. Scout and documenter run on the free Gemini quota via agy
+# (gemini-3.7-flash); reviewer runs on the grok.com subscription via the grok
+# CLI. Metered cost is the builder only.
 #
 # The key comes from pi's own models.json (`~/.pi/agent/models.json`, or
 # PI_MODELS_PATH), NOT from .env — nothing in adws/ reads OPENROUTER_API_KEY.
-# `deepseek/deepseek-v4-flash-0731` and `meta/muse-spark-1.2-contributor`
-# are registered as custom models in that file; `pi --list-models` is the
-# check if a pi seat ever fails to resolve. Planner uses the local `claude` CLI.
+# `pi --list-models` is the check if the pi seat ever fails to resolve.
+# Planner uses the local `claude` CLI; agy and grok seats use their own CLIs.
 #
 # There are no shipped cost tiers to choose from. This file IS the roster: edit
 # it once, here, after install. `coding_agent:` is per-agent — `claude_code`,
@@ -90,9 +90,9 @@ agents:
     # No `tools` key: inherits defaults.tools. `writes:` is the boundary that holds.
 
   - name: scout
-    coding_agent: pi               # mechanical recon — latest DeepSeek flash, 1310K ctx
-    model: openrouter/deepseek/deepseek-v4-flash-0731
-    thinking: low                  # ~$0.02 a run. luna moved to builder.
+    coding_agent: agy              # mechanical recon on free Gemini quota — $0 per run
+    model: gemini-3.7-flash-medium # effort rides the id suffix; `thinking` is not sent
+    thinking: low
     color: "#fbbf24"
     purpose: Find and report where things live; change nothing.
     prompt_engineering:
@@ -110,9 +110,9 @@ agents:
   # phase over adw_modules/quality.py. See SKILL.md hard rule 8.
 
   - name: reviewer
-    coding_agent: pi               # a different model FAMILY from the builder — real
-    model: openrouter/x-ai/grok-4.6   # blind-spot diversity, not just a different tier.
-    thinking: high                 # Arena #9 · Showdown SWE #1 · ~$0.76 a run
+    coding_agent: grok             # a different model FAMILY from the builder — real
+    model: grok-4.6                # blind-spot diversity. grok.com subscription, not openrouter/x-ai/*
+    thinking: high
     color: "#fb7185"
     purpose: Confirm that what was built is what was asked for; change nothing.
     prompt_engineering:
@@ -128,9 +128,9 @@ agents:
       - Write                      # reviewer then runs with nothing to read the diff with.
 
   - name: documenter
-    coding_agent: pi               # writing up a diff is mechanical — cheap 1M-ctx seat
-    model: openrouter/meta/muse-spark-1.2-contributor
-    thinking: low                  # ~$0.01 a run. Scale Code 61.5.
+    coding_agent: agy              # writing up a diff is mechanical — free Gemini quota
+    model: gemini-3.7-flash-medium # effort rides the id suffix
+    thinking: low
     color: "#e879f9"
     purpose: Write up the change that was just made, from the diff; document only.
     prompt_engineering:
